@@ -8,7 +8,10 @@ bibentry(
   title = "admove: mechanistic advection-taxis-diffusion movement
   inference from tagging data in R",
   author = c(
-      person("AUTHOR","AUTHOR")),
+      person(c("Tobias", "K."), "Mildenberger"),
+      person("Mark", "Maunder"),
+      person("Anders", "Nielsen")
+  ),
   journal = "XXX",
   year = "XXX",
   volume = "",
@@ -18,3 +21,5 @@ bibentry(
   url = "",
   issn = ""
 )
+
+citFooter("As admove is continually evolving, you may want to view the development version at https://github.com/tokami/admove")

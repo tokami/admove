@@ -42,5 +42,5 @@ articles:
 
 news:
   releases:
-  - text: Version 0.0.0.9000
+  - text: Version 0.1.0
     href: https://github.com/tokami/admove/blob/main/admove/NEWS.md

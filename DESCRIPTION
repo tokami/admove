@@ -2,19 +2,26 @@ Package: admove
 Type: Package
 Title: Estimating animal movement with advection–diffusion models
 Version: 0.1.0
-Date: 2026-05-24
+Date: 2026-05-29
 Authors@R:
-    person(given = "Anonymous",
-           family = "Author",
-           email = "anonymous@example.org",
-           role = c("aut", "cre"))
-Maintainer: Anonymous Author <anonymous@example.org>
+    c(person("Tobias", "Mildenberger",
+           role = c("aut", "cre"),
+           email = "tobm@dtu.dk",
+           comment = c(ORCID = "0000-0002-6631-7524")),
+    person("Mark","Maunder",
+           email = "mmaunder@iattc.org",
+           role = "aut",
+           comment = c(ORCID = "0000-0003-1351-4011")),
+    person("Anders","Nielsen",
+           email = "an@dtu.dk",
+           role = "aut",
+           comment = c(ORCID = "0000-0001-9683-9262")))
+Maintainer: Tobias Mildenberger <tobm@dtu.dk>
 Description: A movement model that allows estimation of habitat preferences and
     fine-scale movement rates based on advection-diffusion models using various
     types of tagging data. It supports flexible spatiotemporal modeling with
     options for Kalman filter or matrix exponential approaches, and includes
     tools for data preparation, model fitting, and visualisation.
-License: GPL (>= 3)
 Depends:
     R (>= 4.0),
     RTMB (>= 1.0)
@@ -22,8 +29,6 @@ Imports:
     Matrix,
     mvtnorm,
     abind
-Roxygen: list(markdown = TRUE)
-VignetteBuilder: knitr, rmarkdown
 Suggests:
     knitr,
     rmarkdown,
@@ -36,8 +41,13 @@ Suggests:
     ncdf4,
     withr,
     testthat (>= 3.0.0)
-NeedsCompilation: yes
-Encoding: UTF-8
-Config/testthat/edition: 3
 LazyData: true
+License: GPL (>= 3)
+URL: https://tokami.github.io/admove/, https://github.com/tokami/admove
+BugReports: https://github.com/tokami/admove/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Config/testthat/edition: 3
+VignetteBuilder: knitr, rmarkdown
+NeedsCompilation: yes
 Config/roxygen2/version: 8.0.0

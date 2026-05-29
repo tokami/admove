@@ -324,11 +324,13 @@ prep_cov <- function(x,
       stop("Package 'sf' is required to extract CRS units. Please install it.")
     }
 
-    sref_from_raster <- list()
-    crs_sf <- sf::st_crs(terra::crs(x))
-    sref_from_raster$crs <- crs_sf
-    sref_from_raster$units <- crs_sf$units_gdal
-    sref_from_raster$crs_scale <- 1
+    crs_str <- terra::crs(x)
+    if (nzchar(crs_str)) {
+      crs_sf <- try(sf::st_crs(crs_str), silent = TRUE)
+      if (!inherits(crs_sf, "try-error")) {
+        sref_from_raster <- list(crs = crs_sf, units = crs_sf$units_gdal, crs_scale = 1)
+      }
+    }
 
   } else if (inherits(x, "list")) {
 

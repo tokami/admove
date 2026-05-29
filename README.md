@@ -1,6 +1,15 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
+# admove
+
+<!-- badges: start -->
+
+[![R-CMD-check](https://github.com/tokami/admove/actions/workflows/R-CMD-check_yaml/badge.svg)](https://github.com/tokami/admove/actions/workflows/R-CMD-check_yaml)
+[![License: GPL
+v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+<!-- badges: end -->
+
 # Overview
 
 *admove* is a new R package for tagging-based movement modelling,
@@ -29,8 +38,7 @@ tagging dataset, and fit the movement model:
 install.packages("remotes")
 
 ## install admove from local source
-remotes::install_local("admove_0.1.0.tar.gz", dependencies = TRUE, upgrade = "never")
-## After acceptance: remotes::install_github("AUTHOR/admove")
+remotes::install_github("tokami/admove")
 
 ## Load admove
 library(admove)
@@ -48,11 +56,13 @@ plot_compare(list(sim = sim, fit = fit))
 # More information
 
 More detailed examples and documentation for *admove* can be found at
-GITHUB LINK. The *pkgdown* page includes links to articles, vignettes,
-functions descriptions, information to version updates, and much more.
-In case your question is not answered by the package documentation and
-on the *pkgdown* pages, please write an email to the maintainer: AUTHOR.
-In case you find bugs, please post an issue on LINK TO GITHUB.
+<https://tokami.github.io/admove/>. The *pkgdown* page includes links to
+articles, vignettes, functions descriptions, information to version
+updates, and much more. In case your question is not answered by the
+package documentation and on the *pkgdown* pages, please write an email
+to the maintainer: [Tobias
+Mildenberger](mailto:t.k.mildenberger@gmail.com). In case you find bugs,
+please post an issue [here](https://github.com/tokami/admove/issues).
 
 ## Citation
 

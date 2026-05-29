@@ -991,3 +991,31 @@ logLik.admove <- function(object, ...) {
   }
   structure(ll, df = k, nobs = nobs, class = "logLik")
 }
+
+
+##' Description of model
+##'
+##' @description Writes a string to install the version of the package which was
+##'     used to run the model.
+##'
+##' @param fit A fitted admove list of class `admove` as returned by the
+##'     function [admove].
+##' @param ... Additional parameters to be passed to [message].
+##'
+##' @export
+model_version_info <-function(fit, ...){
+    .check_class(fit, "admove")
+
+    ret <- c(
+        '# The fit was run with a specific version of admove package.',
+        '# If in the mean time version on your system has been updated',
+        '# you can revert back to the version used by inserting this:',
+        '',
+        paste0('devtools::install_github("tokami/admove@',
+               attr(fit, "RemoteSha"),'")'),
+        '',
+        '# right before the admove package is loaded'
+    )
+
+    message(ret, ...)
+}
