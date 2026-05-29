@@ -56,7 +56,7 @@ test_that("default_conf sets sensible default variance options", {
 
   conf <- default_conf(dat, verbose = FALSE)
 
-  expect_equal(conf$obs_var_type, c(1, 0, 0))
+  expect_equal(conf$obs_var_type, c(0, 0, 0))
   expect_equal(conf$do_update, c(TRUE,TRUE,FALSE))
   expect_equal(conf$engine, 1)
   expect_equal(conf$ctmc_method, 0)

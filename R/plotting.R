@@ -644,6 +644,8 @@ plot_diffusion <- function(x,
 ##'   should be plotted. Default: `1`.
 ##' @param bg Optional background colour for the plotting device. Default:
 ##'   `NULL`.
+##' @param panel_lab Optional character string added as a panel label in the
+##'   top-left corner of the plot. Default: `NULL`.
 ##'
 ##' @return
 ##' No return value. Called for its side effect of producing a comparison plot.
@@ -657,8 +659,6 @@ plot_diffusion <- function(x,
 ##'
 ##' Simulated objects of class `admove_sim` can be included in the comparison,
 ##' allowing direct visual comparison between simulated and fitted quantities.
-##'
-##' @param plot.legend Currently not used inside the function body.
 ##'
 ##' @export
 plot_compare_one <- function(fit, ...,
@@ -690,7 +690,7 @@ plot_compare_one <- function(fit, ...,
     ylims <- range(sapply(fitlist, function(x) plot_pref_func(x, return_limits = TRUE)$ylim))
 
     plot_pref_func(fitlist[[1]],
-                    col = if (n == 1L) col else col[1],
+                    cols = if (n == 1L) col else col[1],
                     main = "",
                     auto_layout = FALSE,
                     panel_lab = panel_lab,
@@ -699,7 +699,7 @@ plot_compare_one <- function(fit, ...,
     if (n > 1) {
       for(i in 2:n){
         plot_pref_func(fitlist[[i]], add = TRUE,
-                        col = col[i], lty = lty[i],
+                        cols = col[i], lty = lty[i],
                         auto_layout = FALSE,
                         bg = bg)
       }
@@ -1274,6 +1274,8 @@ add_lab <- function(lab){
 ##'   (columns / rows) for multi-panel plot arrangements. Default is `2`.
 ##' @param leg_ncol Number of columns in the legend when seasonal curves are
 ##'   shown. Default is `1`.
+##' @param panel_lab Optional character string added as a panel label in the
+##'   top-left corner of the plot. Default is `NULL`.
 ##' @param ... Additional arguments passed to [plot()] when a new plot is
 ##'   created.
 ##'

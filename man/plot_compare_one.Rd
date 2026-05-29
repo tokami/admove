@@ -58,7 +58,11 @@ width.}
 (default), the largest circle is automatically scaled to one grid cell
 width.}
 
-\item{plot.legend}{Currently not used inside the function body.}
+\item{plot.legend}{Logical or integer indicating whether, or which, legend
+should be plotted. Default: \code{1}.}
+
+\item{panel_lab}{Optional character string added as a panel label in the
+top-left corner of the plot. Default: \code{NULL}.}
 
 \item{bg}{Optional background colour for the plotting device. Default:
 \code{NULL}.}

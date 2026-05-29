@@ -175,7 +175,7 @@ nll <- function(par, dat) {
                   dat$obs_var_type[ind_tt] == 2 ||
                   dat$obs_var_type[ind_tt] == 3) {
               if (dat$obs_var_type[ind_tt] == 3) {
-                pxy <- PP + c(tag$sdx[ind_obs_j], tags$sdy[ind_obs_j])^2
+                pxy <- PP + c(tag$sdx[ind_obs_j], tag$sdy[ind_obs_j])^2
               } else {
                 pxy <- PP + varO[1:2,ind_tt]
               }
@@ -189,8 +189,8 @@ nll <- function(par, dat) {
             w <- this_xy - pred_xy
 
             ## likelihood
-            loglik_tags[i] <- loglik_tags[i] + dnorm(w[1], 0, sqrt(F[1]), TRUE)
-            loglik_tags[i] <- loglik_tags[i] + dnorm(w[2], 0, sqrt(F[2]), TRUE)
+            loglik_tags[i] <- loglik_tags[i] + RTMB::dnorm(w[1], 0, sqrt(F[1]), TRUE)
+            loglik_tags[i] <- loglik_tags[i] + RTMB::dnorm(w[2], 0, sqrt(F[2]), TRUE)
 
             ## update
             if (isTRUE(dat$do_update[ind_tt])) {
@@ -348,10 +348,10 @@ nll <- function(par, dat) {
                 sdx <- sdO[1,ind_tt]
                 sdy <- sdO[2,ind_tt]
               }
-              px <- pnorm(xUp, mean = xObs, sd = sdx) -
-                pnorm(xLo, mean = xObs, sd = sdx)
-              py <- pnorm(yUp, mean = yObs, sd = sdy) -
-                pnorm(yLo, mean = yObs, sd = sdy)
+              px <- RTMB::pnorm(xUp, mean = xObs, sd = sdx) -
+                RTMB::pnorm(xLo, mean = xObs, sd = sdx)
+              py <- RTMB::pnorm(yUp, mean = yObs, sd = sdy) -
+                RTMB::pnorm(yLo, mean = yObs, sd = sdy)
               pxy <- px * py
               pxy <- pxy / sum(pxy)
 

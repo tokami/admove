@@ -1,4 +1,13 @@
 
+##' @importFrom grDevices adjustcolor col2rgb grey hcl.colors n2mfrow rgb terrain.colors
+##' @importFrom graphics abline arrows axis box contour identify image layout legend lines mtext par plot.new points polygon segments text
+##' @importFrom stats dist median qnorm quantile rnorm runif setNames
+##' @importFrom utils capture.output packageDescription tail
+##' @importFrom RTMB ADoverload REPORT ADREPORT
+##' @keywords internal
+"_PACKAGE"
+
+utils::globalVariables(c("get_cov", "get_sim_par", "get_sim_funcs"))
 
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x

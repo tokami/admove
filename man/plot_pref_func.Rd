@@ -54,6 +54,9 @@ automatically. Default is \code{TRUE}.}
 \item{add}{Logical; if \code{TRUE}, the preference function is added to an
 existing plot. If \code{FALSE} (default), a new plot is created.}
 
+\item{panel_lab}{Optional character string added as a panel label in the
+top-left corner of the plot. Default is \code{NULL}.}
+
 \item{xlab}{Label for the x-axis. If \code{NULL} (default), the covariate name
 from \code{dat$cov} is used for each panel; falls back to \code{"Covariate"} when no
 name is available.}

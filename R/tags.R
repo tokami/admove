@@ -1002,7 +1002,7 @@ use_release_events <- function(x, grid, time_cont,
   if (inherits(x, "admove_tags")) {
     tags <- x
   } else if (inherits(x, "admove_data")) {
-    tags <- dat$tags
+    tags <- x$tags
   } else stop("x must contain tags. Did you run check_tags()?")
 
   tags_by_type <- split(tags, tags$tag_type)
@@ -1101,6 +1101,11 @@ use_release_events <- function(x, grid, time_cont,
 ##'   Default: `FALSE`.
 ##' @param col Character vector of length 1 to 3 giving colours for tag paths,
 ##'   release positions, and recovery or final observation positions.
+##' @param pch Integer vector of length 1 to 3 giving plotting symbols for
+##'   intermediate observations, release positions, and recovery or final
+##'   observation positions. Default: `c(1, 0, 16)`.
+##' @param cex Numeric character expansion factor for plotted points.
+##'   Default: `0.8`.
 ##' @param ... Additional graphical arguments passed to [plot()].
 ##'
 ##' @return

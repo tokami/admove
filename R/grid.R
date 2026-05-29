@@ -274,7 +274,7 @@ create_grid <- function(x = NULL,
     }
 
     sref <- list()
-    sref$crs <- sf::st_crs(pf)
+    sref$crs <- sf::st_crs(p4)
     sref$units <- sref$crs$units_gdal
     sref$crs_scale <- 1
 

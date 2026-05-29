@@ -65,6 +65,13 @@ Default: \code{FALSE}.}
 \item{col}{Character vector of length 1 to 3 giving colours for tag paths,
 release positions, and recovery or final observation positions.}
 
+\item{pch}{Integer vector of length 1 to 3 giving plotting symbols for
+intermediate observations, release positions, and recovery or final
+observation positions. Default: \code{c(1, 0, 16)}.}
+
+\item{cex}{Numeric character expansion factor for plotted points.
+Default: \code{0.8}.}
+
 \item{...}{Additional graphical arguments passed to \code{\link[=plot]{plot()}}.}
 }
 \value{
