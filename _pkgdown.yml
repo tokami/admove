@@ -1,0 +1,46 @@
+url: https://tokami.github.io/admove/
+
+home:
+  title: Estimating animal movement with advection–diffusion models
+
+authors:
+  Tobias Mildenberger:
+    href: https://github.com/tokami
+  Mark Maunder:
+    href: https://www.populationassessment.com/
+  Anders Nielsen:
+    href: https://github.com/fishfollower
+
+template:
+  bootstrap: 5
+  math-rendering: mathjax
+  light-switch: yes
+  bslib:
+    primary: '#0054AD'
+    border-radius: 0.5rem
+    btn-border-radius: 0.25rem
+    danger: '#A6081A'
+
+development:
+  mode: auto
+
+navbar:
+  structure:
+    left:  [reference, articles, news]
+    right: [search, github]
+
+articles:
+- title: Getting started
+  contents:
+  - tutorial
+  - preparing-tags
+  - preparing-covariates
+  - spatial-grids
+- title: Simulation
+  contents:
+  - simulation
+
+news:
+  releases:
+  - text: Version 0.0.0.9000
+    href: https://github.com/tokami/admove/blob/main/admove/NEWS.md

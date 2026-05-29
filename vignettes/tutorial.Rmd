@@ -1,0 +1,416 @@
+---
+title: "Fine-scale movement modeling based on tagging data"
+output:
+    rmarkdown::html_vignette:
+    fig_caption: yes
+    number_sections: true
+    df_print: paged
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+vignette: >
+  %\VignetteIndexEntry{Fine-scale movement modeling based on tagging data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+bibliography: admove.bib
+---
+
+```{r ReaddataLoadLibraries, message=FALSE, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      cache = FALSE,
+                      warning = FALSE,
+                      eval = TRUE,
+                      error = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      include = TRUE,
+                      collapse = TRUE,
+                      comment = "#>",
+                      fig.show = "hold",
+                      fig.width=8, fig.height=7)
+```
+
+This tutorial illustrates the application of the *admove* package to model
+fine-scale movement based on tagging data.
+
+**Outline:**
+
+1. Prepare the data
+2. Fit the model
+3. Results
+4. Advanced settings
+5. Summary
+6. References
+
+
+The package is loaded into the R environment with:
+
+```{r, eval=TRUE, echo=TRUE}
+library(admove)
+```
+
+This introductory tutorial uses a simulated data set included in the package:
+"skjepo". It is already available after loading the package and corresponds to a
+list that includes the main simulation object (of class `admove_sim`), which
+contains all required simulated data and can be used right away to fit the
+model, as well as five individual data sets: `grid`, `cov`, `ctags`, `dtags`,
+and a fitted object `fit`.
+
+```{r, eval=TRUE, echo=TRUE}
+str(skjepo, 1)
+```
+
+These data sets illustrate the typical structure of raw input data and
+demonstrate how the functions in the *admove* package can be used to convert
+them into the format required by the model as demonstrated in the next section.
+
+# Prepare the data
+
+The `skjepo` data list contains two main tagging data sets: one with information
+on releases and recoveries of mark-recapture tags, and another with track data
+from data-storage tags. These data sets can be prepared for analysis using the
+built-in function `prep_tags()`, allowing users to specify which columns contain
+the release and recapture times and locations, and automatically convert date
+fields to the required format.
+
+A key aspect of the preparation of tagging data and the use of this
+function is the space and time reference information. The data set with the
+mark-recapture tags contains information about the date and position when
+individuals were released and recaptured:
+
+```{r}
+head(skjepo$ctags)
+```
+
+The time information might be a date of a numeric value corresponding to a date
+or just relative time passed since an origin. Similarly, position information
+might correspond to any coordinate reference system (CRS). This can either be
+specified when using the `prep_tags()` function or afterwards. We show both ways
+below.
+
+Besides the data set and specifying the tag type ("c" for mark-re*c*apture, "d"
+for *d*ata-storage, or "s" for mark-re*s*ight tags), a key argument for the
+function is a named vector that links the required time ("t"), and positions
+("x" and "y") with the column headers in the data set. Mark-recapture tags might
+be available in two data formats: in the long format, similar to the
+data-storage and mark-resight tags, with one time and two position columns, or
+in the wide format with two time columns (containing the release ("t0") and
+recapture time ("t1")) and four position columns ("x0" and "x1", and "y0" and
+"y1"). For full details on how to use a function, consult its documentation. See
+the "preparing-tags" vignette for more information on different tag formats and
+how to convert tags between them.
+
+```{r, eval=TRUE, echo=TRUE, fig.alt = "Mark-recapture and data-logging tags"}
+## Prepare mark-recapture
+ctags <- prep_tags(skjepo$ctags,
+                   tag_type = "c",
+                   names = c(t0 = "date_time", t1 = "date_caught",
+                             x0 = "rel_lon", x1 = "recap_lon",
+                             y0 = "rel_lat", y1 = "recap_lat"),
+                   date_origin = "1899-12-30",
+                   sref = list(crs = 4326),
+                   tref = list(origin = as.POSIXct("2020-01-01", "UTC"),
+                               units = "month"))
+
+## Load dtags
+dtags <- prep_tags(skjepo$dtags,
+                   tag_type = "d",
+                   names = c(t = "time", x = "mptlon", y = "mptlat"),
+                   date_origin = "1899-12-30")
+
+## Adjust the space reference information
+dtags <- add_sref(dtags, list(crs = 4326))
+
+## Adjust the time reference information
+dtags <- add_tref(dtags, list(origin = as.POSIXct("2020-01-01", "UTC"),
+                              units = "month"), shift_origin = TRUE)
+```
+
+As a next step, it is recommendable to check the space and time reference
+information. All data components and objects in *admove* that contain
+information about space and/or time include a `sref` (space reference
+information) and a `tref` (time reference information) attribute. These can be
+accessed with the `sref()` and `tref()` fuctions or investigated when printing
+the summary of the any *admove* object:
+
+```{r, eval=TRUE, echo=TRUE}
+## Summarise the tagging information
+summary(c(ctags, dtags))
+```
+
+The output provides some information about the tags and informs us that the WGS
+84 [EPSG:4326] CRS was specified for the tags. The time reference information is
+specified, here with weekly time steps and the date origin corresponding to
+January 19th, 2020. This is the default behaviour of the `prep_tags()` function,
+which does not infer space reference information by default but defines the
+origin based on the first tag release time and the time step based on the
+average life time of the tags.
+
+Usually, it makes sense to specify a coordinate reference system and revise the
+time reference information. This ensures that the space and time units and
+scales are aligned between all *admove* components (e.g. covariate fields,
+grids). We can specify time and space reference information and add them to the
+tags with the following lines:
+
+```{r, eval=TRUE, echo=TRUE}
+## Define the target time reference information
+tref_target <- create_tref(origin = as.POSIXct("2020-01-01", "UTC"),
+                           units = "month")
+
+## Define the target space reference information using Azimuthal Equidistant
+## centered at (−110, 0)
+sref_target <- create_sref(crs = "+proj=aeqd +lat_0=0 +lon_0=-110 +datum=WGS84 +units=m +no_defs",
+                             units = "km")
+
+## Adjust the reference info for the tags
+ctags <- add_sref(ctags, sref_target, transform_crs = TRUE)
+ctags <- add_tref(ctags, tref_target, shift_origin = TRUE)
+
+dtags <- add_sref(dtags, sref_target, transform_crs = TRUE)
+dtags <- add_tref(dtags, tref_target, shift_origin = TRUE)
+```
+
+Now, the tags have the required space and time reference information:
+
+```{r, eval=TRUE, echo=TRUE}
+summary(c(ctags, dtags))
+```
+
+Although the Kalman filter (KF) engine does not necessarily require a grid
+AUTHOR_PAPER, it is good practice to define a spatial grid based on the
+spatial extent of the tagging data. This grid is required by the Continuous
+time Markov-chain (CTMC) engine and is used by both engines for the spatial
+prediction of taxis, advection, diffusion and movement rates and for
+visualisation. The `create_grid` function offers flexible functionality to
+define custom grids and to manually include or exclude specific grid cells as
+needed. See more information in the `vignette("spatial-grids")`.
+
+Since manual selection of grid cells is not feasible in this automated vignette,
+we use the grid provided in the skjepo data set, but modify it to create a
+coarser resolution of 1000x1000km cells.
+
+```{r, eval=TRUE, echo=TRUE, fig.alt = "Spatial grid"}
+grid <- create_grid(skjepo$grid, cellsize = 750)
+plot(grid, plot_land = TRUE)
+```
+
+Another important component of *admove* are covariate fields that taxis,
+advection, and diffusion through habitat preference functions. The `prep_cov`
+function formats this data into the structure required by the model. The
+covariate fields can come from multiple sources and correspond to a range of
+different formats, the `vignette("preparing-covariates")` gives more information
+on the required format and how to convert data between different formats.
+
+```{r, eval=TRUE, echo=TRUE, fig.alt = "First four covariate fields"}
+## covariates
+cov <- prep_cov(skjepo$cov)
+plot_cov(cov[,,1:4], plot_land = TRUE)
+```
+
+It is not suprising if the covariate fields have different time reference
+information. Here, for example, the covariate fields have the same date origin
+as specified above (January 1st, 2020), but the time steps correspond to
+quarters:
+
+```{r, eval=TRUE, echo=TRUE, fig.alt = "First four covariate fields"}
+tref(cov)
+```
+
+This is not a problem and the next functions would inform you about this
+mismatch and provide tips on how to resolve them. Here we use one of the
+potential ways by specifying the desired time reference information and setting
+the argument `shift_tref = TRUE` in the next fuction that combines all data into
+a single object.
+
+```{r, eval=TRUE, echo=TRUE}
+## combine and check data
+dat <- setup_data(grid = grid,
+                  cov = cov,
+                  tags = c(ctags, dtags),
+                  tref = tref_target,
+                  shift_tref = TRUE)
+
+```
+
+The `default_conf` function generates a list of default configuration settings,
+including flags that control which model functionalities are activated. It is
+good practice to review this configuration list to ensure that the default
+settings align with the goals and structure of your analysis.
+
+```{r, eval=TRUE, echo=TRUE}
+## Default configurations
+conf <- default_conf(dat)
+```
+
+Similarly, the `default_par` function generates a list of default model parameters
+and their initial values. While users can adjust the initial values as needed,
+caution is required when modifying parameter dimensions. These dimensions must
+be consistent with the input data (e.g., the number of environmental fields) and
+the configuration settings (e.g., whether passive advection, taxis, or both are
+used).
+
+```{r, eval=TRUE, echo=TRUE}
+## Default parameters
+par <- default_par(dat, conf)
+```
+kappa is a scaling parameter that is not estimated but scales the spatial
+gradient of the habitat preference function to a taxis rate. It carries the
+dimensions L$^2$ L$^{-1}$ and might differ from 1 in the simulation study. To
+get comparable parameter values between the simulation and estimation, it is
+important to fix it to the value of the simulation in the estimation:
+
+```{r, eval=TRUE, echo=TRUE}
+par$logKappa <- skjepo$sim$par_sim$logKappa
+```
+
+
+With all necessary input data prepared, the model is now ready to be fitted
+using *admove*.
+
+
+# Fit the model
+
+The model is fitted using the `admove` function. Depending on the model’s
+complexity, the number of tags and the estimation engine chosen (KF or CTMC),
+this step may take up to several minutes.
+
+```{r, eval=TRUE, echo=TRUE}
+## Fitting movement model
+fit <- admove(dat, conf, par,
+              verbose = TRUE)
+```
+
+The total run time for model construction, fitting, uncertainty estimation and
+prediction was here (in minutes):
+
+```{r, eval=TRUE, echo=TRUE}
+sum(fit$times)
+```
+
+In addition to the input data lists, the returned object also includes the `obj`
+(from RTMB) and `opt` (from the minimiser). Both contain the estimated parameter
+values and other details relevant to the model fitting.
+
+```{r, eval=TRUE, echo=TRUE}
+fit$opt$par
+```
+
+# Results
+The summary function can be used to get an overview of the model fit and
+estimated parameters:
+
+```{r, eval=TRUE, echo=TRUE}
+summary(fit)
+```
+
+*admove* provides several functions for visualising model results. All plotting
+functions start with `plot_.`, e.g. `plot_taxisis()` to plot the estimated taxis
+as arrows on a map. To get a quick overview over the main results, we can use:
+
+```{r, eval=TRUE, echo=TRUE, fig.alt = "Plot of results"}
+plot(fit)
+```
+
+In this example, since the data are simulated and the true parameters are known,
+we can use the `plot_compare` function to visualise both the estimated and
+true habitat preferences and movement patterns.
+
+```{r, eval=TRUE, echo=TRUE, fig.alt = "Simulated data and model predictions"}
+plot_compare(sim = skjepo$sim,
+             fit = fit,
+             plot_land = TRUE)
+```
+
+
+# Advanced settings
+There are several advanced settings in *admove* that will be covered in future
+vignettes. However, this vignette highlights three important ones: (i) grouping
+tags into release events to speed up model fitting, (ii) using CTMC engine as an
+alternative to the KF engine, and (iii) map parameters to fix or exclude
+them during estimation.
+
+It is common for multiple tags to be released at the same location and time, in
+particular for mark-recapture tags. Grouping these tags into release events can
+significantly speed up the movement modeling, as the analysis is performed per
+event rather than per individual tag. The potential loss in accuracy is likely
+minimal and can be evaluated through sensitivity analyses, while the grouped
+approach is recommended for the baseline scenario due to its efficiency. The
+`use_release_event` function enables this grouping by assigning tags to release
+events based on a specified spatial grid and time vector.
+
+```{r}
+tags <- use_release_events(c(ctags, dtags),
+                           grid = create_grid(xrange = dat$xrange,
+                                              yrange = dat$yrange,
+                                              cellsize = 100),
+                           time_cont = seq(dat$trange[1],
+                                           dat$trange[2],
+                                           1/4))
+```
+
+The release time and position of the mark-recapture tags has now been
+overwritten to the values of the release events and the individual tags have
+been combined to the individual release events:
+
+```{r}
+ctags <- get_ctags(tags)
+
+str(split(ctags, ctags$id),1)
+```
+
+While the function could also identify release events for data-storage and
+mark-resight tags using the argument `tag_types = c("d","s","c")`, this might
+lead to unintended consequences when using the KF engine which includes an
+update step.
+
+By default, *admove* uses the Kalman filter approach as described in
+AUTHOR_PAPER. However, it also supports an alternative method based on
+the matrix exponential. You can easily switch between the two by setting the
+`engine` argument in the configuration list. To use the matrix exponential
+approach, simply set `engine = 2`.
+
+```{r, eval=FALSE, echo=TRUE}
+conf <- default_conf(dat)
+conf$engine <- 2
+```
+
+Lastly, it may be useful to map parameters, for example, to estimate a single
+value for both directions of passive advection. A list of default map
+settings can be generated using the `default_map` function. The resulting
+map can then be passed to `admove` to control which parameters are estimated,
+fixed, or shared.
+
+```{r, eval=FALSE, echo=TRUE}
+map <- default_map(dat, conf, par)
+```
+
+## Summary
+This vignette introduced the main features and workflow of the *admove* package for
+estimating animal movement and habitat preferences from tagging data. Using a
+simulated data set (`skjepo`), we demonstrated how to prepare the required inputs,
+configure and fit the model, and visualise the results.
+
+We covered the preparation of mark-recapture and data-storage tags
+(`prep_tags()`), covariate fields (`prep_cov()`), and spatial grids
+(`create_grid()`). These were then combined using `setup_data()` into a format
+suitable for model fitting. Configuration and parameter initialisation were
+handled through `default_conf()` and `default_par()`, with model fitting
+performed using `admove()`. The `plot_fit()` and `plot_compare()` functions
+allowed us to visualise results and compare estimated versus true movement and
+habitat preference patterns.
+
+Several advanced options were introduced, including grouping tags into release
+events (`get_release_event()`), switching between the two currently implemented
+engines for inferences: KF and CTMC engines (`engine` argument), and map
+parameters (`default_map()`) to simplify or constrain estimation.
+
+This basic example provides a foundation for applying *admove* to real tagging
+data. More details about the methodology are described in AUTHOR_PAPER
+and in the other vignettes (get an overview with `browseVignettes("admove")`).
+Further details about functions and their arguments can be found in the help
+files of the functions (`help()` or `?`, where the dots refer to any
+function of the package).
+
+
+# References

@@ -1,0 +1,43 @@
+Package: admove
+Type: Package
+Title: Estimating animal movement with advection–diffusion models
+Version: 0.1.0
+Date: 2026-05-24
+Authors@R:
+    person(given = "Anonymous",
+           family = "Author",
+           email = "anonymous@example.org",
+           role = c("aut", "cre"))
+Maintainer: Anonymous Author <anonymous@example.org>
+Description: A movement model that allows estimation of habitat preferences and
+    fine-scale movement rates based on advection-diffusion models using various
+    types of tagging data. It supports flexible spatiotemporal modeling with
+    options for Kalman filter or matrix exponential approaches, and includes
+    tools for data preparation, model fitting, and visualisation.
+License: GPL (>= 3)
+Depends:
+    R (>= 4.0),
+    RTMB (>= 1.0)
+Imports:
+    Matrix,
+    mvtnorm,
+    abind
+Roxygen: list(markdown = TRUE)
+VignetteBuilder: knitr, rmarkdown
+Suggests:
+    knitr,
+    rmarkdown,
+    sf,
+    terra,
+    rnaturalearth,
+    raster,
+    geosphere,
+    lubridate,
+    ncdf4,
+    withr,
+    testthat (>= 3.0.0)
+NeedsCompilation: yes
+Encoding: UTF-8
+Config/testthat/edition: 3
+LazyData: true
+Config/roxygen2/version: 8.0.0

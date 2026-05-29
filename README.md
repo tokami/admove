@@ -1,0 +1,72 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+# Overview
+
+*admove* is a new R package for tagging-based movement modelling,
+developed to estimate fine-scale animal movement patterns from a range
+of tagging data, including mark-recapture, mark-resight, and
+data-logging (archival) tags. The underlying movement model is based on
+the advection-diffusion equation and can incorporate habitat preference
+functions, allowing the reconstruction of individual movement paths as
+well as inference on population-level movement dynamics from a
+relatively small set of interpretable parameters. Movement rates can be
+modelled as a function of environmental conditions or geographic
+location.
+
+The current version of the package supports estimation of habitat
+preference functions and movement patterns. Future development will
+extend this framework to include spatiotemporally varying recapture
+probability, natural and fishing mortality, as well as relative biomass
+indices and spatial distributions.
+
+To get started with *admove*, install and load the package, simulate a
+tagging dataset, and fit the movement model:
+
+``` r
+
+## install required packages
+install.packages("remotes")
+
+## install admove from local source
+remotes::install_local("admove_0.1.0.tar.gz", dependencies = TRUE, upgrade = "never")
+## After acceptance: remotes::install_github("AUTHOR/admove")
+
+## Load admove
+library(admove)
+
+## Simulate a small tagging data set
+sim <- sim_data()
+
+## Fit admove to the simulated data
+fit <- admove(sim)
+
+## Plot simulated data and model predictions
+plot_compare(list(sim = sim, fit = fit))
+```
+
+# More information
+
+More detailed examples and documentation for *admove* can be found at
+GITHUB LINK. The *pkgdown* page includes links to articles, vignettes,
+functions descriptions, information to version updates, and much more.
+In case your question is not answered by the package documentation and
+on the *pkgdown* pages, please write an email to the maintainer: AUTHOR.
+In case you find bugs, please post an issue on LINK TO GITHUB.
+
+## Citation
+
+Please use the R command `citation("admove")` to receive information on
+how to cite this package.
+
+## Funding
+
+The development of *admove* was cofunded by the European Union.
+
+------------------------------------------------------------------------
+
+<figure>
+<img src="man/figures/EN_Co-fundedbytheEU_RGB_POS.png" width="250"
+alt="Co-funded by the EU logo" />
+<figcaption aria-hidden="true">Co-funded by the EU logo</figcaption>
+</figure>
