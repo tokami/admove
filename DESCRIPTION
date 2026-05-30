@@ -28,7 +28,8 @@ Depends:
 Imports:
     Matrix,
     mvtnorm,
-    abind
+    abind,
+    lubridate
 Suggests:
     knitr,
     rmarkdown,
@@ -37,7 +38,6 @@ Suggests:
     rnaturalearth,
     raster,
     geosphere,
-    lubridate,
     ncdf4,
     withr,
     testthat (>= 3.0.0)

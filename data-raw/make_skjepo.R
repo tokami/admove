@@ -1,7 +1,6 @@
 ## make skjepo-inspired data set
 
 library(admove)
-library(lubridate)
 library(sf)
 library(rnaturalearth)
 
@@ -194,7 +193,9 @@ ctags[,c("x","y")] <- st_coordinates(ll)
 ## create numeric dates to demo prep_tags functionality
 start_date <- origin(tref_model)
 m <- floor(ctags$t)
-date.t <- as.Date(start_date) %m+% months(m) + ddays((ctags$t - m) * 30.4375)
+lt <- as.POSIXlt(rep(as.Date(start_date), length(m)), tz = "UTC")
+lt$mon <- lt$mon + as.integer(m)
+date.t <- as.POSIXct(lt) + (ctags$t - m) * 30.4375 * 86400
 ctags$t <- as.numeric(date.t - as.POSIXct("1899-12-30", tz = "UTC"))
 
 ## wide format
@@ -253,7 +254,9 @@ skjepo_dtags <- lapply(dtags2, function(x){
   ll <- st_transform(pts, 4326)
   x[,c("x","y")] <- st_coordinates(ll)
   m <- floor(x$t)
-  date.t <- as.Date(start_date) %m+% months(m) + ddays((x$t - m) * 30.4375)
+  lt <- as.POSIXlt(rep(as.Date(start_date), length(m)), tz = "UTC")
+  lt$mon <- lt$mon + as.integer(m)
+  date.t <- as.POSIXct(lt) + (x$t - m) * 30.4375 * 86400
   x$t <- as.numeric(date.t - as.POSIXct("1899-12-30", tz = "UTC"))
   x$varlon <- c(0, rbeta(nrow(x)-2, 3, 100), 0)
   x$varlat <- c(0, rbeta(nrow(x)-2, 2, 10), 0)

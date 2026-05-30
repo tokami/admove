@@ -4,6 +4,7 @@
 ##' @importFrom stats dist median qnorm quantile rnorm runif setNames
 ##' @importFrom utils capture.output packageDescription tail
 ##' @importFrom RTMB ADoverload REPORT ADREPORT
+##' @importFrom lubridate interval time_length floor_date
 ##' @keywords internal
 "_PACKAGE"
 
