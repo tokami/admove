@@ -5,7 +5,7 @@
 
 <!-- badges: start -->
 
-[![R-CMD-check](https://github.com/tokami/admove/actions/workflows/R-CMD-check_yaml/badge.svg)](https://github.com/tokami/admove/actions/workflows/R-CMD-check_yaml)
+[![R-CMD-check](https://github.com/tokami/admove/actions/workflows/R-CMD-check.yml/badge.svg)](https://github.com/tokami/admove/actions/workflows/R-CMD-check.yml)
 [![License: GPL
 v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 <!-- badges: end -->
