@@ -1,0 +1,399 @@
+# admove
+
+# Overview
+
+*admove* is a new R package for tagging-based movement modelling,
+developed to estimate fine-scale animal movement patterns from a range
+of tagging data, including mark-recapture, mark-resight, and
+data-logging (archival) tags. The underlying movement model is based on
+the advection-diffusion equation and can incorporate habitat preference
+functions, allowing the reconstruction of individual movement paths as
+well as inference on population-level movement dynamics from a
+relatively small set of interpretable parameters. Movement rates can be
+modelled as a function of environmental conditions or geographic
+location.
+
+The current version of the package supports estimation of habitat
+preference functions and movement patterns. Future development will
+extend this framework to include spatiotemporally varying recapture
+probability, natural and fishing mortality, as well as relative biomass
+indices and spatial distributions.
+
+To get started with *admove*, install and load the package, simulate a
+tagging dataset, and fit the movement model:
+
+``` r
+
+## install required packages
+install.packages("remotes")
+
+## install admove from local source
+remotes::install_github("tokami/admove")
+
+## Load admove
+library(admove)
+
+## Simulate a small tagging data set
+sim <- sim_data()
+
+## Fit admove to the simulated data
+fit <- admove(sim)
+
+## Plot simulated data and model predictions
+plot_compare(list(sim = sim, fit = fit))
+```
+
+# More information
+
+More detailed examples and documentation for *admove* can be found at
+<https://tokami.github.io/admove/>. The *pkgdown* page includes links to
+articles, vignettes, functions descriptions, information to version
+updates, and much more. In case your question is not answered by the
+package documentation and on the *pkgdown* pages, please write an email
+to the maintainer: [Tobias
+Mildenberger](mailto:t.k.mildenberger@gmail.com). In case you find bugs,
+please post an issue [here](https://github.com/tokami/admove/issues).
+
+## Citation
+
+Please use the R command `citation("admove")` to receive information on
+how to cite this package.
+
+## Funding
+
+The development of *admove* was cofunded by the European Union.
+
+------------------------------------------------------------------------
+
+![Co-funded by the EU
+logo](reference/figures/EN_Co-fundedbytheEU_RGB_POS.png)
+
+Co-funded by the EU logo
+
+# Package index
+
+## All functions
+
+- [`add_buffer()`](https://tokami.github.io/admove/reference/add_buffer.md)
+  : Add a one-cell buffer around an admove grid
+
+- [`add_lab()`](https://tokami.github.io/admove/reference/add_lab.md) :
+  Add a label to a plot
+
+- [`add_predictions()`](https://tokami.github.io/admove/reference/add_predictions.md)
+  : Add model predictions to a fitted admove model
+
+- [`add_report()`](https://tokami.github.io/admove/reference/add_report.md)
+  : Add reported RTMB quantities to a fitted admove model
+
+- [`add_sdreport()`](https://tokami.github.io/admove/reference/add_sdreport.md)
+  : Add an RTMB sdreport to a fitted admove model
+
+- [`add_sref()`](https://tokami.github.io/admove/reference/add_sref.md)
+  : Add or harmonise a spatial reference on an object
+
+- [`add_tag_dist()`](https://tokami.github.io/admove/reference/add_tag_dist.md)
+  : Compute predicted location distributions for a single tag
+
+- [`add_tref()`](https://tokami.github.io/admove/reference/add_tref.md)
+  : Add or harmonize a time reference on an object
+
+- [`st_crs.admove_grid()`](https://tokami.github.io/admove/reference/admove-st_crs.md)
+  [`st_crs.admove_cov()`](https://tokami.github.io/admove/reference/admove-st_crs.md)
+  [`st_crs.admove_tags()`](https://tokami.github.io/admove/reference/admove-st_crs.md)
+  : sf-compatible CRS accessor for admove objects
+
+- [`admove()`](https://tokami.github.io/admove/reference/admove.md) :
+  Fit an admove movement model
+
+- [`bbox_grid()`](https://tokami.github.io/admove/reference/bbox_grid.md)
+  : Return the bounding box of an admove grid
+
+- [`check_conf()`](https://tokami.github.io/admove/reference/check_conf.md)
+  : Check and complete a model configuration list
+
+- [`check_cov()`](https://tokami.github.io/admove/reference/check_cov.md)
+  : Check and standardise covariate data
+
+- [`check_grid()`](https://tokami.github.io/admove/reference/check_grid.md)
+  : Check or coerce an admove grid
+
+- [`check_par()`](https://tokami.github.io/admove/reference/check_par.md)
+  : Check parameter dimensions for admove
+
+- [`check_tags()`](https://tokami.github.io/admove/reference/check_tags.md)
+  : Check and standardise a tag object
+
+- [`combine_tags()`](https://tokami.github.io/admove/reference/combine_tags.md)
+  [`c(`*`<admove_tags>`*`)`](https://tokami.github.io/admove/reference/combine_tags.md)
+  :
+
+  Combine `admove_tags` objects
+
+- [`create_grid()`](https://tokami.github.io/admove/reference/create_grid.md)
+  : Create or modify a spatial grid for admove
+
+- [`create_sref()`](https://tokami.github.io/admove/reference/create_sref.md)
+  : Spatial reference for admove objects
+
+- [`create_tref()`](https://tokami.github.io/admove/reference/create_tref.md)
+  : Time reference for admove objects
+
+- [`` `crs<-`() ``](https://tokami.github.io/admove/reference/crs-set.md)
+  : Set coordinate reference system (CRS)
+
+- [`crs()`](https://tokami.github.io/admove/reference/crs.md) : Get
+  coordinate reference system (CRS)
+
+- [`` `crs_scale<-`() ``](https://tokami.github.io/admove/reference/crs_scale-set.md)
+  : Set CRS scale
+
+- [`crs_scale()`](https://tokami.github.io/admove/reference/crs_scale.md)
+  : Get CRS scale
+
+- [`date_2_time()`](https://tokami.github.io/admove/reference/date_2_time.md)
+  : Convert dates to numeric time since an origin
+
+- [`default_conf()`](https://tokami.github.io/admove/reference/default_conf.md)
+  : Default model configuration for admove
+
+- [`default_map()`](https://tokami.github.io/admove/reference/default_map.md)
+  : Default parameter map
+
+- [`default_par()`](https://tokami.github.io/admove/reference/default_par.md)
+  : Default initial parameter values for admove
+
+- [`default_sim_funcs()`](https://tokami.github.io/admove/reference/default_sim_funcs.md)
+  : Default simulation functions for admove
+
+- [`default_sim_par()`](https://tokami.github.io/admove/reference/default_sim_par.md)
+  : Default parameter values for simulation
+
+- [`dim(`*`<admove_grid>`*`)`](https://tokami.github.io/admove/reference/dim.admove_grid.md)
+  : Return dimensions
+
+- [`.guess_crs_scale()`](https://tokami.github.io/admove/reference/dot-guess_crs_scale.md)
+  : Guess a coordinate scaling factor from a spatial reference (sref)
+
+- [`.sim_one_tag()`](https://tokami.github.io/admove/reference/dot-sim_one_tag.md)
+  : Simulate a single tag track
+
+- [`get_ctags()`](https://tokami.github.io/admove/reference/get_ctags.md)
+  : Extract mark-recapture tags
+
+- [`get_dim_tags()`](https://tokami.github.io/admove/reference/get_dim_tags.md)
+  : Get spatial and temporal ranges from tagging data
+
+- [`get_dtags()`](https://tokami.github.io/admove/reference/get_dtags.md)
+  : Extract data-storage tags
+
+- [`get_neighbours()`](https://tokami.github.io/admove/reference/get_neighbours.md)
+  : Get neighbouring cells of an admove grid
+
+- [`get_stags()`](https://tokami.github.io/admove/reference/get_stags.md)
+  : Extract mark-resight tags
+
+- [`logLik(`*`<admove>`*`)`](https://tokami.github.io/admove/reference/logLik.admove.md)
+  : Log-likelihood of a fitted admove model
+
+- [`make_x_y_cov()`](https://tokami.github.io/admove/reference/make_x_y_cov.md)
+  : Create x- and y-coordinate covariate fields
+
+- [`model_version_info()`](https://tokami.github.io/admove/reference/model_version_info.md)
+  : Description of model
+
+- [`montagus_harrier`](https://tokami.github.io/admove/reference/montagus_harrier.md)
+  : Montagu's harrier
+
+- [`nll()`](https://tokami.github.io/admove/reference/nll.md) : Negative
+  log-likelihood for the admove model
+
+- [`` `origin<-`() ``](https://tokami.github.io/admove/reference/origin-set.md)
+  : Set temporal origin
+
+- [`origin()`](https://tokami.github.io/admove/reference/origin.md) :
+  Get temporal origin
+
+- [`` `period<-`() ``](https://tokami.github.io/admove/reference/period-set.md)
+  : Set temporal period
+
+- [`period()`](https://tokami.github.io/admove/reference/period.md) :
+  Get temporal period
+
+- [`plot_compare()`](https://tokami.github.io/admove/reference/plot_compare.md)
+  : Compare fitted and simulated admove objects
+
+- [`plot_compare_one()`](https://tokami.github.io/admove/reference/plot_compare_one.md)
+  : Compare a single quantity across fitted or simulated admove objects
+
+- [`plot_cov()`](https://tokami.github.io/admove/reference/plot_cov.md)
+  [`plot(`*`<admove_cov>`*`)`](https://tokami.github.io/admove/reference/plot_cov.md)
+  : Plot covariate fields
+
+- [`plot_data()`](https://tokami.github.io/admove/reference/plot_data.md)
+  [`plot(`*`<admove_data>`*`)`](https://tokami.github.io/admove/reference/plot_data.md)
+  :
+
+  Plot components of an `admove_data` object
+
+- [`plot_diffusion()`](https://tokami.github.io/admove/reference/plot_diffusion.md)
+  : Plot diffusion on a spatial grid
+
+- [`plot_fit()`](https://tokami.github.io/admove/reference/plot_fit.md)
+  [`plot(`*`<admove>`*`)`](https://tokami.github.io/admove/reference/plot_fit.md)
+  :
+
+  Summary plots for a fitted `admove` object
+
+- [`plot_grid()`](https://tokami.github.io/admove/reference/plot_grid.md)
+  [`plot(`*`<admove_grid>`*`)`](https://tokami.github.io/admove/reference/plot_grid.md)
+  : Plot an admove grid
+
+- [`plot_land()`](https://tokami.github.io/admove/reference/plot_land.md)
+  : Plot land masses in the current plotting region
+
+- [`plot_pref_func()`](https://tokami.github.io/admove/reference/plot_pref_func.md)
+  : Plot habitat preference functions
+
+- [`plot_pref_grid()`](https://tokami.github.io/admove/reference/plot_pref_grid.md)
+  : Plot spatial habitat preference surfaces
+
+- [`plot_sim()`](https://tokami.github.io/admove/reference/plot_sim.md)
+  [`plot(`*`<admove_sim>`*`)`](https://tokami.github.io/admove/reference/plot_sim.md)
+  : Plot a summary of simulated admove data
+
+- [`plot_tag_dist()`](https://tokami.github.io/admove/reference/plot_tag_dist.md)
+  : Plot predicted location distributions for a single tag
+
+- [`plot_tags()`](https://tokami.github.io/admove/reference/plot_tags.md)
+  [`plot(`*`<admove_tags>`*`)`](https://tokami.github.io/admove/reference/plot_tags.md)
+  : Plot tagging data
+
+- [`plot_taxis()`](https://tokami.github.io/admove/reference/plot_taxis.md)
+  : Plot taxis on a spatial grid
+
+- [`prep_cov()`](https://tokami.github.io/admove/reference/prep_cov.md)
+  : Prepare covariate fields for admove
+
+- [`prep_tags()`](https://tokami.github.io/admove/reference/prep_tags.md)
+  [`prep_dtags()`](https://tokami.github.io/admove/reference/prep_tags.md)
+  [`prep_stags()`](https://tokami.github.io/admove/reference/prep_tags.md)
+  [`prep_ctags()`](https://tokami.github.io/admove/reference/prep_tags.md)
+  : Prepare tagging data for admove
+
+- [`print(`*`<admove_cov>`*`)`](https://tokami.github.io/admove/reference/print-admove.md)
+  [`print(`*`<admove_data>`*`)`](https://tokami.github.io/admove/reference/print-admove.md)
+  [`print(`*`<admove>`*`)`](https://tokami.github.io/admove/reference/print-admove.md)
+  [`print(`*`<admove_grid>`*`)`](https://tokami.github.io/admove/reference/print-admove.md)
+  [`print(`*`<admove_tags>`*`)`](https://tokami.github.io/admove/reference/print-admove.md)
+  : Print admove objects
+
+- [`scale_sref()`](https://tokami.github.io/admove/reference/scale_sref.md)
+  : Change coordinate units by scaling an admove object
+
+- [`scale_tref()`](https://tokami.github.io/admove/reference/scale_tref.md)
+  : Change time units by scaling an admove object
+
+- [`setup_data()`](https://tokami.github.io/admove/reference/setup_data.md)
+  : Set up input data for an admove model
+
+- [`shift_tref()`](https://tokami.github.io/admove/reference/shift_tref.md)
+  : Shift the origin of a time reference while preserving represented
+  dates
+
+- [`sim_cov()`](https://tokami.github.io/admove/reference/sim_cov.md) :
+  Simulate covariate fields
+
+- [`sim_data()`](https://tokami.github.io/admove/reference/sim_data.md)
+  : Simulate a complete admove data set
+
+- [`sim_release_events()`](https://tokami.github.io/admove/reference/sim_release_events.md)
+  : Simulate release events
+
+- [`sim_tags()`](https://tokami.github.io/admove/reference/sim_tags.md)
+  : Simulate tagging data
+
+- [`skjepo`](https://tokami.github.io/admove/reference/skjepo.md) :
+  Skipjack tuna in the Eastern Pacific Ocean
+
+- [`` `sref<-`() ``](https://tokami.github.io/admove/reference/sref-set.md)
+  : Set spatial reference on an object
+
+- [`sref()`](https://tokami.github.io/admove/reference/sref.md) : Get
+  spatial reference from an object
+
+- [`` `[`( ``*`<admove_cov>`*`)`](https://tokami.github.io/admove/reference/subset-admove_cov.md)
+  :
+
+  Subset an `admove_cov` object
+
+- [`summarise_cov()`](https://tokami.github.io/admove/reference/summarise_cov.md)
+  [`summary(`*`<admove_cov>`*`)`](https://tokami.github.io/admove/reference/summarise_cov.md)
+  : Summarise covariate fields
+
+- [`summarise_data()`](https://tokami.github.io/admove/reference/summarise_data.md)
+  [`summary(`*`<admove_data>`*`)`](https://tokami.github.io/admove/reference/summarise_data.md)
+  : Summarise admove data
+
+- [`summarise_fit()`](https://tokami.github.io/admove/reference/summarise_fit.md)
+  [`summary(`*`<admove>`*`)`](https://tokami.github.io/admove/reference/summarise_fit.md)
+  : Summarise a fitted admove model
+
+- [`summarise_grid()`](https://tokami.github.io/admove/reference/summarise_grid.md)
+  [`summary(`*`<admove_grid>`*`)`](https://tokami.github.io/admove/reference/summarise_grid.md)
+  : Summarise an admove grid
+
+- [`summarise_tags()`](https://tokami.github.io/admove/reference/summarise_tags.md)
+  [`summary(`*`<admove_tags>`*`)`](https://tokami.github.io/admove/reference/summarise_tags.md)
+  : Summarise tagging data
+
+- [`transform_sref()`](https://tokami.github.io/admove/reference/transform_sref.md)
+  : Transform stored coordinates to a new CRS while preserving locations
+
+- [`` `tref<-`() ``](https://tokami.github.io/admove/reference/tref-set.md)
+  : Set time reference on an object
+
+- [`tref()`](https://tokami.github.io/admove/reference/tref.md) : Get
+  time reference from an object
+
+- [`tref_equal()`](https://tokami.github.io/admove/reference/tref_equal.md)
+  : Compare two time references for equality
+
+- [`` `units_space<-`() ``](https://tokami.github.io/admove/reference/units_space-set.md)
+  : Set spatial units
+
+- [`units_space()`](https://tokami.github.io/admove/reference/units_space.md)
+  : Get spatial units
+
+- [`` `units_time<-`() ``](https://tokami.github.io/admove/reference/units_time-set.md)
+  : Set temporal units
+
+- [`units_time()`](https://tokami.github.io/admove/reference/units_time.md)
+  : Get temporal units
+
+- [`use_release_events()`](https://tokami.github.io/admove/reference/use_release_events.md)
+  : Group tags by release events
+
+- [`x_centers()`](https://tokami.github.io/admove/reference/x_centers.md)
+  : Get x-coordinates of grid-cell centres
+
+- [`y_centers()`](https://tokami.github.io/admove/reference/y_centers.md)
+  : Get y-coordinates of grid-cell centres
+
+# Articles
+
+### Getting started
+
+- [Fine-scale movement modeling based on tagging
+  data](https://tokami.github.io/admove/articles/tutorial.md):
+- [Preparing tagging data for
+  admove](https://tokami.github.io/admove/articles/preparing-tags.md):
+- [Preparing covariates for
+  admove](https://tokami.github.io/admove/articles/preparing-covariates.md):
+- [Spatial grids for
+  admove](https://tokami.github.io/admove/articles/spatial-grids.md):
+
+### Simulation
+
+- [Simulating tagging
+  data](https://tokami.github.io/admove/articles/simulation.md):
