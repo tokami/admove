@@ -1380,10 +1380,11 @@ plot_pref_func <- function(x,
       preflow <- pref - qnorm(ci + (1 - ci)/2) * prefsd
       prefup <- pref + qnorm(ci + (1 - ci)/2) * prefsd
     } else {
+      fit_rep <- if (!is.null(x$rep)) x$rep else x$obj$report()
       if (type == "taxis") {
-        pref <- x$rep[["pref_taxis_pred"]]
+        pref <- fit_rep[["pref_taxis_pred"]]
       } else {
-        pref <- x$rep[["pref_dif_pred"]]
+        pref <- fit_rep[["pref_dif_pred"]]
       }
       prefsd <- preflow <- prefup <- rep(NA, length(pref))
     }
@@ -1725,10 +1726,11 @@ plot_pref_grid <- function(x,
       preflow <- pref - qnorm(ci + (1 - ci)/2) * prefsd
       prefup <- pref + qnorm(ci + (1 - ci)/2) * prefsd
     } else {
+      fit_rep <- if (!is.null(x$rep)) x$rep else x$obj$report()
       if(type == "taxis"){
-        pref <- x$rep[["pref_taxis_pred"]]
+        pref <- fit_rep[["pref_taxis_pred"]]
       }else if(type == "diffusion"){
-        pref <- x$rep[["pref_dif_pred"]]
+        pref <- fit_rep[["pref_dif_pred"]]
       }
       prefsd <- preflow <- prefup <- pref
     }
