@@ -1320,10 +1320,12 @@ plot_pref_func <- function(x,
   main0 <- main
   ylim0 <- ylim
 
-  if(auto_layout && !return_limits){
-    opar <- par(no.readonly = TRUE)
-    on.exit(par(opar))
-    par(mfrow = c(1,1))
+  if (inherits(x, "admove") || inherits(x, "admove_sim")) {
+    if(auto_layout && !return_limits){
+      opar <- par(no.readonly = TRUE)
+      on.exit(par(opar))
+      par(mfrow = c(1,1))
+    }
   }
 
   if (inherits(x, "admove")) {
@@ -1523,12 +1525,12 @@ plot_pref_func <- function(x,
 
     cov_pred <- dat$pred$cov
 
-    if(is.null(xlim)) xlim <- apply(dat$pred$cov, 2, range)
+    if (is.null(xlim)) xlim <- apply(dat$pred$cov, 2, range)
 
-    if(type == "taxis"){
+    if (type == "taxis") {
       knots <- dat$knots_tax[,i]
       par <- par$alpha[,i,]
-    }else if(type == "diffusion"){
+    } else if(type == "diffusion") {
       knots <- dat$knots_dif[,i]
       par <- par$beta[,i]
     }
@@ -1570,7 +1572,7 @@ plot_pref_func <- function(x,
            ## col = col,
            pch = 16, cex = 1.5)
     if(!add) box(lwd = 1.5)
-  }
+  } else message("This function is only implemented for objects of class 'admove' or 'admove_sim'. Did you provide the correct object? Consider running 'sim_admove()' or 'admove()'.")
 }
 
 
@@ -1674,10 +1676,10 @@ plot_pref_grid <- function(x,
         select.sea <- 1:dim(x$par$alpha)[3]
       }
 
-      if(!is.null(sdr)){
+      if (!is.null(sdr)) {
         ind <- which(names(sdr$value) == "pref_taxis_pred")
         par_est <- x$pl$alpha[,select_cov,select.sea, drop = FALSE]
-      }else{
+      } else {
         ind <- which(names(x$rep) == "pref_taxis_pred")
         tmp <- array(x$opt$par[names(x$opt$par) == "alpha"],
                      dim = c(nrow(x$par$alpha)-1,
@@ -1685,7 +1687,7 @@ plot_pref_grid <- function(x,
         par_est <- abind::abind(array(0,c(1,dim(tmp)[2:3])), tmp, along = 1)[,select_cov, select.sea , drop = FALSE]
       }
       knots <- x$dat$knots_tax[,select_cov]
-      if(!is.null(par)) par_true <- par$alpha[,select_cov,select.sea]
+      ## if (!is.null(par)) par_true <- par$alpha[,select_cov,select.sea]
 
 
     } else if(type == "diffusion") {
@@ -1709,7 +1711,7 @@ plot_pref_grid <- function(x,
         par_est <- tmp[,select_cov]
       }
       knots <- x$dat$knots_dif[,select_cov]
-      if(!is.null(par)) par_true <- par$beta[,select_cov]
+      ## if(!is.null(par)) par_true <- par$beta[,select_cov]
 
     } else stop("only taxis and diffusion implemented yet.")
 
@@ -1959,6 +1961,10 @@ plot_pref_grid <- function(x,
 
     ## uv.true <- t(apply(x$dat$xygrid, 1, function(xy)
     ##     funcs$tax(xy,NA)))
+
+          browser()
+
+
 
     get_true.pref <- .poly_fun(as.numeric(x$knots),
                                        as.numeric(x$par$alpha))
