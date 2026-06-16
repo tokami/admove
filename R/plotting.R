@@ -215,7 +215,7 @@ plot_taxis <- function(x,
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
-    on.exit(par(opar))
+    on.exit(suppressWarnings(graphics::par(opar)))
     if(average || length(select) == 1){
       par(mfrow = c(1,1))
     }else{
@@ -253,7 +253,7 @@ plot_taxis <- function(x,
 
       if(!add){
         if(!is.null(bg)){
-          par(bg = bg)
+          graphics::par(bg = bg)
         }
         plot(NA,
              xlim = x$dat$grid$xrange,
@@ -352,7 +352,7 @@ plot_taxis <- function(x,
 
     if(!add){
       if(!is.null(bg)){
-        par(bg = bg)
+        graphics::par(bg = bg)
       }
       plot(NA,
            xlim = grid$xrange,
@@ -465,7 +465,7 @@ plot_diffusion <- function(x,
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
-    on.exit(par(opar))
+    on.exit(suppressWarnings(graphics::par(opar)))
     par(mfrow = c(1,1))
   }
 
@@ -488,7 +488,7 @@ plot_diffusion <- function(x,
 
     if (is.null(cor)) {
       max_size <- max(sqrt(dif.est), na.rm = TRUE)
-      char_u <- par("cxy")[1]
+      char_u <- graphics::par("cxy")[1]
       cor <- if (is.finite(max_size) && max_size > 0 && is.finite(char_u) && char_u > 0)
         (x$dat$grid$cellsize[1] / char_u) / max_size else 1
     }
@@ -524,7 +524,7 @@ plot_diffusion <- function(x,
 
     if (!add) {
       if(!is.null(bg)){
-        par(bg = bg)
+        graphics::par(bg = bg)
       }
       plot(NA,
            xlim = grid$xrange,
@@ -571,7 +571,7 @@ plot_diffusion <- function(x,
 
     if (is.null(cor)) {
       max_size <- max(sqrt(dif_avg), na.rm = TRUE)
-      char_u <- par("cxy")[1]
+      char_u <- graphics::par("cxy")[1]
       cor <- if (is.finite(max_size) && max_size > 0 && is.finite(char_u) && char_u > 0)
         (dat$grid$cellsize[1] / char_u) / max_size else 1
     }
@@ -869,7 +869,7 @@ plot_compare_one <- function(fit, ...,
     }
 
     if(!is.null(bg)){
-      par(bg = bg)
+      graphics::par(bg = bg)
     }
     plot(seq(pars), pars,
          ty = "n",
@@ -1024,7 +1024,7 @@ plot_compare <- function(fit, ...,
   nq <- length(quantity)
 
   if(!is.null(bg)){
-    par(bg = bg)
+    graphics::par(bg = bg)
   }
 
   ref_fit <- Filter(function(x) inherits(x, c("admove", "admove_sim")), fitlist)[[1L]]
@@ -1036,7 +1036,7 @@ plot_compare <- function(fit, ...,
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
-    on.exit(par(opar))
+    on.exit(suppressWarnings(graphics::par(opar)))
     mfrow <- n2mfrow(total_panels, asp = asp)
     par(mar = c(4.5,4,1,1)+0.1, oma = c(1,1,1,1))
     if(as.integer(plot.legend) == 1){
@@ -1156,7 +1156,7 @@ plot_tag_dist <- function(x,
   mfrow <- n2mfrow(np, asp)
 
   opar <- par(no.readonly = TRUE)
-  on.exit(par(opar))
+  on.exit(suppressWarnings(graphics::par(opar)))
   par(mfrow = mfrow, mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
 
   for (j in seq_len(np)) {
@@ -1323,7 +1323,7 @@ plot_pref_func <- function(x,
   if (inherits(x, "admove") || inherits(x, "admove_sim")) {
     if(auto_layout && !return_limits){
       opar <- par(no.readonly = TRUE)
-      on.exit(par(opar))
+      on.exit(suppressWarnings(graphics::par(opar)))
       par(mfrow = c(1,1))
     }
   }
@@ -1380,7 +1380,11 @@ plot_pref_func <- function(x,
       preflow <- pref - qnorm(ci + (1 - ci)/2) * prefsd
       prefup <- pref + qnorm(ci + (1 - ci)/2) * prefsd
     } else {
-      pref <- x$rep[["pref_taxis_pred"]]
+      if (type == "taxis") {
+        pref <- x$rep[["pref_taxis_pred"]]
+      } else {
+        pref <- x$rep[["pref_dif_pred"]]
+      }
       prefsd <- preflow <- prefup <- rep(NA, length(pref))
     }
 
@@ -1431,7 +1435,7 @@ plot_pref_func <- function(x,
       if (!add) {
 
         if(!is.null(bg)){
-          par(bg = bg)
+          graphics::par(bg = bg)
         }
         plot(NA, ty = 'n',
              xlim = xlim[,i],
@@ -1555,7 +1559,7 @@ plot_pref_func <- function(x,
 
     if (!add) {
       if(!is.null(bg)){
-        par(bg = bg)
+        graphics::par(bg = bg)
       }
       plot(NA, ty = 'n',
            xlim = xlim,
@@ -1657,7 +1661,7 @@ plot_pref_grid <- function(x,
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
-    on.exit(par(opar))
+    on.exit(suppressWarnings(graphics::par(opar)))
     par(mfrow = c(1,1))
   }
 
@@ -1817,7 +1821,7 @@ plot_pref_grid <- function(x,
 
         if(!add){
           if(!is.null(bg)){
-            par(bg = bg)
+            graphics::par(bg = bg)
           }
           plot(NA,
                xlim = x$dat$grid$xrange,
@@ -1872,7 +1876,7 @@ plot_pref_grid <- function(x,
 
     if(!add){
       if(!is.null(bg)){
-        par(bg = bg)
+        graphics::par(bg = bg)
       }
       plot(NA,
            xlim = grid$xrange,
@@ -1934,7 +1938,7 @@ plot_pref_grid <- function(x,
 
     if(!add){
       if(!is.null(bg)){
-        par(bg = bg)
+        graphics::par(bg = bg)
       }
       plot(NA,
            xlim = grid$xrange,

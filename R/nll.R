@@ -393,6 +393,8 @@ nll <- function(par, dat) {
   pref_dif_pred <- habi_dif$cov2val(dat$pred$cov)
 
 
+  REPORT(pref_taxis_pred)
+  REPORT(pref_dif_pred)
   ADREPORT(pref_taxis_pred)
   ADREPORT(pref_dif_pred)
 
