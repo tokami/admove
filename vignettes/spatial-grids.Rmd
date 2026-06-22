@@ -28,7 +28,22 @@ knitr::opts_chunk$set(echo = TRUE,
                       collapse = TRUE,
                       comment = "#>",
                       fig.show = "hold",
-                      fig.width=8, fig.height=7)
+                      fig.width=8, fig.height=7,
+                      dev = "png",
+                      dev.args = list(bg = "white"))
+
+knitr::knit_hooks$set(
+  plot = function(x, options) {
+    paste0(
+      "<div style='background:white; padding:0.5rem; display:inline-block;'>",
+      knitr::hook_plot_html(x, options),
+      "</div>"
+    )
+  }
+)
+
+oldpar <- par(no.readonly = TRUE)
+par(bg = "white")
 ```
 
 This vignette provides more information about spatial grids in **admove**. In
@@ -371,6 +386,9 @@ plot(grid, plot_land = TRUE)
 ```
 
 
-# Summary
+```{r, echo=FALSE}
+par(oldpar)
+```
+
 
 # References

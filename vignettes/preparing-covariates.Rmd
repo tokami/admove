@@ -15,17 +15,30 @@ bibliography: admove.bib
 ---
 
 ```{r setup, message=FALSE, include=FALSE}
-knitr::opts_chunk$set(
-  echo = TRUE,
-  cache = FALSE,
-  warning = FALSE,
-  message = FALSE,
-  fig.show = "hold",
-  fig.width = 8,
-  fig.height = 7,
-  collapse = TRUE,
-  comment = "#>"
+knitr::opts_chunk$set(echo = TRUE,
+                      cache = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      fig.show = "hold",
+                      fig.width = 8,
+                      fig.height = 7,
+                      collapse = TRUE,
+                      comment = "#>",
+                      dev = "png",
+                      dev.args = list(bg = "white"))
+
+knitr::knit_hooks$set(
+  plot = function(x, options) {
+    paste0(
+      "<div style='background:white; padding:0.5rem; display:inline-block;'>",
+      knitr::hook_plot_html(x, options),
+      "</div>"
+    )
+  }
 )
+
+oldpar <- par(no.readonly = TRUE)
+par(bg = "white")
 ```
 
 This vignette shows how to prepare **gridded covariates** for use with
@@ -586,5 +599,11 @@ coordinate and time metadata stored as dimnames so covariate fields can be
 aligned with tagging observations. Once prepared, standard methods such as
 `summary()` and `plot()` can be used for quick inspection (e.g., `summary(cov2)`
 or `plot(cov_r)`).
+
+
+```{r, echo=FALSE}
+par(oldpar)
+```
+
 
 # References

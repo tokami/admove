@@ -28,7 +28,22 @@ knitr::opts_chunk$set(echo = TRUE,
                       collapse = TRUE,
                       comment = "#>",
                       fig.show = "hold",
-                      fig.width=8, fig.height=7)
+                      fig.width=8, fig.height=7,
+                      dev = "png",
+                      dev.args = list(bg = "white"))
+
+knitr::knit_hooks$set(
+  plot = function(x, options) {
+    paste0(
+      "<div style='background:white; padding:0.5rem; display:inline-block;'>",
+      knitr::hook_plot_html(x, options),
+      "</div>"
+    )
+  }
+)
+
+oldpar <- par(no.readonly = TRUE)
+par(bg = "white")
 ```
 
 This tutorial illustrates the application of the *admove* package to model
@@ -297,6 +312,7 @@ fit$opt$par
 ```
 
 # Results
+
 The summary function can be used to get an overview of the model fit and
 estimated parameters:
 
@@ -324,6 +340,7 @@ plot_compare(sim = skjepo$sim,
 
 
 # Advanced settings
+
 There are several advanced settings in *admove* that will be covered in future
 vignettes. However, this vignette highlights three important ones: (i) grouping
 tags into release events to speed up model fitting, (ii) using CTMC engine as an
@@ -386,6 +403,7 @@ map <- default_map(dat, conf, par)
 ```
 
 ## Summary
+
 This vignette introduced the main features and workflow of the *admove* package for
 estimating animal movement and habitat preferences from tagging data. Using a
 simulated data set (`skjepo`), we demonstrated how to prepare the required inputs,
@@ -412,5 +430,8 @@ Further details about functions and their arguments can be found in the help
 files of the functions (`help()` or `?`, where the dots refer to any
 function of the package).
 
+```{r, echo=FALSE}
+par(oldpar)
+```
 
 # References

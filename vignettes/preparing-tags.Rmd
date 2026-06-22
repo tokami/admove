@@ -15,12 +15,25 @@ bibliography: admove.bib
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment  = "#>",
-  warning  = FALSE,
-  message  = FALSE
+knitr::opts_chunk$set(collapse = TRUE,
+                      comment  = "#>",
+                      warning  = FALSE,
+                      message  = FALSE,
+                      dev = "png",
+                      dev.args = list(bg = "white"))
+
+knitr::knit_hooks$set(
+  plot = function(x, options) {
+    paste0(
+      "<div style='background:white; padding:0.5rem; display:inline-block;'>",
+      knitr::hook_plot_html(x, options),
+      "</div>"
+    )
+  }
 )
+
+oldpar <- par(no.readonly = TRUE)
+par(bg = "white")
 ```
 
 This vignette shows how to prepare tagging data in the formats expected by
@@ -617,3 +630,8 @@ use preparation functions (`prep_tags()` or similarly `prep_dtags()`,
 input formats (long, list-of-data-frames, wide, and merged release/recapture
 tables), and highlighted additional helpers for time conversion and handling
 space and time reference information.
+
+
+```{r, echo=FALSE}
+par(oldpar)
+```
