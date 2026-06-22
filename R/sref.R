@@ -614,7 +614,8 @@ sref_equal <- function(a, b, tol = 1e-12) {
 
   ## units + crs_scale
   if (!identical(a$units, b$units)) return(FALSE)
-  if (abs(a$crs_scale - b$crs_scale) > tol) return(FALSE)
+  if (!is.na(a$crs_scale) && !is.na(b$crs_scale) &&
+      abs(a$crs_scale - b$crs_scale) > tol) return(FALSE)
 
   TRUE
 }
