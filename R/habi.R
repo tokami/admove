@@ -111,7 +111,7 @@
                     seasonal = seasonal_cov[i])
       is <- t2index(t, time_spline[[i]], period = seasonal_period,
                     seasonal = seasonal_spline[i])
-      if(it > 0 && !.is_empty(s[[i]]) && !.is_empty(s[[i]][[is]])){
+      if(it > 0 && is > 0 && !.is_empty(s[[i]]) && !.is_empty(s[[i]][[is]])){
         h <- h + s[[i]][[is]](liv[[i]][[it]](xy[,1], xy[,2]))
       }
     }
@@ -125,7 +125,7 @@
                     seasonal = seasonal_cov[i])
       is <- t2index(t, time_spline[[i]], period = seasonal_period,
                     seasonal = seasonal_spline[i])
-      if(it > 0 && !.is_empty(ds[[i]]) && !.is_empty(ds[[i]][[is]])){
+      if(it > 0 && is > 0 && !.is_empty(ds[[i]]) && !.is_empty(ds[[i]][[is]])){
         dxytmp[,1] <- liv_dx[[i]][[it]](xy[,1], xy[,2])
         dxytmp[,2] <- liv_dy[[i]][[it]](xy[,1], xy[,2])
         dh <- dh + ds[[i]][[is]](liv[[i]][[it]](xy[,1], xy[,2])) * dxytmp

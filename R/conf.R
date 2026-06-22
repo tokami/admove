@@ -145,5 +145,24 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
     }
   }
 
+  conf <- .check_seasonal_lengths(conf, dat)
+
+  conf
+}
+
+.check_seasonal_lengths <- function(conf, dat) {
+  ncov <- if (!is.null(dat$cov)) length(dat$cov) else 1L
+  for (nm in c("seasonal_spline", "seasonal_cov")) {
+    v <- conf[[nm]]
+    if (is.null(v)) next
+    if (length(v) == 1L) {
+      conf[[nm]] <- rep(v, ncov)
+    } else if (length(v) != ncov) {
+      stop("'conf$", nm, "' has length ", length(v), " but there ",
+           if (ncov == 1L) "is 1 covariate" else paste0("are ", ncov, " covariates"),
+           ". Supply a single value (recycled to all covariates) or one logical value per covariate.",
+           call. = FALSE)
+    }
+  }
   conf
 }
