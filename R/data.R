@@ -167,7 +167,7 @@ setup_data <- function(grid = NULL,
     if (length(bad)) {
       if (is.null(sref_target)) {
         stop("Spatial reference mismatch for: ", paste(bad, collapse = ", "),
-             ". Provide 'sref_target' AND set transform_sref=TRUE, or fix inputs.")
+             ". Provide 'sref' AND set transform_sref=TRUE, or fix inputs.")
       } else {
         stop("Spatial reference mismatch for: ", paste(bad, collapse = ", "),
              ". Set transform_sref=TRUE, or fix inputs.")
@@ -194,6 +194,30 @@ setup_data <- function(grid = NULL,
 
     if (!is.null(tags)) tags <- add_tref(tags, master_tref, verbose, shift_tref)
     if (!is.null(cov)){
+      ## Warn when a covariate has no tref origin: add_tref will label it with
+      ## the new origin but cannot shift the stored time values, so the time
+      ## axis will remain in whatever system the raw array was in (e.g. absolute
+      ## decimal years). Use date_decimal = TRUE / date_format in prep_cov() to
+      ## give the covariate a proper origin before calling setup_data().
+      no_origin <- vapply(cov, function(z) {
+        tr <- try(tref(z), silent = TRUE)
+        if (inherits(tr, "try-error") || is.null(tr)) return(TRUE)
+        .is_na_scalar(tr$origin)
+      }, logical(1))
+      if (any(no_origin)) {
+        warning(
+          "shift_tref = TRUE but the following covariate(s) have no tref ",
+          "origin (tref$origin is NA): cov[[",
+          paste(which(no_origin), collapse = ", "),
+          "]]. The time values in these covariates cannot be shifted and will ",
+          "remain in their original time system. This will likely cause a ",
+          "time-axis mismatch with the tags, making the covariate(s) ",
+          "inaccessible during fitting (silent zero-gradient). Fix: call ",
+          "prep_cov(..., date_decimal = TRUE) or supply date_format / ",
+          "date_origin so the covariate gets a proper tref before setup_data().",
+          call. = FALSE
+        )
+      }
       cov <- lapply(cov, add_tref, tref = master_tref, verbose = verbose,
                     shift_origin = shift_tref)
       cov <- .add_class(cov, "admove_cov_list")
@@ -219,7 +243,7 @@ setup_data <- function(grid = NULL,
     if (length(bad)) {
       if (is.null(tref_target)) {
         stop("Time reference mismatch for: ", paste(bad, collapse = ", "),
-             ". Provide 'tref_target' AND set shift_tref=TRUE, or fix inputs.")
+             ". Provide 'tref' AND set shift_tref=TRUE, or fix inputs.")
       } else {
         stop("Time reference mismatch for: ", paste(bad, collapse = ", "),
              ". Set shift_tref=TRUE, or fix inputs.")
@@ -309,6 +333,35 @@ setup_data <- function(grid = NULL,
 
   ## Tags --------------------------------------------
   if (!is.null(tags)) res$tags <- check_tags(tags, res$grid)
+
+  ## Check covariate–tag time overlap -----------------
+  ## t2index() uses findInterval(..., rightmost.closed = TRUE, left.open = TRUE),
+  ## which returns 0 only when t < min(time_cov). Tags above the covariate range
+  ## always get the last valid index, and a single-slice covariate (min == max)
+  ## is accessible for any t >= that value. So we only need to warn when ALL tag
+  ## times fall strictly below the covariate's minimum time.
+  if (!is.null(res$time_cov) && !is.null(res$tags) && nrow(res$tags) > 0) {
+    tag_max <- max(res$tags$t, na.rm = TRUE)
+    for (i in seq_along(res$time_cov)) {
+      cov_min <- min(res$time_cov[[i]], na.rm = TRUE)
+      if (tag_max < cov_min) {
+        tag_min <- min(res$tags$t, na.rm = TRUE)
+        cov_max <- max(res$time_cov[[i]], na.rm = TRUE)
+        warning(
+          "All tag times are below the minimum time of covariate cov[[", i,
+          "]]: tags span [", signif(tag_min, 5), ", ", signif(tag_max, 5),
+          "], covariate spans [", signif(cov_min, 5), ", ",
+          signif(cov_max, 5), "]. ",
+          "The covariate will be inaccessible during fitting (t2index returns ",
+          "0 for all observations), resulting in a zero gradient and no ",
+          "parameter movement. Fix: ensure both use the same time system, ",
+          "e.g. call prep_cov(..., date_decimal = TRUE) and ",
+          "setup_data(..., shift_tref = TRUE).",
+          call. = FALSE
+        )
+      }
+    }
+  }
 
 
   ## Splines ------------------------------------------
