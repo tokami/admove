@@ -112,6 +112,7 @@ admove <- function(dat,
   if(is.null(map)) map <- default_map(dat, conf, par)
 
   conf$engine <- .get_engine_integer(conf$engine)
+  conf <- .check_seasonal_lengths(conf, dat)
 
   ## check and clean tags
   dat$tags <- check_tags(dat$tags, dat$grid, dat, conf, TRUE, verbose)
@@ -119,6 +120,22 @@ admove <- function(dat,
   ## period for seasonality
   dat$period <- period(dat)
 
+  ## check time_spline starts at 0 for seasonal covariates
+  if (any(conf$seasonal_spline) && !is.null(dat$time_spline)) {
+    for (i in seq_along(conf$seasonal_spline)) {
+      if (isTRUE(conf$seasonal_spline[i])) {
+        ts_i <- dat$time_spline[[i]]
+        if (!is.null(ts_i) && length(ts_i) >= 1L && ts_i[1L] != 0) {
+          stop("dat$time_spline[[", i, "]] starts at ", ts_i[1L],
+               " but must start at 0 when conf$seasonal_spline[", i, "] is TRUE. ",
+               "The seasonal spline uses time modulo the period, so the first ",
+               "breakpoint must be 0 to ensure all observations are covered. ",
+               "Example: dat$time_spline[[", i, "]] <- c(0, ", ts_i[-1L], ")",
+               call. = FALSE)
+        }
+      }
+    }
+  }
 
   ## check that mapping in line with obs_var_type
   ind_t_use <- c(conf$use_dtags, conf$use_stags, conf$use_ctags)
@@ -513,34 +530,41 @@ add_predictions <- function(fit) {
 }
 
 
-##' Compute predicted location distributions for a single tag
+##' Compute predicted location distributions for one or more tags
 ##'
 ##' @description
-##' Propagates the model's predicted spatial location distribution for one
-##' archival tag from its release to recovery time, using either the CTMC
-##' forward-pass (engine 2) or repeated Kalman-filter track simulations
-##' (engine 1). The result is stored in `fit$tag_dist` and consumed by
-##' [plot_tag_dist()]. Separating the expensive computation from rendering
+##' Propagates the model's predicted spatial location distribution for one or
+##' more archival tags from release to recovery time, using either the CTMC
+##' forward-pass (engine 2) or a Kalman-filter forward pass (engine 1). Results
+##' are stored in `fit$tag_dist` (a named list keyed by tag index) and consumed
+##' by [plot_tag_dist()]. Separating the expensive computation from rendering
 ##' means plot aesthetics can be changed without re-running the model.
 ##'
+##' Successive calls accumulate into the same list, so distributions can be
+##' added in batches without discarding earlier results.
+##'
+##' Tags recaptured within a single time step (engine 1) or with fewer than two
+##' position records are skipped with a warning rather than stopping.
+##'
 ##' @param fit A fitted object of class `admove`, as returned by [admove()].
-##' @param i Integer index of the tag to use. Default is `1`.
-##' @param dt Time step used when simulating tracks (engine 1 only). Default
-##'   is `0.5`.
+##' @param i Integer index or vector of indices of the tags to process. `NULL`
+##'   (default) processes all tags.
+##' @param dt Time step used for the Kalman-filter forward pass (engine 1 only).
+##'   Default is `0.5`.
 ##' @param engine Optional integer overriding the engine stored in
 ##'   `fit$conf$engine`. `1` = Kalman filter, `2` = CTMC.
 ##' @param xrel0,yrel0 Optional coordinates overriding the release location
-##'   for CTMC-based predictions.
+##'   for CTMC-based predictions (applied to every tag in `i`).
 ##'
 ##' @return
-##' A copy of `fit` with the additional component `$tag_dist`, a list
-##' containing the precomputed distributions and metadata required by
-##' [plot_tag_dist()].
+##' A copy of `fit` with `$tag_dist` set to a named list (one entry per
+##' successfully processed tag index) containing the precomputed distributions
+##' and metadata required by [plot_tag_dist()].
 ##'
 ##' @seealso [plot_tag_dist()]
 ##'
 ##' @export
-add_tag_dist <- function(fit, i = 1, dt = 0.5,
+add_tag_dist <- function(fit, i = NULL, dt = 0.5,
                          engine = NULL, xrel0 = NULL, yrel0 = NULL) {
 
   .check_class(fit, "admove")
@@ -554,127 +578,152 @@ add_tag_dist <- function(fit, i = 1, dt = 0.5,
     tags <- dat$tags
   }
 
-  if (i < 1L || i > length(tags))
-    stop("Tag index 'i' (", i, ") is out of range [1, ", length(tags), "].")
+  if (is.null(i)) i <- seq_along(tags)
 
-  tag <- tags[[i]]
-  ind <- which(apply(!is.na(tag[, 1:3]), 1, all))
-
-  if (length(ind) < 2L)
-    stop("Tag ", i, " has fewer than 2 non-missing (t, x, y) observations; ",
-         "only archival tags with full position records are supported.")
-
-  tag <- tag[ind, ]
-  xrel <- if (!is.null(xrel0)) xrel0 else tag[1, 2]
-  yrel <- if (!is.null(yrel0)) yrel0 else tag[1, 3]
-  trel <- tag[1, 1]
-  trec <- tag[nrow(tag), 1]
+  if (any(i < 1L | i > length(tags)))
+    stop("Tag index 'i' contains values outside [1, ", length(tags), "].")
 
   if (is.null(engine)) engine <- conf$engine
 
-  if (engine == 2L) {
-
-    tall <- dat$pred$time
-    mstar <- calc_mstar(fit)
-
-    itrel <- as.integer(cut(trel, tall, include.lowest = TRUE))
-    itrec <- as.integer(cut(trec, tall, include.lowest = TRUE))
-    tind <- sapply(tag$t, function(tt) which.min(abs(tall[itrel:itrec] - tt)))
-    nt <- max(itrec) - itrel + 1L
-
-    dist_prob <- matrix(0, nt + 1L, nrow(dat$pred$grid$xygrid))
-    icrel <- dat$pred$grid$celltable[cbind(cut(xrel, dat$pred$grid$xgr),
-                                                   cut(yrel, dat$pred$grid$ygr))]
-    dist_prob[1L, icrel] <- 1
-
-    for (k in seq_len(nt)) {
-      m <- as.matrix(Matrix::expm(
-        mstar[,, itrel + k - 1L] * diff(dat$pred$time)[k]))
-      dist_prob[k + 1L, ] <- as.vector(dist_prob[k, ] %*% m)
-    }
-
-    dens_list <- vector("list", nrow(tag))
-    for (k in seq_along(tind)) {
-      ct <- dat$pred$grid$celltable
-      ct[which(!is.na(ct))] <- dist_prob[tind[k], ]
-      dens_list[[k]] <- ct
-    }
-
-    tag_dist <- list(
-      engine = engine,
-      tag = tag,
-      i = i,
-      dens_list = dens_list,
-      xg = x_centers(dat$pred$grid),
-      yg = y_centers(dat$pred$grid),
-      xrange = dat$grid$xrange,
-      yrange = dat$grid$yrange
-    )
-
-  } else {
-
-    funcs <- default_sim_funcs(dat, conf, fit$pl)
-    dt_min <- min(dat$min_dt, median(diff(tag$t)))
-
-    out <- build_time(tag$t, mode = "fixed_dt",
-                           dt_min = dt_min, dt = dt, eps = 1)
-    ts <- out$ts
-    dts <- out$dts
-    nts <- out$nts
-    observed <- out$observed
-
-    kappa <- exp(fit$pl$logKappa)
-
-    ## Single deterministic forward pass: propagate mean (xy0) and variance
-    ## (PP) only. No random draws are needed — the stochastic xy track was
-    ## never used for anything other than evaluating taxis/diffusion at a
-    ## noisy position, which is well-approximated by evaluating at the mean.
-    traj <- matrix(NA_real_, nts, 4L)
-    colnames(traj) <- c("x0", "y0", "v1", "v2")
-    xy0 <- matrix(c(xrel, yrel), 1L, 2L)
-    P <- c(0, 0)
-    traj[1L, ] <- c(xy0[1L], xy0[2L], 0, 0)
-
-    for (t in 2:nts) {
-      dt_t <- dts[t - 1L]
-      moveT0 <- if (conf$use_taxis)     kappa * funcs$tax(xy0, ts[t - 1L]) * dt_t else c(0, 0)
-      moveA0 <- if (conf$use_advection) funcs$adv(xy0, ts[t - 1L]) * dt_t         else c(0, 0)
-      D0 <- exp(funcs$dif(xy0, ts[t - 1L]))
-
-      xy0 <- xy0 + moveT0 + moveA0
-      PP <- P + 2 * D0 * dt_t
-
-      if (t %in% observed) {
-        ind_obs <- which(observed == t) + 1L
-        for (j in seq_along(ind_obs)) {
-          F <- PP
-          P <- PP - PP / F * PP
-          obs_xy <- c(tag$x[ind_obs[j]], tag$y[ind_obs[j]])
-          xy0 <- xy0 + PP / F * (obs_xy - xy0)
-        }
-      } else {
-        P <- F <- PP
-      }
-
-      traj[t, ] <- c(xy0[, 1L], xy0[, 2L], F[1L], F[2L])
-    }
-
-    ind.track <- sapply(tag[, 1L], function(tt) which.min(abs(ts - tt)))
-    xrange <- range(traj[, 1L], tag[, 2L], na.rm = TRUE)
-    yrange <- range(traj[, 2L], tag[, 3L], na.rm = TRUE)
-
-    tag_dist <- list(
-      engine = engine,
-      tag = tag,
-      i = i,
-      traj = traj,
-      ind.track = ind.track,
-      xrange = xrange,
-      yrange = yrange
-    )
+  ## accumulate into existing list; convert old single-entry format if needed
+  tag_dist_list <- fit$tag_dist
+  if (is.null(tag_dist_list)) {
+    tag_dist_list <- list()
+  } else if (!is.null(tag_dist_list$engine)) {
+    old_i <- tag_dist_list$i
+    tag_dist_list <- setNames(list(tag_dist_list), as.character(old_i))
   }
 
-  fit$tag_dist <- tag_dist
+  skipped <- integer(0L)
+
+  for (idx in i) {
+
+    tag <- tags[[idx]]
+    ind <- which(apply(!is.na(tag[, 1:3]), 1, all))
+
+    if (length(ind) < 2L) {
+      warning("Tag ", idx, " has fewer than 2 non-missing (t, x, y) observations; skipping.",
+              call. = FALSE)
+      skipped <- c(skipped, idx)
+      next
+    }
+
+    tag <- tag[ind, ]
+    xrel <- if (!is.null(xrel0)) xrel0 else tag[1, 2]
+    yrel <- if (!is.null(yrel0)) yrel0 else tag[1, 3]
+    trel <- tag[1, 1]
+    trec <- tag[nrow(tag), 1]
+
+    if (engine == 2L) {
+
+      tall <- dat$pred$time
+      mstar <- calc_mstar(fit)
+
+      itrel <- as.integer(cut(trel, tall, include.lowest = TRUE))
+      itrec <- as.integer(cut(trec, tall, include.lowest = TRUE))
+      tind <- sapply(tag$t, function(tt) which.min(abs(tall[itrel:itrec] - tt)))
+      nt <- max(itrec) - itrel + 1L
+
+      dist_prob <- matrix(0, nt + 1L, nrow(dat$pred$grid$xygrid))
+      icrel <- dat$pred$grid$celltable[cbind(cut(xrel, dat$pred$grid$xgr),
+                                             cut(yrel, dat$pred$grid$ygr))]
+      dist_prob[1L, icrel] <- 1
+
+      for (k in seq_len(nt)) {
+        m <- as.matrix(Matrix::expm(
+          mstar[,, itrel + k - 1L] * diff(dat$pred$time)[k]))
+        dist_prob[k + 1L, ] <- as.vector(dist_prob[k, ] %*% m)
+      }
+
+      dens_list <- vector("list", nrow(tag))
+      for (k in seq_along(tind)) {
+        ct <- dat$pred$grid$celltable
+        ct[which(!is.na(ct))] <- dist_prob[tind[k], ]
+        dens_list[[k]] <- ct
+      }
+
+      tag_dist_list[[as.character(idx)]] <- list(
+        engine = engine,
+        tag = tag,
+        i = idx,
+        dens_list = dens_list,
+        xg = x_centers(dat$pred$grid),
+        yg = y_centers(dat$pred$grid),
+        xrange = dat$grid$xrange,
+        yrange = dat$grid$yrange
+      )
+
+    } else {
+
+      funcs <- default_sim_funcs(dat, conf, fit$pl)
+      dt_min <- min(dat$min_dt, median(diff(tag$t)))
+
+      out <- build_time(tag$t, mode = "fixed_dt",
+                        dt_min = dt_min, dt = dt, eps = 1)
+      ts <- out$ts
+      dts <- out$dts
+      nts <- out$nts
+      observed <- out$observed
+
+      if (nts == 1L) {
+        warning("Tag ", idx, " is recaptured within the first time step; skipping. ",
+                "Use a smaller dt or pick a different tag.", call. = FALSE)
+        skipped <- c(skipped, idx)
+        next
+      }
+
+      kappa <- exp(fit$pl$logKappa)
+
+      traj <- matrix(NA_real_, nts, 4L)
+      colnames(traj) <- c("x0", "y0", "v1", "v2")
+      xy0 <- matrix(c(xrel, yrel), 1L, 2L)
+      P <- c(0, 0)
+      traj[1L, ] <- c(xy0[1L], xy0[2L], 0, 0)
+
+      for (t in 2:nts) {
+        dt_t <- dts[t - 1L]
+        moveT0 <- if (conf$use_taxis)     kappa * funcs$tax(xy0, ts[t - 1L]) * dt_t else c(0, 0)
+        moveA0 <- if (conf$use_advection) funcs$adv(xy0, ts[t - 1L]) * dt_t         else c(0, 0)
+        D0 <- exp(funcs$dif(xy0, ts[t - 1L]))
+
+        xy0 <- xy0 + moveT0 + moveA0
+        PP <- P + 2 * D0 * dt_t
+
+        if (t %in% observed) {
+          ind_obs <- which(observed == t) + 1L
+          for (j in seq_along(ind_obs)) {
+            F <- PP
+            P <- PP - PP / F * PP
+            obs_xy <- c(tag$x[ind_obs[j]], tag$y[ind_obs[j]])
+            xy0 <- xy0 + PP / F * (obs_xy - xy0)
+          }
+        } else {
+          P <- F <- PP
+        }
+
+        traj[t, ] <- c(xy0[, 1L], xy0[, 2L], F[1L], F[2L])
+      }
+
+      ind.track <- sapply(tag[, 1L], function(tt) which.min(abs(ts - tt)))
+      xrange <- range(traj[, 1L], tag[, 2L], na.rm = TRUE)
+      yrange <- range(traj[, 2L], tag[, 3L], na.rm = TRUE)
+
+      tag_dist_list[[as.character(idx)]] <- list(
+        engine = engine,
+        tag = tag,
+        i = idx,
+        traj = traj,
+        ind.track = ind.track,
+        xrange = xrange,
+        yrange = yrange
+      )
+    }
+  }
+
+  if (length(skipped) > 0L)
+    message(length(skipped), " tag(s) skipped: ", paste(skipped, collapse = ", "))
+
+  fit$tag_dist <- tag_dist_list
   fit
 }
 
@@ -840,17 +889,18 @@ plot_fit <- function(x,
   quantity <- match.arg(quantity, several.ok = TRUE)
   nq <- length(quantity)
 
-  if(!is.null(bg)){
+  if (!is.null(bg)) {
     par(bg = bg)
   }
 
   ncov <- if (!is.null(fit$dat$cov)) length(fit$dat$cov) else 1L
+  nsea_fit <- if (!is.null(fit$par$alpha)) dim(fit$par$alpha)[3L] else 1L
   panels_per_q <- vapply(quantity, function(q) {
-    if (q == "pref") ncov else 1L
+    if (q == "pref") ncov else if (q == "taxis") nsea_fit else 1L
   }, integer(1L))
   total_panels <- sum(panels_per_q)
 
-  if(auto_layout){
+  if (auto_layout) {
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
     mfrow <- n2mfrow(total_panels, asp = asp)

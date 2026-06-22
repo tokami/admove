@@ -7,6 +7,7 @@
 plot_taxis(
   x,
   select = NULL,
+  select_sea = NULL,
   average = TRUE,
   cor = NULL,
   col = "black",

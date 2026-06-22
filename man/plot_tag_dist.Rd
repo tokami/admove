@@ -6,8 +6,9 @@
 \usage{
 plot_tag_dist(
   x,
-  n = 16,
-  asp = 2,
+  select = NULL,
+  n_tags = NULL,
+  n_time_steps = 6L,
   plot_land = FALSE,
   plot_contour = FALSE,
   xlab = "x",
@@ -18,10 +19,13 @@ plot_tag_dist(
 \item{x}{A fitted object of class \code{admove} with \verb{$tag_dist} added by
 \code{\link[=add_tag_dist]{add_tag_dist()}}.}
 
-\item{n}{Number of tag observations to display as panels. Default is \code{16}.}
+\item{select}{Integer vector of tag indices to display. \code{NULL} (default)
+shows all computed tags (subject to \code{n_tags}).}
 
-\item{asp}{Positive numeric value giving the target aspect ratio
-(columns / rows) for the multi-panel plot arrangement. Default is \code{2}.}
+\item{n_tags}{Maximum number of tags to display (rows). \code{NULL} shows all
+selected tags.}
+
+\item{n_time_steps}{Number of time steps (columns) per tag. Default is \code{6}.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added. Default is
 \code{FALSE}.}
@@ -42,9 +46,10 @@ observed track for a single archival tag. The predicted distributions must
 be precomputed by \code{\link[=add_tag_dist]{add_tag_dist()}} before calling this function; an
 informative error is raised otherwise.
 
-A multi-panel layout shows a subset of \code{n} evenly spaced observations. In
-each panel the full observed track is drawn in grey, the highlighted
-observation in blue, and the predicted density as a colour image.
+The plot is arranged as a grid: one row per tag, one column per time step.
+Time steps are evenly spaced across each tag's observation sequence. The
+release observation (first time step) is shown without a density background
+because the location is known exactly at release.
 }
 \seealso{
 \code{\link[=add_tag_dist]{add_tag_dist()}}

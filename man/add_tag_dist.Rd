@@ -2,36 +2,50 @@
 % Please edit documentation in R/fit.R
 \name{add_tag_dist}
 \alias{add_tag_dist}
-\title{Compute predicted location distributions for a single tag}
+\title{Compute predicted location distributions for one or more tags}
 \usage{
-add_tag_dist(fit, i = 1, dt = 0.5, engine = NULL, xrel0 = NULL, yrel0 = NULL)
+add_tag_dist(
+  fit,
+  i = NULL,
+  dt = 0.5,
+  engine = NULL,
+  xrel0 = NULL,
+  yrel0 = NULL
+)
 }
 \arguments{
 \item{fit}{A fitted object of class \code{admove}, as returned by \code{\link[=admove]{admove()}}.}
 
-\item{i}{Integer index of the tag to use. Default is \code{1}.}
+\item{i}{Integer index or vector of indices of the tags to process. \code{NULL}
+(default) processes all tags.}
 
-\item{dt}{Time step used when simulating tracks (engine 1 only). Default
-is \code{0.5}.}
+\item{dt}{Time step used for the Kalman-filter forward pass (engine 1 only).
+Default is \code{0.5}.}
 
 \item{engine}{Optional integer overriding the engine stored in
 \code{fit$conf$engine}. \code{1} = Kalman filter, \code{2} = CTMC.}
 
 \item{xrel0, yrel0}{Optional coordinates overriding the release location
-for CTMC-based predictions.}
+for CTMC-based predictions (applied to every tag in \code{i}).}
 }
 \value{
-A copy of \code{fit} with the additional component \verb{$tag_dist}, a list
-containing the precomputed distributions and metadata required by
-\code{\link[=plot_tag_dist]{plot_tag_dist()}}.
+A copy of \code{fit} with \verb{$tag_dist} set to a named list (one entry per
+successfully processed tag index) containing the precomputed distributions
+and metadata required by \code{\link[=plot_tag_dist]{plot_tag_dist()}}.
 }
 \description{
-Propagates the model's predicted spatial location distribution for one
-archival tag from its release to recovery time, using either the CTMC
-forward-pass (engine 2) or repeated Kalman-filter track simulations
-(engine 1). The result is stored in \code{fit$tag_dist} and consumed by
-\code{\link[=plot_tag_dist]{plot_tag_dist()}}. Separating the expensive computation from rendering
+Propagates the model's predicted spatial location distribution for one or
+more archival tags from release to recovery time, using either the CTMC
+forward-pass (engine 2) or a Kalman-filter forward pass (engine 1). Results
+are stored in \code{fit$tag_dist} (a named list keyed by tag index) and consumed
+by \code{\link[=plot_tag_dist]{plot_tag_dist()}}. Separating the expensive computation from rendering
 means plot aesthetics can be changed without re-running the model.
+
+Successive calls accumulate into the same list, so distributions can be
+added in batches without discarding earlier results.
+
+Tags recaptured within a single time step (engine 1) or with fewer than two
+position records are skipped with a warning rather than stopping.
 }
 \seealso{
 \code{\link[=plot_tag_dist]{plot_tag_dist()}}

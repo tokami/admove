@@ -189,6 +189,7 @@ plot_land <- local({
 ##' @export
 plot_taxis <- function(x,
                        select = NULL,
+                       select_sea = NULL,
                        average = TRUE,
                        cor = NULL,
                        col = "black",
@@ -212,30 +213,79 @@ plot_taxis <- function(x,
     if (is.null(select)) select <- 1:length(x$dat$pred$time)
   }  else stop("Don't know how to plot taxis for this object. Only implemented yet for objects of class `admove` or `admove_sim`.")
 
+  ## detect seasonal setup (admove only)
+  nsea <- 1L
+  is_seasonal <- FALSE
+  if (inherits(x, "admove") && !is.null(x$par$alpha)) {
+    nsea <- dim(x$par$alpha)[3L]
+    is_seasonal <- nsea > 1L
+  }
+  if (is_seasonal) {
+    if (is.null(select_sea)) select_sea <- seq_len(nsea)
+    nsea_plot <- length(select_sea)
+  } else {
+    nsea_plot <- 1L
+  }
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(suppressWarnings(graphics::par(opar)))
-    if(average || length(select) == 1){
-      par(mfrow = c(1,1))
-    }else{
-      par(mfrow = n2mfrow(length(select), asp = 2))
-    }
+    n_panels <- if (is_seasonal) nsea_plot
+                else if (average || length(select) == 1L) 1L
+                else length(select)
+    par(mfrow = if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2))
   }
 
   if (inherits(x, "admove")) {
 
-    if (average) {
-      if (length(select) > 1) {
-        tax.x <- apply(x$pred$hTdx[,select], 1, mean, na.rm = TRUE)
-        tax.y <- apply(x$pred$hTdy[,select], 1, mean, na.rm = TRUE)
+    if (is_seasonal) {
+      ## one taxis field per seasonal component: find break points
+      ts_len <- vapply(x$dat$time_spline, length, integer(1L))
+      i_sea <- which(ts_len == nsea)
+      i_sea <- if (length(i_sea) > 0L) i_sea[1L] else 1L
+      ts_breaks <- x$dat$time_spline[[i_sea]]
+      per <- x$dat$period
+      ts_upper <- c(ts_breaks[-1L], ts_breaks[1L] + per)
+
+      ## representative absolute times: mid-season, shifted into dat$trange
+      t_mid <- (ts_breaks + ts_upper) / 2
+      t_ref <- x$dat$trange[1L]
+      t_sea_abs <- t_ref + (t_mid - t_ref %% per + per) %% per
+
+      kappa <- exp(x$pl$logKappa)
+      ncp <- nrow(x$dat$pred$grid$xygrid)
+      tax.x <- tax.y <- matrix(NA_real_, ncp, nsea)
+      for (s in seq_len(nsea)) {
+        tmp <- x$pred$habi$tax$grad(x$dat$pred$grid$xygrid, t_sea_abs[s])
+        tax.x[, s] <- kappa * tmp[, 1]
+        tax.y[, s] <- kappa * tmp[, 2]
+      }
+      tax.x <- tax.x[, select_sea, drop = FALSE]
+      tax.y <- tax.y[, select_sea, drop = FALSE]
+
+      ## per-panel titles showing season time interval
+      mains <- if (length(main) == nsea_plot) {
+        main
+      } else {
+        paste0(main[1L], " (Season ", select_sea, " [",
+               round(ts_breaks[select_sea], 2), ", ",
+               round(ts_upper[select_sea], 2), "))")
+      }
+
+    } else {
+      if (average) {
+        if (length(select) > 1) {
+          tax.x <- apply(x$pred$hTdx[,select], 1, mean, na.rm = TRUE)
+          tax.y <- apply(x$pred$hTdy[,select], 1, mean, na.rm = TRUE)
+        }else{
+          tax.x <- x$pred$hTdx[,select]
+          tax.y <- x$pred$hTdy[,select]
+        }
       }else{
         tax.x <- x$pred$hTdx[,select]
         tax.y <- x$pred$hTdy[,select]
       }
-    }else{
-      tax.x <- x$pred$hTdx[,select]
-      tax.y <- x$pred$hTdy[,select]
+      mains <- rep(main[1L], ncol(as.matrix(tax.x)))
     }
 
     if(!inherits(tax.x, "matrix")){
@@ -251,6 +301,16 @@ plot_taxis <- function(x,
 
     for(i in 1:ncol(tax.x)){
 
+      if (is_seasonal && add && i > 1L) {
+        ## advance to the next panel in the caller's layout so each seasonal
+        ## component overlays its own panel (not all on the first panel)
+        mfg <- par("mfg")
+        nc <- mfg[4L]; nr <- mfg[3L]
+        r <- mfg[1L]; co <- mfg[2L] + 1L
+        if (co > nc) { co <- 1L; r <- r + 1L }
+        if (r <= nr) par(mfg = c(r, co, nr, nc))
+      }
+
       if(!add){
         if(!is.null(bg)){
           graphics::par(bg = bg)
@@ -262,7 +322,7 @@ plot_taxis <- function(x,
              ylab = ylab,
              xaxt = xaxt,
              yaxt = yaxt,
-             main = main,
+             main = mains[i],
              asp = 1,
              ...)
         if (image_bg) {
@@ -707,23 +767,36 @@ plot_compare_one <- function(fit, ...,
   }
 
   if (quantity == "taxis") {
-    plot_taxis(fitlist[[1]], col = col[1],
-               main = "",
-               cor = cor_tax,
+    ## detect number of seasonal panels from the first fit
+    nsea_cmp <- if (!is.null(fitlist[[1L]]$par$alpha)) dim(fitlist[[1L]]$par$alpha)[3L] else 1L
+    is_sea_cmp <- nsea_cmp > 1L
+
+    ## draw one panel per season: all fits overlaid before advancing to the
+    ## next panel — mirrors the pattern used by plot_pref_func so no
+    ## par(mfg=...) back-navigation is needed
+    for (s in seq_len(nsea_cmp)) {
+      sel_s <- if (is_sea_cmp) s else NULL
+      lab_s <- if (!is.null(panel_lab) && s <= length(panel_lab)) panel_lab[s] else NULL
+      plot_taxis(fitlist[[1L]], col = col[1L],
+                 main = "",
+                 cor = cor_tax,
+                 select_sea = sel_s,
+                 auto_layout = FALSE,
+                 plot_land = plot_land,
+                 bg = bg)
+      if (!is.null(lab_s)) add_lab(lab_s)
+      if (n > 1L) {
+        for (i in 2L:n) {
+          plot_taxis(fitlist[[i]], add = TRUE,
+                     col = col[i], lty = lty[i],
+                     cor = cor_tax,
+                     select_sea = sel_s,
                      auto_layout = FALSE,
                      plot_land = plot_land,
                      bg = bg)
-    if(n > 1){
-      for(i in 2:n){
-        plot_taxis(fitlist[[i]], add = TRUE,
-                   col = col[i], lty = lty[i],
-               cor = cor_tax,
-                         auto_layout = FALSE,
-                         plot_land = plot_land,
-                         bg = bg)
+        }
       }
     }
-    if (!is.null(panel_lab)) add_lab(panel_lab)
   }
 
   if(quantity == "dif"){
@@ -1029,8 +1102,9 @@ plot_compare <- function(fit, ...,
 
   ref_fit <- Filter(function(x) inherits(x, c("admove", "admove_sim")), fitlist)[[1L]]
   ncov <- if (!is.null(ref_fit$dat$cov)) length(ref_fit$dat$cov) else 1L
+  nsea_ref <- if (!is.null(ref_fit$par$alpha)) dim(ref_fit$par$alpha)[3L] else 1L
   panels_per_q <- vapply(quantity, function(q) {
-    if (q == "pref") ncov else 1L
+    if (q == "pref") ncov else if (q == "taxis") nsea_ref else 1L
   }, integer(1L))
   total_panels <- sum(panels_per_q)
 
@@ -1103,15 +1177,18 @@ plot_compare <- function(fit, ...,
 ##' be precomputed by [add_tag_dist()] before calling this function; an
 ##' informative error is raised otherwise.
 ##'
-##' A multi-panel layout shows a subset of `n` evenly spaced observations. In
-##' each panel the full observed track is drawn in grey, the highlighted
-##' observation in blue, and the predicted density as a colour image.
+##' The plot is arranged as a grid: one row per tag, one column per time step.
+##' Time steps are evenly spaced across each tag's observation sequence. The
+##' release observation (first time step) is shown without a density background
+##' because the location is known exactly at release.
 ##'
 ##' @param x A fitted object of class `admove` with `$tag_dist` added by
 ##'   [add_tag_dist()].
-##' @param n Number of tag observations to display as panels. Default is `16`.
-##' @param asp Positive numeric value giving the target aspect ratio
-##'   (columns / rows) for the multi-panel plot arrangement. Default is `2`.
+##' @param select Integer vector of tag indices to display. `NULL` (default)
+##'   shows all computed tags (subject to `n_tags`).
+##' @param n_tags Maximum number of tags to display (rows). `NULL` shows all
+##'   selected tags.
+##' @param n_time_steps Number of time steps (columns) per tag. Default is `6`.
 ##' @param plot_land Logical; if `TRUE`, land masses are added. Default is
 ##'   `FALSE`.
 ##' @param plot_contour Logical; if `TRUE`, contour lines are added on top of
@@ -1128,8 +1205,9 @@ plot_compare <- function(fit, ...,
 ##'
 ##' @export
 plot_tag_dist <- function(x,
-                          n = 16,
-                          asp = 2,
+                          select = NULL,
+                          n_tags = NULL,
+                          n_time_steps = 6L,
                           plot_land = FALSE,
                           plot_contour = FALSE,
                           xlab = "x",
@@ -1140,74 +1218,113 @@ plot_tag_dist <- function(x,
          "  Run add_tag_dist() first, e.g.:\n",
          "    fit <- add_tag_dist(fit, i = 1)")
 
-  td <- x$tag_dist
-  tag <- td$tag
-  engine <- td$engine
+  td_store <- x$tag_dist
 
-  xrange <- td$xrange + c(-0.1, 0.1) * diff(td$xrange)
-  yrange <- td$yrange + c(-0.1, 0.1) * diff(td$yrange)
-
-  if (n > nrow(tag)) {
-    ind.tag <- seq_len(nrow(tag))
-  } else {
-    ind.tag <- round(seq(1, nrow(tag), length.out = n))
+  ## handle old single-entry format (list with $engine at top level)
+  if (!is.null(td_store$engine)) {
+    td_store <- setNames(list(td_store), as.character(td_store$i))
   }
-  np <- length(ind.tag)
-  mfrow <- n2mfrow(np, asp)
+
+  available <- names(td_store)
+
+  ## resolve which tags to show
+  if (is.null(select)) {
+    sel_keys <- available
+  } else {
+    sel_keys <- as.character(select)
+    missing_keys <- sel_keys[!sel_keys %in% available]
+    if (length(missing_keys) > 0L)
+      stop("Tag(s) ", paste(missing_keys, collapse = ", "),
+           " have no precomputed distribution. Available: ",
+           paste(available, collapse = ", "), ".")
+  }
+  if (!is.null(n_tags)) sel_keys <- head(sel_keys, n_tags)
+
+  n_row <- length(sel_keys)
+  n_col <- as.integer(n_time_steps)
 
   opar <- par(no.readonly = TRUE)
   on.exit(suppressWarnings(graphics::par(opar)))
-  par(mfrow = mfrow, mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
+  par(mfrow = c(n_row, n_col), mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
 
-  for (j in seq_len(np)) {
+  for (r in seq_len(n_row)) {
 
-    xaxt <- ifelse(j %in% (prod(mfrow) - mfrow[2] + 1L):prod(mfrow), "s", "n")
-    yaxt <- ifelse(j %in% seq(1L, prod(mfrow), mfrow[2]), "s", "n")
+    td <- td_store[[sel_keys[r]]]
+    tag <- td$tag
+    engine <- td$engine
 
-    plot(NA, NA,
-         xlim = xrange, ylim = yrange,
-         xaxt = xaxt, yaxt = yaxt,
-         asp = 1, xlab = "", ylab = "")
+    xrange <- td$xrange + c(-0.1, 0.1) * diff(td$xrange)
+    yrange <- td$yrange + c(-0.1, 0.1) * diff(td$yrange)
 
-    if (plot_land) plot_land(sref = sref(x$dat))
-
-    if (engine == 2L) {
-
-      image(td$xg, td$yg, td$dens_list[[ind.tag[j]]],
-            xlim = xrange, ylim = yrange,
-            col = adjustcolor(terrain.colors(100), 0.4),
-            asp = 1, add = TRUE)
-
+    nobs <- nrow(tag)
+    ind.tag <- if (n_col >= nobs) {
+      seq_len(nobs)
     } else {
-
-      tagi <- td$traj[td$ind.track[ind.tag[j]], ]
-      mu <- as.numeric(tagi[1:2])
-      Sigma <- matrix(c(tagi[3], 0, 0, tagi[4]), 2L, 2L)
-
-      xg <- seq(xrange[1L], xrange[2L], length.out = 150L)
-      yg <- seq(yrange[1L], yrange[2L], length.out = 150L)
-      Z <- matrix(mvtnorm::dmvnorm(as.matrix(expand.grid(xg, yg)), mu, Sigma),
-                     length(xg), length(yg))
-
-      image(xg, yg, Z,
-            xlim = xrange, ylim = yrange,
-            col = adjustcolor(terrain.colors(100), 0.4),
-            asp = 1, add = TRUE)
-
-      if (plot_contour && all(!is.na(Z)))
-        contour(xg, yg, Z, nlevels = 4, add = TRUE)
+      round(seq(1L, nobs, length.out = n_col))
     }
 
-    points(tag$x[ind.tag], tag$y[ind.tag],
-           type = "b", col = adjustcolor("grey20", 0.2))
-    points(tag$x[ind.tag[j]], tag$y[ind.tag[j]],
-           col = "dodgerblue3", pch = 16, cex = 1.2)
+    for (c in seq_len(n_col)) {
 
-    legend("topright", legend = round(tag[ind.tag[j], 1L], 3),
-           title.font = 2, cex = 0.8, pch = NA, x.intersp = -0.5,
-           bg = "white")
+      xaxt <- if (r == n_row) "s" else "n"
+      yaxt <- if (c == 1L)   "s" else "n"
 
-    box(lwd = 1.5)
+      if (c > length(ind.tag)) {
+        ## pad with a blank panel to keep the grid regular
+        plot.new()
+        next
+      }
+
+      j <- ind.tag[c]
+      is_release <- (j == 1L)
+
+      plot(NA, NA,
+           xlim = xrange, ylim = yrange,
+           xaxt = xaxt, yaxt = yaxt,
+           asp = 1, xlab = "", ylab = "")
+
+      if (plot_land) plot_land(sref = sref(x$dat))
+
+      ## no density at release: location is known exactly
+      if (!is_release) {
+        if (engine == 2L) {
+
+          image(td$xg, td$yg, td$dens_list[[j]],
+                xlim = xrange, ylim = yrange,
+                col = adjustcolor(terrain.colors(100), 0.4),
+                asp = 1, add = TRUE)
+
+        } else {
+
+          tagi <- td$traj[td$ind.track[j], ]
+          mu <- as.numeric(tagi[1:2])
+          Sigma <- matrix(c(tagi[3], 0, 0, tagi[4]), 2L, 2L)
+
+          xg <- seq(xrange[1L], xrange[2L], length.out = 150L)
+          yg <- seq(yrange[1L], yrange[2L], length.out = 150L)
+          Z <- matrix(mvtnorm::dmvnorm(as.matrix(expand.grid(xg, yg)), mu, Sigma),
+                      length(xg), length(yg))
+
+          image(xg, yg, Z,
+                xlim = xrange, ylim = yrange,
+                col = adjustcolor(terrain.colors(100), 0.4),
+                asp = 1, add = TRUE)
+
+          if (plot_contour && all(!is.na(Z)))
+            contour(xg, yg, Z, nlevels = 4, add = TRUE)
+        }
+      }
+
+      points(tag$x[ind.tag], tag$y[ind.tag],
+             type = "b", col = adjustcolor("grey20", 0.2))
+      points(tag$x[j], tag$y[j],
+             col = "dodgerblue3", pch = 16, cex = 1.2)
+
+      legend("topright", legend = round(tag[j, 1L], 3),
+             title.font = 2, cex = 0.8, pch = NA, x.intersp = -0.5,
+             bg = "white")
+
+      box(lwd = 1.5)
+    }
   }
 
   mtext(xlab, 1, 2, outer = TRUE)
@@ -1351,7 +1468,6 @@ plot_pref_func <- function(x,
       }
       knots <- x$dat$knots_tax[,select]
 
-
     } else if(type == "diffusion") {
 
       if(is.null(select)){
@@ -1435,7 +1551,7 @@ plot_pref_func <- function(x,
 
       if (!add) {
 
-        if(!is.null(bg)){
+        if (!is.null(bg)) {
           graphics::par(bg = bg)
         }
         plot(NA, ty = 'n',
@@ -1466,14 +1582,16 @@ plot_pref_func <- function(x,
         ## rug(x$dat$cov$cov_obs[,inp$cov$var[i]])
       }
 
-      if (length(select) > 1) {
-        for (j in 1:dim(par_est)[3]) {
-          points(knots[,i], par_est[,i,j],
-                 pch = 15 + j, cex = 1.2) ##, col = cols[i])
+      for (j in 1:dim(par_est)[3]) {
+        if (length(select) > 1) {
+          knoti <- knots[,i]
+          esti <- par_est[,i,j]
+        } else {
+          knoti <- knots
+          esti <- par_est[,,j]
         }
-      }else{
-        points(knots, par_est,
-               pch = 16, cex = 1.2) ##, col = cols[i])
+        points(knoti, esti,
+               pch = 15 + j, cex = 1.2) ##, col = cols[i])
       }
       for (j in 1:dim(par_est)[3]) {
         lines(cov_pred[,i], pref[,i,j], col = cols[i], lwd = lwd,
