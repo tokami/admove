@@ -3,6 +3,7 @@
 \name{plot_cov}
 \alias{plot_cov}
 \alias{plot.admove_cov}
+\alias{plot.admove_cov_list}
 \title{Plot covariate fields}
 \usage{
 plot_cov(
@@ -21,13 +22,17 @@ plot_cov(
 )
 
 \method{plot}{admove_cov}(x, ...)
+
+\method{plot}{admove_cov_list}(x, ...)
 }
 \arguments{
 \item{x}{An object of class \code{admove_cov}, or an object containing covariate
 data such as \code{admove_data}, \code{admove_sim}, or \code{admove}.}
 
-\item{i}{Optional index used when \code{x} is a list-like covariate object.
-Default: \code{1}.}
+\item{i}{Index (scalar or vector) used when \code{x} is an \code{admove_cov_list}.
+A scalar selects one covariate and plots all its time steps. A vector
+selects multiple covariates and produces one panel per element (showing
+the first time step, or the first element of \code{select}). Default: \code{1}.}
 
 \item{select}{Optional vector of time-step indices to plot. Default:
 \code{NULL}, in which case all time steps are plotted.}

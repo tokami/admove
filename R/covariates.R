@@ -393,7 +393,7 @@ prep_cov <- function(x,
   }
 
   dati_num <- as.numeric(as.character(dati))
-  if (all(is.na(dati_num))) stop("The time information cannot be interpreted as numeric. Please provide the time information as a numeric value or use the 'date_format' and/or 'date_origin' argument to convert the date into a numeric value (see ?as.Date).")
+  if (all(is.na(dati_num))) stop("The time information cannot be interpreted as numeric. Please provide the time information as a numeric value or use the 'date_format' and/or 'date_origin' argument to convert the date into a numeric value (see ?as.Date). If your input has multiple columns representing time steps of a single covariate (e.g. one column per date), consider setting layers = \"time\".")
 
   dimnames(res)[[3]] <- dati
 
@@ -428,8 +428,10 @@ prep_cov <- function(x,
 ##'
 ##' @param x An object of class `admove_cov`, or an object containing covariate
 ##'   data such as `admove_data`, `admove_sim`, or `admove`.
-##' @param i Optional index used when `x` is a list-like covariate object.
-##'   Default: `1`.
+##' @param i Index (scalar or vector) used when `x` is an `admove_cov_list`.
+##'   A scalar selects one covariate and plots all its time steps. A vector
+##'   selects multiple covariates and produces one panel per element (showing
+##'   the first time step, or the first element of `select`). Default: `1`.
 ##' @param select Optional vector of time-step indices to plot. Default:
 ##'   `NULL`, in which case all time steps are plotted.
 ##' @param main Main title of the plot. Default: `"Covariate fields"`.
@@ -481,6 +483,34 @@ plot_cov <- function(x,
     cov <- x$dat$cov
   } else{
     cov <- x
+  }
+
+  if (inherits(cov, "admove_cov_list") && length(i) > 1) {
+    sel <- cov[i]
+    n <- length(sel)
+    nms <- names(sel)
+    t_sel <- if (is.null(select)) 1L else select[1L]
+    if (auto_layout) {
+      opar <- par(no.readonly = TRUE)
+      on.exit(par(opar))
+      par(mfrow = n2mfrow(n, asp = 2),
+          mar = c(1.5, 1.5, 1.5, 1.5),
+          oma = c(3, 3, ifelse(main == "", 0, 1.5), 0))
+    }
+    for (j in seq_along(sel)) {
+      plot_cov(sel[[j]], select = t_sel, main = "",
+               plot_land = plot_land, auto_layout = FALSE,
+               xlab = xlab, ylab = ylab, bg = bg,
+               plot_contour = plot_contour, ...)
+      panel_lbl <- if (!is.null(nms) && nzchar(nms[j])) nms[j] else paste0("Layer ", i[j])
+      legend("topleft", legend = panel_lbl, bg = "white", pch = NA)
+    }
+    if (auto_layout) {
+      mtext(main, 3, 0, outer = TRUE)
+      mtext(xlab, 1, 1, outer = TRUE)
+      mtext(ylab, 2, 1.5, outer = TRUE)
+    }
+    return(invisible(NULL))
   }
 
   if (inherits(cov, "list")) {
@@ -1032,6 +1062,15 @@ plot.admove_cov <- function(x, ...) {
   plot_cov(x, ...)
   return(invisible(NULL))
 }
+
+
+##' @rdname plot_cov
+##' @export
+plot.admove_cov_list <- function(x, ...) {
+  plot_cov(x, ...)
+  return(invisible(NULL))
+}
+
 
 
 ##' @rdname sref
