@@ -374,11 +374,20 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
       tags <- tags[-ind,]
     }
 
-    ## ind <- which(is.na(tags$ic) | is.na(grid$celltable[tags$ic]))
+    ## Tag positions that fall on an NA (masked / removed) grid cell have no
+    ## valid cell index and must be dropped before fitting. Entries outside the
+    ## grid range are already handled above, so a remaining NA 'ic' means the
+    ## position sits on an NA cell.
     ind <- which(is.na(tags$ic))
     if (length(ind) > 0) {
+      bad_ids <- unique(tags$id[ind])
       tags <- tags[-ind,]
-      message(length(ind), " entries removed because ic = NA or grid[ic] = NA.")
+      if (verbose) {
+        message(length(ind), " entr", if (length(ind) == 1) "y" else "ies",
+                " removed because the tag position falls on an NA grid cell (tag id",
+                if (length(bad_ids) == 1) "" else "s", ": ",
+                paste(bad_ids, collapse = ", "), ").")
+      }
     }
 
   }

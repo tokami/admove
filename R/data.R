@@ -334,6 +334,49 @@ setup_data <- function(grid = NULL,
   ## Tags --------------------------------------------
   if (!is.null(tags)) res$tags <- check_tags(tags, res$grid)
 
+  ## Remove tag positions on NA covariate cells -------
+  ## check_tags() only guards against NA *grid* cells. A tag can still sit on
+  ## (or next to) a covariate cell that is NA, where the bilinear interpolation
+  ## used in the likelihood returns NaN and causes NaN objective/gradient
+  ## evaluations during minimisation. Evaluate each covariate at the tag
+  ## positions, matching how the likelihood accesses them (only time slices with
+  ## t2index() > 0 are used), and drop the offending entries.
+  if (!is.null(res$cov) && !is.null(res$tags) && nrow(res$tags) > 0) {
+    xr <- res$xrange_cov
+    yr <- res$yrange_cov
+    bad <- rep(FALSE, nrow(res$tags))
+    for (i in seq_along(res$cov)) {
+      covi <- res$cov[[i]]
+      it <- as.integer(t2index(res$tags$t, res$time_cov[[i]]))
+      for (j in sort(unique(it[it > 0]))) {
+        rows <- which(it == j)
+        liv <- RTMB::interpol2Dfun(covi[,,j],
+                                   xlim = round(xr[i,], 5),
+                                   ylim = round(yr[i,], 5),
+                                   R = 1)
+        v <- liv(round(res$tags$x[rows], 5), round(res$tags$y[rows], 5))
+        bad[rows] <- bad[rows] | is.na(v)
+      }
+    }
+    if (any(bad)) {
+      bad_ids <- unique(res$tags$id[bad])
+      if (verbose) {
+        message(sum(bad), " entr", if (sum(bad) == 1) "y" else "ies",
+                " removed because the tag position falls where a covariate is NA",
+                " (tag id", if (length(bad_ids) == 1) "" else "s", ": ",
+                paste(bad_ids, collapse = ", "), ").")
+      }
+      res$tags <- res$tags[!bad, , drop = FALSE]
+      ## Drop tags left with a single observation (need release + recovery),
+      ## matching the recovered-tags filter in check_tags().
+      keep_id <- names(which(table(res$tags$id) > 1))
+      res$tags <- res$tags[res$tags$id %in% keep_id, , drop = FALSE]
+      if (nrow(res$tags) == 0) {
+        stop("No tags remain after removing positions on NA covariate cells.")
+      }
+    }
+  }
+
   ## Check covariate–tag time overlap -----------------
   ## t2index() uses findInterval(..., rightmost.closed = TRUE, left.open = TRUE),
   ## which returns 0 only when t < min(time_cov). Tags above the covariate range
