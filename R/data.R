@@ -366,9 +366,9 @@ setup_data <- function(grid = NULL,
 
   ## Splines ------------------------------------------
   if (!is.null(res$cov)) {
-    res$time_spline <- lapply(1:length(res$cov), function(x) min(trange))
+    res$time_spline <- lapply(seq_along(res$cov), function(x) 0)
   } else {
-    res$time_spline <- list(min(trange))
+    res$time_spline <- list()
   }
 
 
