@@ -18,6 +18,8 @@ plot_cov(
   ylab = "y",
   bg = NULL,
   plot_contour = TRUE,
+  xlim = NULL,
+  ylim = NULL,
   ...
 )
 
@@ -56,6 +58,10 @@ automatically and restored afterwards. Default: \code{TRUE}.}
 
 \item{plot_contour}{Logical; if \code{TRUE}, add contour lines. Default:
 \code{TRUE}.}
+
+\item{xlim}{xlim}
+
+\item{ylim}{ylim}
 
 \item{...}{Additional graphical arguments passed to \code{\link[=plot]{plot()}}.}
 }

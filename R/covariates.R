@@ -446,6 +446,8 @@ prep_cov <- function(x,
 ##' @param bg Optional background colour for the plot. Default: `NULL`.
 ##' @param plot_contour Logical; if `TRUE`, add contour lines. Default:
 ##'   `TRUE`.
+##' @param xlim xlim
+##' @param ylim ylim
 ##' @param ... Additional graphical arguments passed to [plot()].
 ##'
 ##' @return
@@ -473,7 +475,12 @@ plot_cov <- function(x,
                      ylab = "y",
                      bg = NULL,
                      plot_contour = TRUE,
+                     xlim = NULL,
+                     ylim = NULL,
                      ...) {
+
+  xlim0 <- xlim
+  ylim0 <- ylim
 
   if (inherits(x, "admove_sim")) {
     cov <- x$cov
@@ -501,7 +508,9 @@ plot_cov <- function(x,
       plot_cov(sel[[j]], select = t_sel, main = "",
                plot_land = plot_land, auto_layout = FALSE,
                xlab = xlab, ylab = ylab, bg = bg,
-               plot_contour = plot_contour, ...)
+               plot_contour = plot_contour,
+               xlim = xlim, ylim = ylim,
+               ...)
       panel_lbl <- if (!is.null(nms) && nzchar(nms[j])) nms[j] else paste0("Layer ", i[j])
       legend("topleft", legend = panel_lbl, bg = "white", pch = NA)
     }
@@ -527,12 +536,24 @@ plot_cov <- function(x,
 
   nt <- dim(cov)[3]
 
-  if(any(names(attributes(cov)) == "dimnames")){
-    xlims <- range(as.numeric(attributes(cov)$dimnames[[1]]))
-    ylims <- range(as.numeric(attributes(cov)$dimnames[[2]]))
-  }else{
-    xlims <- c(0,1)
-    ylims <- c(0,1)
+  if (is.null(xlim0)) {
+    if(any(names(attributes(cov)) == "dimnames")){
+      xlims <- range(as.numeric(attributes(cov)$dimnames[[1]]))
+    }else{
+      xlims <- c(0,1)
+    }
+  } else {
+    xlims <- xlim0
+  }
+
+  if (is.null(ylim0)) {
+    if(any(names(attributes(cov)) == "dimnames")){
+      ylims <- range(as.numeric(attributes(cov)$dimnames[[2]]))
+    }else{
+      xlims <- c(0,1)
+    }
+  } else {
+    ylims <- ylim0
   }
 
   if(auto_layout){

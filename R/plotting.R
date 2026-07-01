@@ -87,48 +87,53 @@ plot_land <- local({
 
     usr <- par("usr")  ## c(x1, x2, y1, y2)
 
-    if (sf::st_is_longlat(sf::st_crs(land_crs))) {
-      usr[1] <- max(-180, usr[1])
-      usr[2] <- min( 180, usr[2])
-      usr[3] <- max( -90, usr[3])
-      usr[4] <- min(  90, usr[4])
+    is_longlat <- isTRUE(sf::st_is_longlat(sf::st_crs(land_crs)))
+
+    if (is_longlat) {
+      usr[3] <- max(-90, usr[3])
+      usr[4] <- min( 90, usr[4])
+
+      ## Split any polygon crossing the antimeridian (e.g. Fiji) at +/-180 so
+      ## none spans the whole globe; otherwise such a polygon is drawn as a
+      ## full-width horizontal sliver.
+      land_fix <- suppressWarnings(sf::st_wrap_dateline(land_fix))
     }
 
-    bb <- sf::st_bbox(c(
-      xmin = usr[1], xmax = usr[2],
-      ymin = usr[3], ymax = usr[4]
-    ))
-
-
-    land_crop <- try(suppressWarnings(sf::st_crop(land_fix, sf::st_as_sfc(bb))),
-                     silent = TRUE)
-
-    ## ## coerce xlim/ylim safely
-    ## xlim_num <- as.numeric(xlim)[1:2]
-    ## ylim_num <- as.numeric(ylim)[1:2]
-
-    ## stopifnot(length(xlim_num) == 2, length(ylim_num) == 2)
-    ## stopifnot(all(is.finite(xlim_num)), all(is.finite(ylim_num)))
-
-    ## bb <- sf::st_bbox(c(
-    ##   xmin = min(xlim_num), xmax = max(xlim_num),
-    ##   ymin = min(ylim_num), ymax = max(ylim_num)
-    ## ))
-
-    ## ## crop works best with an sfc object
-    ## bb_sfc <- sf::st_as_sfc(bb)
-
-    ## land_crop <- suppressWarnings(sf::st_crop(land_crs, bb_sfc))
-
-    if (inherits(land_crop, "try-error")) {
-      warning("Counldn't plot land masses. Check the spatial reference info: sref(x).")
-      return(invisible(NULL))
+    ## Crop land to a longitude window [x1, x2] (in the [-180, 180] frame for
+    ## geographic coordinates) and draw it, shifting the result east by `offset`
+    ## degrees. The offset lets the region east of +180 be taken from its
+    ## [-180, 180] equivalent and drawn continuously across the dateline.
+    draw_window <- function(x1, x2, offset) {
+      if (x2 <= x1) return(invisible(NULL))
+      bb <- sf::st_bbox(c(
+        xmin = x1, xmax = x2,
+        ymin = usr[3], ymax = usr[4]
+      ), crs = sf::st_crs(land_fix))
+      cr <- try(suppressWarnings(sf::st_crop(land_fix, sf::st_as_sfc(bb))),
+                silent = TRUE)
+      if (inherits(cr, "try-error")) {
+        warning("Counldn't plot land masses. Check the spatial reference info: sref(x).")
+        return(invisible(NULL))
+      }
+      if (nrow(cr) > 0) {
+        g <- sf::st_geometry(cr)
+        if (offset != 0) g <- g + c(offset, 0)
+        plot(g, add = TRUE, col = col, border = border)
+      }
+      invisible(NULL)
     }
 
-    if (nrow(land_crop) > 0) {
-      plot(sf::st_geometry(land_crop), add = TRUE,
-           col = col, border = border)
+    if (is_longlat && usr[2] > 180) {
+      ## Window crosses the antimeridian: draw the part up to +180, then the
+      ## part beyond it from its negative-longitude equivalent, shifted east.
+      draw_window(max(-180, usr[1]), 180, 0)
+      draw_window(max(-180, usr[1] - 360), usr[2] - 360, 360)
+    } else if (is_longlat) {
+      draw_window(max(-180, usr[1]), min(180, usr[2]), 0)
+    } else {
+      draw_window(usr[1], usr[2], 0)
     }
+
     invisible(NULL)
   }
 })
