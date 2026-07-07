@@ -146,7 +146,7 @@ sim_data <- function(grid = NULL,
                      sim_engine = 1,
                      use_reject = FALSE,
                      n_reject = 100,
-                     target_dif_frac = 1/500,
+                     target_dif_frac = 1/300,
                      target_tax_frac = 1/10,
                      target_sdO_frac = 1/30,
                      plot = FALSE,
@@ -632,6 +632,9 @@ sim_cov <- function(grid = NULL,
 ##'   characteristic spatial scale per unit time, used by [default_sim_par()].
 ##' @param target_sdO_frac Target observation error as a fraction of the
 ##'   characteristic spatial scale, used by [default_sim_par()].
+##' @param add_obs_unc Add observation uncertainty to tag locations? By default
+##'   (NULL), observation uncertainty is added to archival tags (tag_type =
+##'   "d"), but not to other tags.
 ##' @param plot Logical; if \code{TRUE}, the simulated tags are plotted.
 ##' @param plot_land Logical; if \code{TRUE}, land masses are added to the plot.
 ##' @param verbose Logical; if \code{TRUE}, informative messages are printed.
@@ -686,9 +689,10 @@ sim_tags <- function(tag_type,
                      ctmc_method = 2,
                      sref = NULL,
                      tref = NULL,
-                     target_dif_frac = 1/500,
+                     target_dif_frac = 1/300,
                      target_tax_frac = 1/10,
                      target_sdO_frac = 1/30,
+                     add_obs_unc = NULL,
                      plot = FALSE,
                      plot_land = FALSE,
                      verbose = TRUE) {
@@ -1077,7 +1081,7 @@ default_sim_par <- function(par = NULL,
                             target_tax_per_time = NULL,
                             target_tax_frac =  1/10,
                             target_dif_per_time = NULL,
-                            target_dif_frac =  1/500,
+                            target_dif_frac =  1/300,
                             target_sdO_frac = 1/30) {
 
   D_default <- 0.05 * alpha_template
@@ -1527,10 +1531,13 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
 ##' @param use_reject Logical; if \code{TRUE}, rejected diffusion proposals are
 ##'   redrawn when simulated moves leave the valid domain.
-##' @param n_reject Maximum number of rejection attempts if
-##'   \code{use_reject = TRUE}.
+##' @param n_reject Maximum number of rejection attempts if \code{use_reject =
+##'   TRUE}.
 ##' @param ctmc_method Integer controlling the matrix-exponential method used in
 ##'   CTMC simulation.
+##' @param add_obs_unc Add observation uncertainty to tag locations? By default
+##'   (NULL), observation uncertainty is added to archival tags (tag_type =
+##'   "d"), but not to other tags.
 ##'
 ##' @details
 ##' For \code{sim_engine = 1}, movement is simulated in continuous space by
@@ -1569,12 +1576,21 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                         sim_engine = 1,
                         use_reject = FALSE,
                         n_reject = 20,
-                        ctmc_method = 2) {
+                        ctmc_method = 2,
+                        add_obs_unc = NULL) {
 
   kappa <- exp(par$logKappa)
   sdO <- exp(par$logSdO)
 
   tag_type_int <- .get_tag_type_integer(tag_type)
+
+  if (is.null(add_obs_unc)) {
+    if (tag_type_int %in% c(1)) {
+      add_obs_unc <- TRUE
+    } else {
+      add_obs_unc <- FALSE
+    }
+  }
 
   if (is.null(id)) id <- round(runif(1, 0, 1e4))
 
@@ -1718,7 +1734,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                            id = as.character(id)))
   }
 
-  if (nrow(ret) >= 3) {
+  if (nrow(ret) >= 3 && isTRUE(add_obs_unc)) {
     ret[-c(1,nrow(ret)),"x"] <- as.numeric(ret[-c(1,nrow(ret)),"x"]) +
       rnorm(nrow(ret)-2, 0, sdO[1, tag_type_int])
     ret[-c(1,nrow(ret)),"y"] <- as.numeric(ret[-c(1,nrow(ret)),"y"]) +
