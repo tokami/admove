@@ -434,11 +434,29 @@ add_report <- function(fit) {
 ##'
 ##' @param fit A fitted model object of class \code{"admove"}, as returned by
 ##'   [admove()].
+##' @param grid Optional \code{"admove_grid"} (from [create_grid()]) giving a new
+##'   spatial grid to predict on. If \code{NULL} (default), the grid stored in
+##'   \code{fit$dat$pred$grid} is used. The grid must be in the same spatial
+##'   reference as the fit (no reprojection is done) and, when covariates are
+##'   present, should lie within their spatial coverage; a warning is issued
+##'   otherwise, as habitat fields extrapolate to \code{NA} beyond it.
+##' @param time Optional strictly increasing numeric vector of prediction times
+##'   on the model-time scale (see [tref()]). If \code{NULL} (default), the times
+##'   in \code{fit$dat$pred$time} are used.
 ##'
 ##' @details
 ##' This function evaluates the model prediction step and stores the resulting
 ##' predicted quantities in \code{fit$pred}, including the habitat, diffusion,
 ##' taxis, and advection fields on the prediction grid.
+##'
+##' Predictions are a pure recomputation from the fitted parameters and
+##' covariates evaluated on \code{fit$dat$pred$grid} at \code{fit$dat$pred$time}.
+##' Supplying \code{grid} and/or \code{time} re-targets the prediction (updating
+##' \code{fit$dat$pred$grid} / \code{fit$dat$pred$time} in the returned object)
+##' without refitting, so a single fit can be predicted onto different grids or
+##' time sequences. Because habitat is obtained by local interpolation of the
+##' fitted covariate fields, predictions are only valid within the covariate
+##' spatial and temporal coverage.
 ##'
 ##' It also stores \code{fit$pred$mstar}, a list of length \code{nt} holding the
 ##' continuous-time Markov chain (CTMC) generator matrices, one sparse
@@ -456,13 +474,20 @@ add_report <- function(fit) {
 ##' (units 1 / time).
 ##'
 ##' @export
-add_predictions <- function(fit) {
+add_predictions <- function(fit, grid = NULL, time = NULL) {
 
   .check_class(fit, "admove")
 
   res <- fit
   dat <- fit$dat
   conf <- fit$conf
+
+  ## optionally re-target the prediction grid / time before computing, and
+  ## persist the new target in the returned object
+  if (!is.null(grid) || !is.null(time)) {
+    dat <- .set_pred_target(dat, grid = grid, time = time)
+    res$dat <- dat
+  }
 
 
   ## dimensions
@@ -532,6 +557,17 @@ add_predictions <- function(fit) {
   }
   t2 <- Sys.time()
 
+  ## habitat fields are NA where the prediction grid/time falls outside the
+  ## fitted covariate coverage (interpolation cannot extrapolate); flag it
+  na_cells <- which(!stats::complete.cases(
+    cbind(as.vector(hD_pred), as.vector(hTdx_pred), as.vector(hAx_pred))))
+  if (length(na_cells) > 0L) {
+    warning("Predictions contain ", length(na_cells), " NA value(s): the ",
+            "prediction grid/time extends beyond the fitted covariate coverage, ",
+            "so habitat fields (and the CTMC generator) are undefined there. ",
+            "Restrict 'grid'/'time' to the covariate domain.", call. = FALSE)
+  }
+
 
   pred <- list()
   pred$pref_funcs <- pref_funcs
@@ -563,6 +599,101 @@ add_predictions <- function(fit) {
   res <- add_tref(res, tref(res$dat))
 
   return(res)
+}
+
+
+## Validate a user-supplied prediction grid / time and write it into dat$pred.
+## Hard errors for structurally invalid input; warnings for likely-invalid input
+## (sref mismatch, extrapolation beyond covariate coverage).
+.set_pred_target <- function(dat, grid = NULL, time = NULL) {
+
+  if (!is.null(grid)) {
+
+    if (!inherits(grid, "admove_grid"))
+      stop("'grid' must be an 'admove_grid' object created by create_grid().",
+           call. = FALSE)
+    if (is.null(grid$igrid) || is.null(grid$xygrid))
+      stop("'grid' is missing required fields (igrid/xygrid); rebuild it with ",
+           "create_grid().", call. = FALSE)
+
+    ## spatial reference must match the fitted data (admove does not reproject)
+    sref_new <- tryCatch(sref(grid), error = function(e) NULL)
+    sref_dat <- tryCatch(sref(dat),  error = function(e) NULL)
+    if (!is.null(sref_new) && !is.null(sref_dat) &&
+          !sref_equal(sref_new, sref_dat)) {
+      warning("The spatial reference of 'grid' differs from the fitted data. ",
+              "admove does not reproject; rebuild the grid in the fit's sref.",
+              call. = FALSE)
+    }
+
+    ## drop cells where the fitted covariates are undefined (outside coverage or
+    ## masked), exactly as setup_data() prunes the fitting grid, so the resulting
+    ## prediction grid is valid everywhere and the CTMC generator is well-defined
+    if (!is.null(dat$cov) && !is.null(dat$xrange_cov)) {
+      n0 <- nrow(grid$xygrid)
+      pr <- .prune_grid_to_cov(grid, dat$cov, dat$xrange_cov, dat$yrange_cov)
+      if (length(pr$removed) >= n0)
+        stop("None of the cells in 'grid' fall within the fitted covariate ",
+             "coverage; nothing to predict on.", call. = FALSE)
+      if (length(pr$removed) > 0L)
+        message(length(pr$removed), " of ", n0, " prediction grid cell(s) ",
+                "removed because the fitted covariates are undefined there ",
+                "(outside coverage or masked).")
+      grid <- pr$grid
+    }
+
+    dat$pred$grid <- grid
+  }
+
+  if (!is.null(time)) {
+
+    if (!is.numeric(time) || length(time) < 2L)
+      stop("'time' must be a numeric vector of length >= 2 on the model-time ",
+           "scale.", call. = FALSE)
+    if (any(diff(time) <= 0))
+      stop("'time' must be strictly increasing.", call. = FALSE)
+
+    ## Out-of-range times are not pre-flagged: the habitat interpolation clamps
+    ## rather than always returning NA, so a heuristic here would false-alarm.
+    ## Genuine NA (e.g. undefined habitat) is caught by the post-hoc check in
+    ## add_predictions().
+    dat$pred$time <- time
+  }
+
+  dat
+}
+
+
+## Remove grid cells where any fitted covariate interpolates to NA (outside the
+## covariate extent or over masked regions). Mirrors the pruning setup_data()
+## applies to the fitting grid, and rebuilds celltable so neighbour lookups and
+## cell indexing stay consistent. Returns the pruned grid and removed cell ids.
+.prune_grid_to_cov <- function(grid, cov, xrange_cov, yrange_cov) {
+
+  err <- NULL
+  for (i in seq_along(cov)) {
+    covi <- cov[[i]]
+    for (j in seq_len(dim(covi)[3L])) {
+      liv <- RTMB::interpol2Dfun(covi[, , j],
+                                 xlim = round(xrange_cov[i, ], 5),
+                                 ylim = round(yrange_cov[i, ], 5),
+                                 R = 1)
+      tmp <- liv(round(grid$xygrid[, 1L], 5), round(grid$xygrid[, 2L], 5))
+      ind <- which(is.na(tmp))
+      if (length(ind) > 0L) err <- c(err, ind)
+    }
+  }
+  err <- sort(unique(err))
+
+  if (length(err) == 0L) return(list(grid = grid, removed = integer(0)))
+
+  ind <- match(err, grid$celltable)
+  grid$celltable[ind] <- NA
+  grid$celltable[!is.na(grid$celltable)] <- seq_len(sum(!is.na(grid$celltable)))
+  grid$xygrid <- grid$xygrid[-err, , drop = FALSE]
+  grid$igrid <- grid$igrid[-err, , drop = FALSE]
+
+  list(grid = grid, removed = err)
 }
 
 

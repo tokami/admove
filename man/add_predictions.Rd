@@ -4,11 +4,22 @@
 \alias{add_predictions}
 \title{Add model predictions to a fitted admove model}
 \usage{
-add_predictions(fit)
+add_predictions(fit, grid = NULL, time = NULL)
 }
 \arguments{
 \item{fit}{A fitted model object of class \code{"admove"}, as returned by
 \code{\link[=admove]{admove()}}.}
+
+\item{grid}{Optional \code{"admove_grid"} (from \code{\link[=create_grid]{create_grid()}}) giving a new
+spatial grid to predict on. If \code{NULL} (default), the grid stored in
+\code{fit$dat$pred$grid} is used. The grid must be in the same spatial
+reference as the fit (no reprojection is done) and, when covariates are
+present, should lie within their spatial coverage; a warning is issued
+otherwise, as habitat fields extrapolate to \code{NA} beyond it.}
+
+\item{time}{Optional strictly increasing numeric vector of prediction times
+on the model-time scale (see \code{\link[=tref]{tref()}}). If \code{NULL} (default), the times
+in \code{fit$dat$pred$time} are used.}
 }
 \value{
 An updated object of class \code{"admove"} with model predictions added in
@@ -22,6 +33,15 @@ Computes and adds model predictions for a fitted \code{admove} model.
 This function evaluates the model prediction step and stores the resulting
 predicted quantities in \code{fit$pred}, including the habitat, diffusion,
 taxis, and advection fields on the prediction grid.
+
+Predictions are a pure recomputation from the fitted parameters and
+covariates evaluated on \code{fit$dat$pred$grid} at \code{fit$dat$pred$time}.
+Supplying \code{grid} and/or \code{time} re-targets the prediction (updating
+\code{fit$dat$pred$grid} / \code{fit$dat$pred$time} in the returned object)
+without refitting, so a single fit can be predicted onto different grids or
+time sequences. Because habitat is obtained by local interpolation of the
+fitted covariate fields, predictions are only valid within the covariate
+spatial and temporal coverage.
 
 It also stores \code{fit$pred$mstar}, a list of length \code{nt} holding the
 continuous-time Markov chain (CTMC) generator matrices, one sparse

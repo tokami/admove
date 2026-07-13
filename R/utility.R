@@ -555,7 +555,9 @@ calc_mstar <- function(fit) {
     Mstar <- Zstar + Astar + Dstar
 
      ## fill_inst_mat is upwind
-    if (any(Mstar@x < 0)) neg_slices <- c(neg_slices, t)
+     ## (na.rm: a prediction grid/time outside covariate coverage yields NA
+     ## rates; those propagate into the generator rather than crashing this check)
+    if (any(Mstar@x < 0, na.rm = TRUE)) neg_slices <- c(neg_slices, t)
 
     ## mass balance on the diagonal
     Mstar[cbind(1:nc, 1:nc)] <- 0
