@@ -1657,7 +1657,12 @@ plot_tag_dist <- function(x,
   if (!is.null(n_tags)) sel_keys <- head(sel_keys, n_tags)
 
   n_row <- length(sel_keys)
-  n_col <- as.integer(n_time_steps)
+  ## columns are capped at the most observations any selected tag has, so
+  ## n_time_steps acts as an upper bound rather than a fixed width (avoids
+  ## trailing blank panels when tags have fewer time steps than n_time_steps)
+  max_nobs <- max(vapply(sel_keys,
+                         function(k) nrow(td_store[[k]]$tag), integer(1L)))
+  n_col <- min(as.integer(n_time_steps), max_nobs)
 
   opar <- par(no.readonly = TRUE)
   on.exit(suppressWarnings(graphics::par(opar)))
@@ -2316,15 +2321,15 @@ plot_pref_grid <- function(x,
         xcov <- as.numeric(rownames(x$dat$cov[[i]][,,indi]))
         ycov <- as.numeric(colnames(x$dat$cov[[i]][,,indi]))
         xycov <- expand.grid(xcov, ycov)
-        xgrid <- x$dat$xgr
-        ygrid <- x$dat$ygr
+        xgrid <- x$dat$grid$xgr
+        ygrid <- x$dat$grid$ygr
 
         indix <- as.integer(cut(xycov[,1], xgrid, include.lowest = TRUE))
         indiy <- as.integer(cut(xycov[,2], ygrid, include.lowest = TRUE))
 
         covi <- x$dat$cov[[i]][,,indi]
 
-        isna <- x$dat$celltable[cbind(indix,indiy)]
+        isna <- x$dat$grid$celltable[cbind(indix,indiy)]
         covi[is.na(isna)] <- NA
 
         if (inherits(knots, "matrix")) {
