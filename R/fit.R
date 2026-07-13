@@ -836,6 +836,54 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 
   cat("\n")
 
+  ## Seasonality
+  ss <- x$conf$seasonal_spline
+  sc <- x$conf$seasonal_cov
+  if (isTRUE(any(ss, na.rm = TRUE)) || isTRUE(any(sc, na.rm = TRUE))) {
+
+    per  <- tryCatch(period(x), error = function(e) NA_real_)
+    unit <- tryCatch(tref(x)$units, error = function(e) NA_character_)
+
+    per_txt <- if (length(per) == 1L && !is.na(per) && is.finite(per)) {
+      paste0(signif(per, ndigits),
+             if (!is.null(unit) && !is.na(unit) && nzchar(unit)) paste0(" ", unit) else "")
+    } else {
+      "unspecified"
+    }
+    cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal period:", per_txt))
+
+    nsea_of <- function(a) if (!is.null(a) && length(dim(a)) >= 3L) dim(a)[3L] else NA_integer_
+    nsea_vals <- c(taxis = nsea_of(x$par$alpha),
+                   diffusion = nsea_of(x$par$beta),
+                   advection = nsea_of(x$par$gamma))
+    nsea_vals <- nsea_vals[!is.na(nsea_vals)]
+    if (length(nsea_vals) > 0L) {
+      nsea_txt <- if (length(unique(nsea_vals)) <= 1L) {
+        as.character(nsea_vals[1L])
+      } else {
+        paste(paste0(names(nsea_vals), "=", nsea_vals), collapse = ", ")
+      }
+      cat(sprintf(paste0("  %-", labw, "s %s\n"), "number of seasons:", nsea_txt))
+    }
+
+    cov_names <- names(x$dat$cov)
+    lab_cov <- function(flag) {
+      wi <- which(isTRUE(flag) | flag)
+      if (length(wi) == 0L) return("none")
+      if (!is.null(cov_names) && length(cov_names) >= max(wi)) {
+        paste(cov_names[wi], collapse = ", ")
+      } else {
+        paste(wi, collapse = ", ")
+      }
+    }
+    if (isTRUE(any(ss, na.rm = TRUE)))
+      cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal spline (cov):", lab_cov(ss)))
+    if (isTRUE(any(sc, na.rm = TRUE)))
+      cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal cov:", lab_cov(sc)))
+
+    cat("\n")
+  }
+
   idx <- lapply(x$map, function(x) if(length(x) == 0) FALSE else !is.na(x))
   tmp <- x$pl[!(names(x$pl) %in% names(x$map))]
   idx <- c(idx, lapply(tmp, function(x) rep(TRUE, length(x))))
