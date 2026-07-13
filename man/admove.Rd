@@ -17,6 +17,7 @@ admove(
   do_predictions = TRUE,
   do_sdreport = TRUE,
   do_report = TRUE,
+  do_tag_dist = FALSE,
   save_covariance = FALSE,
   dbg = FALSE,
   control = NULL,
@@ -66,6 +67,14 @@ quantities.}
 
 \item{do_report}{Logical; if \code{TRUE} (default), \code{obj$report()} is
 run to extract reported RTMB quantities.}
+
+\item{do_tag_dist}{Logical; if \code{TRUE}, predicted location distributions
+are precomputed for all tags via \code{\link[=add_tag_dist]{add_tag_dist()}} and stored in
+\code{fit$tag_dist} (consumed by \code{\link[=plot_tag_dist]{plot_tag_dist()}}). Default is
+\code{FALSE}, as this is per-tag expensive and only needed for tag-location
+visualisation; it requires a prediction grid and runs after the steps
+above. Compute distributions for selected tags later with
+\code{add_tag_dist(fit, i = ...)}.}
 
 \item{save_covariance}{Logical; if \code{TRUE}, the covariance matrix from
 \code{\link[RTMB:sdreport]{RTMB::sdreport()}} is retained. This may substantially increase memory use.}

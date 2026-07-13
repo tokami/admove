@@ -40,6 +40,13 @@
 ##'   quantities.
 ##' @param do_report Logical; if \code{TRUE} (default), \code{obj$report()} is
 ##'   run to extract reported RTMB quantities.
+##' @param do_tag_dist Logical; if \code{TRUE}, predicted location distributions
+##'   are precomputed for all tags via [add_tag_dist()] and stored in
+##'   \code{fit$tag_dist} (consumed by [plot_tag_dist()]). Default is
+##'   \code{FALSE}, as this is per-tag expensive and only needed for tag-location
+##'   visualisation; it requires a prediction grid and runs after the steps
+##'   above. Compute distributions for selected tags later with
+##'   \code{add_tag_dist(fit, i = ...)}.
 ##' @param save_covariance Logical; if \code{TRUE}, the covariance matrix from
 ##'   [RTMB::sdreport()] is retained. This may substantially increase memory use.
 ##' @param dbg Logical; if \code{TRUE}, the function is run in debugging mode.
@@ -84,6 +91,7 @@ admove <- function(dat,
                    do_predictions = TRUE,
                    do_sdreport = TRUE,
                    do_report = TRUE,
+                   do_tag_dist = FALSE,
                    save_covariance = FALSE,
                    dbg = FALSE,
                    control = NULL,
@@ -289,6 +297,21 @@ admove <- function(dat,
     if(verbose) message(paste0("Reporting done (",
                                   res$times[which(names(res$times) == "report")],
                                   "min)."))
+  }
+
+  if (do_tag_dist) {
+
+    if (is.null(dat$pred$grid$igrid)) {
+
+      if (verbose) message("No prediction grid provided; skipping tag distributions.")
+
+    } else {
+
+      if (verbose) message("Computing tag location distributions.")
+
+      res <- add_tag_dist(res)
+
+    }
   }
 
   return(res)
@@ -609,6 +632,13 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
 
   skipped <- integer(0L)
 
+  ## CTMC generator list: reuse the one add_predictions() already stored, and
+  ## build it only once (it does not depend on the tag), falling back to a fresh
+  ## computation only if predictions were not run
+  mstar <- if (engine == 2L) {
+    if (!is.null(fit$pred$mstar)) fit$pred$mstar else calc_mstar(fit)
+  } else NULL
+
   for (idx in i) {
 
     tag <- tags[[idx]]
@@ -630,7 +660,6 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
     if (engine == 2L) {
 
       tall <- dat$pred$time
-      mstar <- calc_mstar(fit)
 
       itrel <- as.integer(cut(trel, tall, include.lowest = TRUE))
       itrec <- as.integer(cut(trec, tall, include.lowest = TRUE))
