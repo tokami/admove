@@ -11,12 +11,25 @@ add_predictions(fit)
 \code{\link[=admove]{admove()}}.}
 }
 \value{
-An updated object of class \code{"admove"} with model predictions added.
+An updated object of class \code{"admove"} with model predictions added in
+\code{fit$pred}, including the CTMC generator list \code{fit$pred$mstar}
+(units 1 / time).
 }
 \description{
 Computes and adds model predictions for a fitted \code{admove} model.
 }
 \details{
 This function evaluates the model prediction step and stores the resulting
-predicted quantities in the fitted object.
+predicted quantities in \code{fit$pred}, including the habitat, diffusion,
+taxis, and advection fields on the prediction grid.
+
+It also stores \code{fit$pred$mstar}, a list of length \code{nt} holding the
+continuous-time Markov chain (CTMC) generator matrices, one sparse
+(\code{"dgCMatrix"}) \code{nc x nc} matrix per prediction time slice (see
+\code{\link[=calc_mstar]{calc_mstar()}}). Off-diagonal entries are instantaneous cell-to-cell
+movement rates in units of \strong{1 / time} (the reciprocal of the model
+time unit); diagonal entries are the negative row sums. The generator does
+not include a time step, so movement (transition) probabilities over a step
+\code{dt} are obtained by exponentiating it, e.g.
+\code{Matrix::expm(fit$pred$mstar[[t]] * dt)}.
 }

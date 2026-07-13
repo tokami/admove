@@ -465,54 +465,114 @@ build_time <- function(t_obs,
   list(ts = ts, dts = dts, nts = length(ts), observed = observed)
 }
 
+##' Continuous-time Markov chain generator matrices
+##'
+##' @description
+##' Builds the continuous-time Markov chain (CTMC) generator matrices that
+##' describe fine-scale movement between grid cells, one per prediction time
+##' slice in \code{fit$dat$pred$time}.
+##'
+##' @param fit A fitted model object of class \code{"admove"} that already
+##'   carries prediction quantities in \code{fit$pred} (see
+##'   [add_predictions()]).
+##'
+##' @details
+##' The result is a list of length \code{nt = length(fit$dat$pred$time) - 1},
+##' one sparse generator per prediction time slice. Element \code{t} is an
+##' \code{nc x nc} sparse matrix (\code{Matrix} \code{"dgCMatrix"}, where
+##' \code{nc} is the number of grid cells) holding the generator \eqn{Q_t}
+##' evaluated from the diffusion, taxis, and (optionally) advection fields at
+##' prediction time \code{t}. A sparse representation is used because each row
+##' has at most five non-zero entries (the cell itself plus its four
+##' neighbours), so storage is \eqn{O(nc)} rather than \eqn{O(nc^2)}; this
+##' mirrors the sparse assembly used inside the likelihood.
+##'
+##' Off-diagonal entries \code{mstar[[t]][i, j]} are the instantaneous rates of
+##' moving from cell \code{i} to a neighbouring cell \code{j}, in units of
+##' \strong{1 / time} (the reciprocal of the model time unit, e.g. per day).
+##' Diagonal entries are the negative row sums, so each slice is a valid CTMC
+##' generator. The rates do \emph{not} include the prediction time step: to
+##' obtain the movement (transition) probability matrix over a time step
+##' \code{dt}, exponentiate the generator, e.g.
+##' \code{Matrix::expm(mstar[[t]] * dt)}.
+##'
+##' The generator is assembled exactly as in the likelihood ([nll()]): diffusion
+##' contributes \code{D / next_dist^2} to each neighbour, while taxis and
+##' advection are added with the same upwind scheme via \code{fill_inst_mat()} (so
+##' off-diagonal rates are guaranteed non-negative). The only difference from
+##' \code{nll()} is that the prediction time step \code{dt} is \emph{not} folded
+##' in, leaving a pure per-time-unit generator. The taxis drift velocity is
+##' \eqn{\kappa \nabla h} (already stored, with \eqn{\kappa} folded in, as
+##' \code{fit$pred$hTdx} / \code{hTdy}); it is \emph{not} scaled by the diffusion
+##' coefficient.
+##'
+##' @return A list of length \code{nt} of sparse (\code{"dgCMatrix"}) CTMC
+##'   generator matrices, each \code{nc x nc} in units of 1 / time.
+##'
+##' @seealso [add_predictions()], [add_tag_dist()]
+##'
+##' @keywords internal
 calc_mstar <- function(fit) {
 
-  nc <- nrow(fit$dat$pred$grid$xygrid)
+  grid <- fit$dat$pred$grid
+  nc <- nrow(grid$xygrid)
   nt <- length(fit$dat$pred$time) - 1
-  dts <- diff(fit$dat$pred$time)
-  cs <- diff(sort(unique(fit$dat$pred$grid$xygrid[,1])))[1]
-  nextTo <- get_neighbours(fit$dat$pred$grid)
-  mstar <- array(0, c(nc,nc,nt))
-  for(t in 1:nt){
-    for(i in 1:nc){
-      dif <- exp(fit$pred$hD[i,t])
-      if(fit$conf$use_taxis){
-        tax <- dif * c(fit$pred$hTdx[i,t], fit$pred$hTdy[i,t])
-      }else{
-        tax <- c(0,0)
-      }
-      if(!is.na(nextTo[i,2])){
-        mstar[i,nextTo[i,2],t] <- (dif/cs/cs + 0.5 * tax[2]/cs) *  dts[t]
-      }
-      if(!is.na(nextTo[i,3])){
-        mstar[i,nextTo[i,3],t] <- (dif/cs/cs - 0.5 * tax[2]/cs) *  dts[t]
-      }
-      if(!is.na(nextTo[i,4])){
-        mstar[i,nextTo[i,4],t] <- (dif/cs/cs - 0.5 * tax[1]/cs) *  dts[t]
-      }
-      if(!is.na(nextTo[i,5])){
-        mstar[i,nextTo[i,5],t] <- (dif/cs/cs + 0.5 * tax[1]/cs) *  dts[t]
-      }
+  nextTo <- get_neighbours(grid)
+  next_dist <- c(grid$cellsize[1], grid$cellsize[1],
+                 grid$cellsize[2], grid$cellsize[2])
+
+  mstar_template <- make_mstar_template(nextTo)
+
+  mstar <- vector("list", nt)
+  neg_slices <- integer(0)
+
+  for (t in 1:nt) {
+
+    Zstar <- Astar <- Dstar <- mstar_template
+    Zstar@x[] <- Astar@x[] <- Dstar@x[] <- 0
+
+    ## taxis
+    if (fit$conf$use_taxis) {
+      move <- cbind(fit$pred$hTdx[, t], fit$pred$hTdy[, t])  ## distance / time
+      Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist)
     }
-    if(fit$conf$use_advection){
-      for(i in 1:nc){
-        adv <- c(fit$pred$hAx[i,t], fit$pred$hAy[i,t])
-        if(!is.na(nextTo[i,2])){
-          mstar[i,nextTo[i,2],t] <- mstar[i,nextTo[i,2],t] + 0.5 * adv[2]/cs *  dts[t]
-        }
-        if(!is.na(nextTo[i,3])){
-          mstar[i,nextTo[i,3],t] <- mstar[i,nextTo[i,3],t] - 0.5 * adv[2]/cs *  dts[t]
-        }
-        if(!is.na(nextTo[i,4])){
-          mstar[i,nextTo[i,4],t] <- mstar[i,nextTo[i,4],t] - 0.5 * adv[1]/cs *  dts[t]
-        }
-        if(!is.na(nextTo[i,5])){
-          mstar[i,nextTo[i,5],t] <- mstar[i,nextTo[i,5],t] + 0.5 * adv[1]/cs *  dts[t]
-        }
-      }
+
+    ## advection
+    if (fit$conf$use_advection) {
+      move <- cbind(fit$pred$hAx[, t], fit$pred$hAy[, t])  ## distance / time
+      Astar <- fill_inst_mat(Astar, move, nextTo, next_dist)
     }
-    diag(mstar[,,t]) <- -rowSums(mstar[,,t])
+
+    ## diffusion
+    D <- exp(fit$pred$hD[, t])  ## distance^2 / time
+    for (k in 1:4) {
+      j <- k + 1
+      ind <- which(!is.na(nextTo[, j]))
+      Dstar[cbind(ind, nextTo[ind, j])] <- D[ind] / next_dist[k]^2
+    }
+
+    ## movement rates (per unit time)
+    Mstar <- Zstar + Astar + Dstar
+
+     ## fill_inst_mat is upwind
+    if (any(Mstar@x < 0)) neg_slices <- c(neg_slices, t)
+
+    ## mass balance on the diagonal
+    Mstar[cbind(1:nc, 1:nc)] <- 0
+    Mstar[cbind(1:nc, 1:nc)] <- -Matrix::rowSums(Mstar)
+
+    mstar[[t]] <- Mstar
   }
+
+  if (length(neg_slices)) {
+    warning("calc_mstar(): negative off-diagonal generator rates in time slice(s) ",
+            paste(neg_slices, collapse = ", "),
+            "; the CTMC generator is invalid there and expm() may yield negative ",
+            "probabilities. This usually means drift dominates diffusion at the ",
+            "current grid resolution (grid-Peclet > 1); consider a finer grid.",
+            call. = FALSE)
+  }
+
   return(mstar)
 }
 

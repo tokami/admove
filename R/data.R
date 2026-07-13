@@ -330,7 +330,6 @@ setup_data <- function(grid = NULL,
     res$time_cov <- NULL
   }
 
-
   ## Tags --------------------------------------------
   if (!is.null(tags)) res$tags <- check_tags(tags, res$grid)
 
