@@ -30,9 +30,10 @@ sim_tags(
   ctmc_method = 2,
   sref = NULL,
   tref = NULL,
-  target_dif_frac = 1/500,
+  target_dif_frac = 1/300,
   target_tax_frac = 1/10,
   target_sdO_frac = 1/30,
+  add_obs_unc = NULL,
   plot = FALSE,
   plot_land = FALSE,
   verbose = TRUE
@@ -121,6 +122,10 @@ characteristic spatial scale per unit time, used by \code{\link[=default_sim_par
 
 \item{target_sdO_frac}{Target observation error as a fraction of the
 characteristic spatial scale, used by \code{\link[=default_sim_par]{default_sim_par()}}.}
+
+\item{add_obs_unc}{Add observation uncertainty to tag locations? By default
+(NULL), observation uncertainty is added to archival tags (tag_type =
+"d"), but not to other tags.}
 
 \item{plot}{Logical; if \code{TRUE}, the simulated tags are plotted.}
 

@@ -362,7 +362,6 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
     warning("You are combining mark-recapture tags (tag_type = c) and updating in CTMC. This is not recommended and can lead to unexpected results in CTMC. Consider setting update = FALSE for mark-recapture tags!")
   }
 
-
   ## outside of spatial domain
   if (flag_grid) {
     ind <- which(tags$x < grid$xrange[1] |

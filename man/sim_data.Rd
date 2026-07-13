@@ -43,7 +43,7 @@ sim_data(
   sim_engine = 1,
   use_reject = FALSE,
   n_reject = 100,
-  target_dif_frac = 1/500,
+  target_dif_frac = 1/300,
   target_tax_frac = 1/10,
   target_sdO_frac = 1/30,
   plot = FALSE,

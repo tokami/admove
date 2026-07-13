@@ -213,8 +213,10 @@ create_grid <- function(x = NULL,
 
   } else if (!is.null(x) && inherits(x, "admove_grid")) {
 
-    if (is.null(xrange0)) xrange <- x$xrange
-    if (is.null(yrange0)) yrange <- x$yrange
+    ## use the actual grid breaks (not the stored xrange/yrange, which may be
+    ## stale/misaligned) as the source of truth so the grid is reproduced faithfully
+    if (is.null(xrange0)) xrange <- range(x$xgr)
+    if (is.null(yrange0)) yrange <- range(x$ygr)
     idx <- which(is.na(x$celltable), arr.ind = TRUE)
 
     if (is.null(cellsize0)) cellsize <- x$cellsize
@@ -225,12 +227,24 @@ create_grid <- function(x = NULL,
 
   } else if (!is.null(x) && (inherits(x, "admove_tags"))) {
 
-    xrange <- range(x[,"x"])
-    yrange <- range(x[,"y"])
+    xr <- range(x[,"x"])
+    yr <- range(x[,"y"])
 
     sref <- sref(x)
 
-    if (is.null(cellsize0)) cellsize <- c(diff(xrange) / 10, diff(yrange) / 10)
+    if (is.null(cellsize0)) cellsize <- c(diff(xr) / 10, diff(yr) / 10)
+
+    ## Expand the tag bounding box outward to a whole number of cells plus a
+    ## one-cell margin on every side, so that every tag lies strictly inside the
+    ## grid domain regardless of the chosen cellsize. The margin is required
+    ## because tag-to-cell assignment (cut(), left-open/right-closed intervals)
+    ## would otherwise drop a tag sitting exactly on the lower grid edge, and the
+    ## whole-cell expansion keeps xrange/yrange aligned with the xgr/ygr breaks
+    ## constructed below.
+    nx <- ceiling(diff(xr) / cellsize[1] - 1e-9) + 2L
+    ny <- ceiling(diff(yr) / cellsize[2] - 1e-9) + 2L
+    xrange <- xr[1] - cellsize[1] + c(0, nx) * cellsize[1]
+    yrange <- yr[1] - cellsize[2] + c(0, ny) * cellsize[2]
 
   } else if (!is.null(x) && (inherits(x, "sf") || inherits(x, "sfc"))) {
 
@@ -287,9 +301,15 @@ create_grid <- function(x = NULL,
     xcen <- xcen_cov
     xgr <- c(xcen - cellsize[1] / 2, xcen[length(xcen)] + cellsize[1] / 2)
   } else {
-    xgr <- seq(xrange[1], xrange[2], by = cellsize[1])
+    ## Build breaks by whole cells so xgr always spans the full xrange (the last
+    ## break reaches or exceeds xrange[2]); the epsilon avoids adding a spurious
+    ## cell when the span is already an exact multiple of the cellsize.
+    nx <- max(1L, ceiling(diff(xrange) / cellsize[1] - 1e-9))
+    xgr <- xrange[1] + (0:nx) * cellsize[1]
     xcen <- xgr[-1] - 0.5 * cellsize[1]
   }
+  ## keep the stored range aligned with the actual grid breaks
+  xrange <- range(xgr)
 
   tmp <- round(diff(yrange) / cellsize[2])
   if (tmp > 1e3 && !force) stop(paste0("Are you sure your settings are correct? The provided cell size (cellsize) implies ", tmp, " y breaks. That is too large. Check the cellsize values (units) or use force = TRUE if you are sure about what you are doing."))
@@ -298,9 +318,12 @@ create_grid <- function(x = NULL,
     ycen <- ycen_cov
     ygr <- c(ycen - cellsize[2] / 2, ycen[length(ycen)] + cellsize[2] / 2)
   } else {
-    ygr <- seq(yrange[1], yrange[2], by = cellsize[2])
+    ny <- max(1L, ceiling(diff(yrange) / cellsize[2] - 1e-9))
+    ygr <- yrange[1] + (0:ny) * cellsize[2]
     ycen <- ygr[-1] - 0.5 * cellsize[2]
   }
+  ## keep the stored range aligned with the actual grid breaks
+  yrange <- range(ygr)
 
   xygrid <- expand.grid(x = xcen, y = ycen)
   igrid <- expand.grid(idx = seq_along(xcen), idy = seq_along(ycen))

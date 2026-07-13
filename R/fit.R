@@ -831,21 +831,36 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 ##' @param quantity Character vector specifying which quantities to plot.
 ##'   Available options are:
 ##'   \describe{
-##'     \item{`"pref"`}{Habitat preference functions.}
-##'     \item{`"taxis"`}{Taxis (movement direction and magnitude).}
-##'     \item{`"dif"`}{Diffusion.}
+##'     \item{`"pref"`}{Taxis habitat-preference function vs the covariate(s).}
+##'     \item{`"taxis"`}{Taxis (movement direction and magnitude) in space.}
+##'     \item{`"dif"`}{Diffusion in space.}
+##'     \item{`"pref_dif"`}{Diffusion as a function of the covariate(s). Only
+##'       informative when diffusion has more than one knot (`nknots_dif > 1`);
+##'       with a single knot diffusion is covariate-independent and this panel is
+##'       skipped automatically.}
 ##'     \item{`"par"`}{Estimated model parameters.}
 ##'   }
-##'   Multiple quantities can be selected.
+##'   Multiple quantities can be selected. The default includes `"pref_dif"`, so
+##'   a covariate-dependent diffusion spline is shown automatically when present.
+##'
+##'   For the covariate-preference quantities (`"pref"` and `"pref_dif"`), a
+##'   covariate whose spline coefficients are all fixed in the parameter map (all
+##'   `NA`, i.e. nothing estimated for it) has no fitted preference relationship
+##'   and its panel is omitted. This is the case, for example, for the current
+##'   covariates when advection is used, whose taxis (`alpha`) and diffusion
+##'   (`beta`) coefficients are mapped off. If every covariate is fixed, the
+##'   corresponding quantity contributes no panels.
 ##' @param plot_land Logical; if `TRUE`, land masses are added to spatial plots
 ##'   using [plot_land()]. Default: `FALSE`.
 ##' @param auto_layout Logical; if `TRUE`, graphical parameters are set and
 ##'   restored automatically, and plots are arranged in a multi-panel layout.
 ##'   Default: `TRUE`.
 ##' @param col Colours used in the plots. Defaults to `.admove_cols(10)`.
+##' @param cor_tax Optional scaling factor for taxis arrows. If `NULL`,
+##'   a default scaling is used internally.
 ##' @param cor_dif Optional scaling factor for diffusion symbols. If `NULL`,
 ##'   a default scaling is used internally.
-##' @param cor_tax Optional scaling factor for taxis arrows. If `NULL`,
+##' @param cor_adv Optional scaling factor for advection arrows. If `NULL`,
 ##'   a default scaling is used internally.
 ##' @param asp Positive numeric value specifying the target aspect ratio
 ##'   (columns / rows) for the plot layout. Default: `2`.
@@ -870,13 +885,15 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 ##' @name plot_fit
 ##' @export
 plot_fit <- function(x,
-                     quantity = c("pref","taxis",
-                                  "dif","par"),
+                     quantity = c("pref","taxis","advection",
+                                  "pref_dif","dif",
+                                  "par"),
                      plot_land = FALSE,
                      auto_layout = TRUE,
                      col = .admove_cols(10),
-                     cor_dif = NULL,
                      cor_tax = NULL,
+                     cor_dif = NULL,
+                     cor_adv = NULL,
                      asp = 2,
                      plot.legend = 1,
                      bg = NULL,
@@ -895,10 +912,40 @@ plot_fit <- function(x,
 
   ncov <- if (!is.null(fit$dat$cov)) length(fit$dat$cov) else 1L
   nsea_fit <- if (!is.null(fit$par$alpha)) dim(fit$par$alpha)[3L] else 1L
+  nsea_adv <- if (!is.null(fit$par$gamma)) dim(fit$par$gamma)[3L] else 1L
+  ## Covariates whose spline coefficients are all fixed (mapped NA) contribute
+  ## no fitted preference relationship, so their preference panels are dropped.
+  ## This happens e.g. for the current covariates under advection, where alpha
+  ## (taxis) and beta (diffusion) are mapped off entirely. A covariate is "active"
+  ## if any of its coefficients across knots/seasons is estimated (non-NA in map).
+  active_cov <- function(map_par, par_arr) {
+    if (is.null(par_arr)) return(seq_len(ncov))
+    d <- dim(par_arr)                       ## [nknots, ncov, nsea]
+    if (is.null(map_par)) return(seq_len(d[2L]))
+    m <- array(as.integer(map_par), dim = d)
+    which(apply(m, 2L, function(z) any(!is.na(z))))
+  }
+  sel_tax <- active_cov(fit$map$alpha, fit$par$alpha)
+  ## diffusion varies with the covariate only when it has more than one knot; with
+  ## a single knot it is an estimated constant and the "pref_dif" panel is
+  ## uninformative, so pref_dif is shown only for multi-knot, non-fixed covariates
+  nknots_dif <- if (!is.null(fit$par$beta)) dim(fit$par$beta)[1L] else 1L
+  sel_dif <- if (nknots_dif > 1L) active_cov(fit$map$beta, fit$par$beta) else integer(0)
   panels_per_q <- vapply(quantity, function(q) {
-    if (q == "pref") ncov else if (q == "taxis") nsea_fit else 1L
+    if (q == "pref") length(sel_tax)
+    else if (q == "taxis") nsea_fit
+    else if (q == "advection") nsea_adv
+    else if (q == "pref_dif") length(sel_dif)
+    else 1L
   }, integer(1L))
   total_panels <- sum(panels_per_q)
+
+  if (total_panels == 0L) {
+    warning("Nothing to plot: all requested quantities have zero panels ",
+            "(e.g. only preference quantities were selected but every covariate ",
+            "is fixed/mapped). Nothing drawn.")
+    return(invisible(NULL))
+  }
 
   if (auto_layout) {
     opar <- par(no.readonly = TRUE)
@@ -913,7 +960,9 @@ plot_fit <- function(x,
                    rep(total_panels + 1L, mfrow[2])),
              heights = c(rep(1, mfrow[1]), 0.15))
     }else{
-      layout(matrix(seq_len(total_panels),
+      ## pad to the full grid so an odd panel count does not warn/recycle;
+      ## unused regions (> total_panels) are simply left blank
+      layout(matrix(seq_len(prod(mfrow)),
                     nrow = mfrow[1],
                     ncol = mfrow[2],
                     byrow = TRUE))
@@ -923,7 +972,11 @@ plot_fit <- function(x,
   panel_start <- cumsum(c(0L, panels_per_q[-nq]))
   all_labs <- if (nq > 1L) LETTERS[seq_len(total_panels)] else NULL
   for(i in 1:nq){
+    if (panels_per_q[i] == 0L) next   ## all covariates fixed (e.g. pref_dif with a single knot)
     q_labs <- if (!is.null(all_labs)) all_labs[panel_start[i] + seq_len(panels_per_q[i])] else NULL
+    q_select <- if (quantity[i] == "pref") sel_tax
+                else if (quantity[i] == "pref_dif") sel_dif
+                else NULL
     plot_compare_one(fitlist,
                      quantity = quantity[i],
                      col = col,
@@ -931,8 +984,10 @@ plot_fit <- function(x,
                      plot_land = plot_land,
                      auto_layout = TRUE,
                      panel_lab = q_labs,
-                     cor_dif = cor_dif,
+                     select = q_select,
                      cor_tax = cor_tax,
+                     cor_dif = cor_dif,
+                     cor_adv = cor_adv,
                      bg = bg)
   }
 }

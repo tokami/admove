@@ -7,7 +7,7 @@
 plot_compare_one(
   fit,
   ...,
-  quantity = c("pref", "taxis", "dif", "par"),
+  quantity = c("pref", "taxis", "advection", "pref_dif", "dif", "par"),
   plot_land = FALSE,
   auto_layout = TRUE,
   asp = 2,
@@ -15,8 +15,10 @@ plot_compare_one(
   lty = 1:10,
   cor_tax = NULL,
   cor_dif = NULL,
+  cor_adv = NULL,
   plot.legend = 1,
   panel_lab = NULL,
+  select = NULL,
   bg = NULL
 )
 }
@@ -56,6 +58,10 @@ width.}
 
 \item{cor_dif}{Optional scaling factor for diffusion symbols. If \code{NULL}
 (default), the largest circle is automatically scaled to one grid cell
+width.}
+
+\item{cor_adv}{Optional scaling factor for advection arrows. If \code{NULL}
+(default), the longest arrow is automatically scaled to one grid cell
 width.}
 
 \item{plot.legend}{Logical or integer indicating whether, or which, legend

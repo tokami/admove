@@ -12,7 +12,7 @@ default_sim_par(
   target_tax_per_time = NULL,
   target_tax_frac = 1/10,
   target_dif_per_time = NULL,
-  target_dif_frac = 1/500,
+  target_dif_frac = 1/300,
   target_sdO_frac = 1/30
 )
 }

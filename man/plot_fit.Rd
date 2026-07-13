@@ -7,12 +7,13 @@
 \usage{
 plot_fit(
   x,
-  quantity = c("pref", "taxis", "dif", "par"),
+  quantity = c("pref", "taxis", "advection", "pref_dif", "dif", "par"),
   plot_land = FALSE,
   auto_layout = TRUE,
   col = .admove_cols(10),
-  cor_dif = NULL,
   cor_tax = NULL,
+  cor_dif = NULL,
+  cor_adv = NULL,
   asp = 2,
   plot.legend = 1,
   bg = NULL,
@@ -27,12 +28,25 @@ plot_fit(
 \item{quantity}{Character vector specifying which quantities to plot.
 Available options are:
 \describe{
-\item{\code{"pref"}}{Habitat preference functions.}
-\item{\code{"taxis"}}{Taxis (movement direction and magnitude).}
-\item{\code{"dif"}}{Diffusion.}
+\item{\code{"pref"}}{Taxis habitat-preference function vs the covariate(s).}
+\item{\code{"taxis"}}{Taxis (movement direction and magnitude) in space.}
+\item{\code{"dif"}}{Diffusion in space.}
+\item{\code{"pref_dif"}}{Diffusion as a function of the covariate(s). Only
+informative when diffusion has more than one knot (\code{nknots_dif > 1});
+with a single knot diffusion is covariate-independent and this panel is
+skipped automatically.}
 \item{\code{"par"}}{Estimated model parameters.}
 }
-Multiple quantities can be selected.}
+Multiple quantities can be selected. The default includes \code{"pref_dif"}, so
+a covariate-dependent diffusion spline is shown automatically when present.
+
+For the covariate-preference quantities (\code{"pref"} and \code{"pref_dif"}), a
+covariate whose spline coefficients are all fixed in the parameter map (all
+\code{NA}, i.e. nothing estimated for it) has no fitted preference relationship
+and its panel is omitted. This is the case, for example, for the current
+covariates when advection is used, whose taxis (\code{alpha}) and diffusion
+(\code{beta}) coefficients are mapped off. If every covariate is fixed, the
+corresponding quantity contributes no panels.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added to spatial plots
 using \code{\link[=plot_land]{plot_land()}}. Default: \code{FALSE}.}
@@ -43,10 +57,13 @@ Default: \code{TRUE}.}
 
 \item{col}{Colours used in the plots. Defaults to \code{.admove_cols(10)}.}
 
+\item{cor_tax}{Optional scaling factor for taxis arrows. If \code{NULL},
+a default scaling is used internally.}
+
 \item{cor_dif}{Optional scaling factor for diffusion symbols. If \code{NULL},
 a default scaling is used internally.}
 
-\item{cor_tax}{Optional scaling factor for taxis arrows. If \code{NULL},
+\item{cor_adv}{Optional scaling factor for advection arrows. If \code{NULL},
 a default scaling is used internally.}
 
 \item{asp}{Positive numeric value specifying the target aspect ratio

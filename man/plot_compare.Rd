@@ -7,7 +7,7 @@
 plot_compare(
   fit,
   ...,
-  quantity = c("pref", "taxis", "dif", "par"),
+  quantity = c("pref", "taxis", "advection", "dif", "par"),
   plot_land = FALSE,
   auto_layout = TRUE,
   col = .admove_cols(10),
