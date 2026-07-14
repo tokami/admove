@@ -12,7 +12,8 @@ plot_tag_dist(
   plot_land = FALSE,
   plot_contour = FALSE,
   xlab = "x",
-  ylab = "y"
+  ylab = "y",
+  asp = 1
 )
 }
 \arguments{
@@ -36,6 +37,11 @@ the predicted density image. Default is \code{FALSE}.}
 \item{xlab}{Label for the x-axis. Default is \code{"x"}.}
 
 \item{ylab}{Label for the y-axis. Default is \code{"y"}.}
+
+\item{asp}{Target aspect ratio passed to \code{\link[grDevices:n2mfrow]{grDevices::n2mfrow()}} when a
+single tag is displayed, controlling the shape of the time-step panel
+grid (larger values favour more columns). Ignored when several tags are
+shown (each tag keeps its own row). Default is \code{1}.}
 }
 \value{
 Invisibly returns \code{NULL}. Called for its side effect of producing plots.

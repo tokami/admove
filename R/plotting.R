@@ -1511,6 +1511,21 @@ plot_compare <- function(fit, ...,
   sim_ind <- lapply(fitlist, function(x) inherits(x, "admove_sim"))
 
   quantity <- match.arg(quantity, several.ok = TRUE)
+
+  ## drop "advection" when no fit was configured with advection — otherwise it
+  ## would produce an empty/misleading panel
+  if ("advection" %in% quantity) {
+    any_adv <- any(vapply(fitlist, function(x)
+      inherits(x, c("admove", "admove_sim")) && isTRUE(x$conf$use_advection),
+      logical(1L)))
+    if (!any_adv) quantity <- quantity[quantity != "advection"]
+  }
+
+  if (length(quantity) == 0L)
+    stop("Nothing to plot: the only requested quantity (\"advection\") is not ",
+         "available because no fit was configured with advection ",
+         "(conf$use_advection = FALSE).")
+
   nq <- length(quantity)
 
   if(!is.null(bg)){
@@ -1535,7 +1550,9 @@ plot_compare <- function(fit, ...,
     mfrow <- n2mfrow(total_panels, asp = asp)
     par(mar = c(4.5,4,1,1)+0.1, oma = c(1,1,1,1))
     if(as.integer(plot.legend) == 1){
-      layout(rbind(matrix(seq_len(max(total_panels, prod(mfrow))),
+      cells <- rep(0L, prod(mfrow))
+      cells[seq_len(total_panels)] <- seq_len(total_panels)
+      layout(rbind(matrix(cells,
                           nrow = mfrow[1],
                           ncol = mfrow[2],
                           byrow = TRUE),
@@ -1616,6 +1633,10 @@ plot_compare <- function(fit, ...,
 ##'   the predicted density image. Default is `FALSE`.
 ##' @param xlab Label for the x-axis. Default is `"x"`.
 ##' @param ylab Label for the y-axis. Default is `"y"`.
+##' @param asp Target aspect ratio passed to [grDevices::n2mfrow()] when a
+##'   single tag is displayed, controlling the shape of the time-step panel
+##'   grid (larger values favour more columns). Ignored when several tags are
+##'   shown (each tag keeps its own row). Default is `1`.
 ##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing plots.
@@ -1632,7 +1653,8 @@ plot_tag_dist <- function(x,
                           plot_land = FALSE,
                           plot_contour = FALSE,
                           xlab = "x",
-                          ylab = "y") {
+                          ylab = "y",
+                          asp = 1) {
 
   if (is.null(x$tag_dist))
     stop("No precomputed tag distributions found in this object.\n",
@@ -1669,87 +1691,124 @@ plot_tag_dist <- function(x,
                          function(k) nrow(td_store[[k]]$tag), integer(1L)))
   n_col <- min(as.integer(n_time_steps), max_nobs)
 
-  opar <- par(no.readonly = TRUE)
-  on.exit(suppressWarnings(graphics::par(opar)))
-  par(mfrow = c(n_row, n_col), mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
-
-  for (r in seq_len(n_row)) {
-
-    td <- td_store[[sel_keys[r]]]
+  ## draw a single time-step panel for tag `td` at observation index `j`,
+  ## honouring the requested axis styles (shared by both layouts below)
+  draw_panel <- function(td, ind.tag, j, xaxt, yaxt) {
     tag <- td$tag
     engine <- td$engine
 
     xrange <- td$xrange + c(-0.1, 0.1) * diff(td$xrange)
     yrange <- td$yrange + c(-0.1, 0.1) * diff(td$yrange)
 
-    nobs <- nrow(tag)
+    is_release <- (j == 1L)
+
+    plot(NA, NA,
+         xlim = xrange, ylim = yrange,
+         xaxt = xaxt, yaxt = yaxt,
+         asp = 1, xlab = "", ylab = "")
+
+    if (plot_land) plot_land(sref = sref(x$dat))
+
+    ## no density at release: location is known exactly
+    if (!is_release) {
+      if (engine == 2L) {
+
+        image(td$xg, td$yg, td$dens_list[[j]],
+              xlim = xrange, ylim = yrange,
+              col = adjustcolor(terrain.colors(100), 0.4),
+              asp = 1, add = TRUE)
+
+      } else {
+
+        tagi <- td$traj[td$ind.track[j], ]
+        mu <- as.numeric(tagi[1:2])
+        Sigma <- matrix(c(tagi[3], 0, 0, tagi[4]), 2L, 2L)
+
+        xg <- seq(xrange[1L], xrange[2L], length.out = 150L)
+        yg <- seq(yrange[1L], yrange[2L], length.out = 150L)
+        Z <- matrix(mvtnorm::dmvnorm(as.matrix(expand.grid(xg, yg)), mu, Sigma),
+                    length(xg), length(yg))
+
+        image(xg, yg, Z,
+              xlim = xrange, ylim = yrange,
+              col = adjustcolor(terrain.colors(100), 0.4),
+              asp = 1, add = TRUE)
+
+        if (plot_contour && all(!is.na(Z)))
+          contour(xg, yg, Z, nlevels = 4, add = TRUE)
+      }
+    }
+
+    points(tag$x[ind.tag], tag$y[ind.tag],
+           type = "b", col = adjustcolor("grey20", 0.2))
+    points(tag$x[j], tag$y[j],
+           col = "dodgerblue3", pch = 16, cex = 1.2)
+
+    legend("topright", legend = round(tag[j, 1L], 3),
+           title.font = 2, cex = 0.8, pch = NA, x.intersp = -0.5,
+           bg = "white")
+
+    box(lwd = 1.5)
+  }
+
+  opar <- par(no.readonly = TRUE)
+  on.exit(suppressWarnings(graphics::par(opar)))
+
+  if (n_row == 1L) {
+    ## single tag: spread the time steps over a compact grid rather than a
+    ## single long row of panels
+    td <- td_store[[sel_keys[1L]]]
+    nobs <- nrow(td$tag)
     ind.tag <- if (n_col >= nobs) {
       seq_len(nobs)
     } else {
       round(seq(1L, nobs, length.out = n_col))
     }
+    n_panel <- length(ind.tag)
 
-    for (c in seq_len(n_col)) {
+    mfrow <- n2mfrow(n_panel, asp = asp)
+    nr <- mfrow[1L]; nc <- mfrow[2L]
+    par(mfrow = mfrow, mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
 
-      xaxt <- if (r == n_row) "s" else "n"
-      yaxt <- if (c == 1L)   "s" else "n"
-
-      if (c > length(ind.tag)) {
-        ## pad with a blank panel to keep the grid regular
+    for (p in seq_len(nr * nc)) {
+      if (p > n_panel) {
         plot.new()
         next
       }
+      ## mfrow fills by rows; x-axis on the bottom-most panel of each column,
+      ## y-axis on the first column
+      col_p <- ((p - 1L) %% nc) + 1L
+      xaxt <- if (p + nc > n_panel) "s" else "n"
+      yaxt <- if (col_p == 1L) "s" else "n"
+      draw_panel(td, ind.tag, ind.tag[p], xaxt, yaxt)
+    }
+  } else {
+    ## multiple tags: one row per tag, one column per time step
+    par(mfrow = c(n_row, n_col), mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
 
-      j <- ind.tag[c]
-      is_release <- (j == 1L)
+    for (r in seq_len(n_row)) {
 
-      plot(NA, NA,
-           xlim = xrange, ylim = yrange,
-           xaxt = xaxt, yaxt = yaxt,
-           asp = 1, xlab = "", ylab = "")
-
-      if (plot_land) plot_land(sref = sref(x$dat))
-
-      ## no density at release: location is known exactly
-      if (!is_release) {
-        if (engine == 2L) {
-
-          image(td$xg, td$yg, td$dens_list[[j]],
-                xlim = xrange, ylim = yrange,
-                col = adjustcolor(terrain.colors(100), 0.4),
-                asp = 1, add = TRUE)
-
-        } else {
-
-          tagi <- td$traj[td$ind.track[j], ]
-          mu <- as.numeric(tagi[1:2])
-          Sigma <- matrix(c(tagi[3], 0, 0, tagi[4]), 2L, 2L)
-
-          xg <- seq(xrange[1L], xrange[2L], length.out = 150L)
-          yg <- seq(yrange[1L], yrange[2L], length.out = 150L)
-          Z <- matrix(mvtnorm::dmvnorm(as.matrix(expand.grid(xg, yg)), mu, Sigma),
-                      length(xg), length(yg))
-
-          image(xg, yg, Z,
-                xlim = xrange, ylim = yrange,
-                col = adjustcolor(terrain.colors(100), 0.4),
-                asp = 1, add = TRUE)
-
-          if (plot_contour && all(!is.na(Z)))
-            contour(xg, yg, Z, nlevels = 4, add = TRUE)
-        }
+      td <- td_store[[sel_keys[r]]]
+      nobs <- nrow(td$tag)
+      ind.tag <- if (n_col >= nobs) {
+        seq_len(nobs)
+      } else {
+        round(seq(1L, nobs, length.out = n_col))
       }
 
-      points(tag$x[ind.tag], tag$y[ind.tag],
-             type = "b", col = adjustcolor("grey20", 0.2))
-      points(tag$x[j], tag$y[j],
-             col = "dodgerblue3", pch = 16, cex = 1.2)
+      for (c in seq_len(n_col)) {
 
-      legend("topright", legend = round(tag[j, 1L], 3),
-             title.font = 2, cex = 0.8, pch = NA, x.intersp = -0.5,
-             bg = "white")
+        xaxt <- if (r == n_row) "s" else "n"
+        yaxt <- if (c == 1L)   "s" else "n"
 
-      box(lwd = 1.5)
+        if (c > length(ind.tag)) {
+          ## pad with a blank panel to keep the grid regular
+          plot.new()
+          next
+        }
+
+        draw_panel(td, ind.tag, ind.tag[c], xaxt, yaxt)
+      }
     }
   }
 

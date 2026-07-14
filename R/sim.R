@@ -689,7 +689,7 @@ sim_tags <- function(tag_type,
                      ctmc_method = 2,
                      sref = NULL,
                      tref = NULL,
-                     target_dif_frac = 1/300,
+                     target_dif_frac = 1/500, ## 1/300
                      target_tax_frac = 1/10,
                      target_sdO_frac = 1/30,
                      add_obs_unc = NULL,
