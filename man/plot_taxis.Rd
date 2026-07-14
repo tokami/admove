@@ -32,6 +32,9 @@ plot_taxis(
 \item{select}{Optional index vector specifying which prediction time steps to
 plot. If \code{NULL}, all available prediction time steps are used.}
 
+\item{select_sea}{Optional index vector specifying which seasons to plot. If
+\code{NULL} (default), all seasons are used.}
+
 \item{average}{Logical; if \code{TRUE} (default), the taxis vectors are averaged
 over the selected time steps. If \code{FALSE}, taxis is plotted separately for
 each selected time step.}

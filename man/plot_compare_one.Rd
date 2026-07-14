@@ -70,6 +70,10 @@ should be plotted. Default: \code{1}.}
 \item{panel_lab}{Optional character string added as a panel label in the
 top-left corner of the plot. Default: \code{NULL}.}
 
+\item{select}{Optional index vector specifying which prediction time steps to
+use for spatial quantities. If \code{NULL} (default), all available prediction
+time steps are used.}
+
 \item{bg}{Optional background colour for the plotting device. Default:
 \code{NULL}.}
 }

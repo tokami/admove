@@ -150,6 +150,8 @@ plot_land <- local({
 ##' @param x An object of class `admove` or `admove_sim`.
 ##' @param select Optional index vector specifying which prediction time steps to
 ##'   plot. If `NULL`, all available prediction time steps are used.
+##' @param select_sea Optional index vector specifying which seasons to plot. If
+##'   `NULL` (default), all seasons are used.
 ##' @param average Logical; if `TRUE` (default), the taxis vectors are averaged
 ##'   over the selected time steps. If `FALSE`, taxis is plotted separately for
 ##'   each selected time step.
@@ -1055,6 +1057,9 @@ plot_diffusion <- function(x,
 ##'   `NULL`.
 ##' @param panel_lab Optional character string added as a panel label in the
 ##'   top-left corner of the plot. Default: `NULL`.
+##' @param select Optional index vector specifying which prediction time steps to
+##'   use for spatial quantities. If `NULL` (default), all available prediction
+##'   time steps are used.
 ##'
 ##' @return
 ##' No return value. Called for its side effect of producing a comparison plot.
