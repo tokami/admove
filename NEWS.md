@@ -1,3 +1,29 @@
+# admove 0.1.3
+
+## New features
+
+* `add_predictions()` gains `grid` and `time` arguments, allowing a fitted
+  model to be predicted onto a new spatial grid or set of times without
+  refitting. The supplied grid/time is validated (matching spatial reference,
+  pruned to the fitted covariate coverage) and stored in the returned object.
+
+* `admove()` gains a `do_tag_dist` argument. When `TRUE`, predicted location
+  distributions are precomputed for all tags via `add_tag_dist()` and stored
+  in `fit$tag_dist` for use by `plot_tag_dist()`.
+
+* `summary()` now reports the model's seasonality configuration (seasonal
+  period, number of seasons, and seasonal covariate/spline settings).
+
+## Improvements and fixes
+
+* Improved multi-panel layout of `plot_tag_dist()`, with a new `asp` argument
+  controlling the target panel aspect ratio.
+
+* Plotting fixes.
+
+* R CMD check fixes.
+
+
 # admove 0.1.2
 
 Initial release.
