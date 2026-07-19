@@ -66,7 +66,8 @@ nll <- function(par, dat) {
 
   ## Make preference functions --------------------------
   pref_funcs <- .make_pref_funcs(par$alpha, par$beta, par$gamma,
-                                dat$knots_tax, dat$knots_dif)
+                                dat$knots_tax, dat$knots_dif,
+                                method = dat$smooth_method)
 
   ## Setup habi objects ---------------------------------
   habi_dif <- .make_habi(liv, dat$xrange_cov,

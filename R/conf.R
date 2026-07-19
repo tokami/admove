@@ -24,6 +24,16 @@
 ##' observation) or `2L` (all observations). For example, to estimate observation
 ##' variance for data-storage tags: `conf$obs_var_type[1] <- 1L`.
 ##'
+##' The smooth used for the habitat preference functions is selected by
+##' `conf$smooth_method`:
+##' * `"natural"` (default) — a natural cubic spline through the knot values:
+##'   piecewise cubic, twice continuously differentiable, with local support and
+##'   **linear extrapolation** beyond the outer knots (robust in the covariate
+##'   tails).
+##' * `"poly"` — the legacy single global interpolating polynomial of degree
+##'   `nknots - 1`; retained for reproducibility of older fits, but prone to
+##'   oscillation and unbounded extrapolation.
+##'
 ##' @return
 ##' A named list of default model configuration settings.
 ##'
@@ -77,6 +87,13 @@ default_conf <- function(dat, verbose = TRUE) {
 
   conf$seasonal_cov <- rep(FALSE, ncov)
   conf$seasonal_spline <- rep(FALSE, ncov)
+
+  ## Smooth used for the habitat preference functions
+  ## "natural" = natural cubic spline (default): piecewise cubic, C2, local support,
+  ##             linear extrapolation beyond the outer knots.
+  ## "poly"    = legacy single global interpolating polynomial (retained for
+  ##             reproducibility of older fits).
+  conf$smooth_method <- "natural"
 
   conf
 }
@@ -146,6 +163,13 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   }
 
   conf <- .check_seasonal_lengths(conf, dat)
+
+  ## Validate the preference smooth method
+  if (!is.character(conf$smooth_method) || length(conf$smooth_method) != 1L ||
+        !conf$smooth_method %in% c("natural", "poly")) {
+    stop("'conf$smooth_method' must be one of \"natural\" or \"poly\".",
+         call. = FALSE)
+  }
 
   conf
 }

@@ -1236,7 +1236,8 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 
     ## Make preference functions --------------------------
     pref_funcs <- .make_pref_funcs(par$alpha, par$beta, par$gamma,
-                                  dat$knots_tax, dat$knots_dif)
+                                  dat$knots_tax, dat$knots_dif,
+                                  method = conf$smooth_method)
 
     ## Local interpolation --------------------------------
     liv <- .get_liv(dat$cov)

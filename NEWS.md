@@ -2,6 +2,15 @@
 
 ## New features
 
+* The habitat preference functions (taxis, diffusion) are now built as **natural
+  cubic splines** by default (`conf$smooth_method = "natural"`), replacing the
+  previous global interpolating polynomial. The spline has local support, is
+  twice continuously differentiable, and extrapolates linearly beyond the outer
+  knots — far more robust in the covariate tails than the polynomial. The
+  parameters are still the function values at the knots, so parameterisation and
+  interpretation are unchanged. Set `conf$smooth_method = "poly"` to recover the
+  legacy polynomial behaviour.
+
 * `add_predictions()` gains `grid` and `time` arguments, allowing a fitted
   model to be predicted onto a new spatial grid or set of times without
   refitting. The supplied grid/time is validated (matching spatial reference,
