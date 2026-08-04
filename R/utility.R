@@ -534,13 +534,13 @@ calc_mstar <- function(fit) {
     ## taxis
     if (fit$conf$use_taxis) {
       move <- cbind(fit$pred$hTdx[, t], fit$pred$hTdy[, t])  ## distance / time
-      Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist)
+      Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist, fit$conf$drift_scheme)
     }
 
     ## advection
     if (fit$conf$use_advection) {
       move <- cbind(fit$pred$hAx[, t], fit$pred$hAy[, t])  ## distance / time
-      Astar <- fill_inst_mat(Astar, move, nextTo, next_dist)
+      Astar <- fill_inst_mat(Astar, move, nextTo, next_dist, fit$conf$drift_scheme)
     }
 
     ## diffusion
@@ -579,17 +579,22 @@ calc_mstar <- function(fit) {
 }
 
 
-fill_inst_mat <- function(mat, move, nextTo, next_dist) {
+fill_inst_mat <- function(mat, move, nextTo, next_dist, scheme = "upwind") {
   xyind <- c(2, 2, 1, 1)
   dirsign <- c(+1, -1, -1, +1)
-  ## AD-safe pmax
+  ## NULL-safe (e.g. conf from objects built before drift_scheme existed):
+  ## anything other than "central" is treated as the default upwind scheme.
+  central <- identical(scheme, "central")
+  ## AD-safe pmax (upwind keeps only outflow in the drift direction)
   pos <- function(x) 0.5 * (x + abs(x))
   ## 4 neighbours
   for (k in 1:4) {
     j <- k + 1
     ind <- which(!is.na(nextTo[, j]))
     v <- dirsign[k] * move[ind, xyind[k]]
-    mat[cbind(ind, nextTo[ind, j])] <- pos(v) / next_dist[k]
+    ## upwind: pos(v); central: v/2 split symmetrically (can be negative)
+    rate <- if (central) 0.5 * v else pos(v)
+    mat[cbind(ind, nextTo[ind, j])] <- rate / next_dist[k]
   }
   return(mat)
 }

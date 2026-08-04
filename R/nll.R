@@ -267,14 +267,14 @@ nll <- function(par, dat) {
         ## taxis
         if (dat$use_taxis) {
           move <- kappa * habi_tax$grad(xygrid, ts[t-1]) * dt  ## distance
-          Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist)
+          Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist, dat$drift_scheme)
         }
 
         ## advection
         if (dat$use_advection) {
           move <- cbind(habi_adv_x$val(xygrid, ts[t-1]),
                         habi_adv_y$val(xygrid, ts[t-1])) * dt  ## distance
-          Astar <- fill_inst_mat(Astar, move, nextTo, next_dist)
+          Astar <- fill_inst_mat(Astar, move, nextTo, next_dist, dat$drift_scheme)
         }
 
         ## diffusion

@@ -160,6 +160,13 @@ admove <- function(dat,
   if (conf$engine == 2) {
     if (is.null(dat$grid)) stop("No grid provided! CTMC (engine = 2) requires a grid (dat$grid). See create_grid()!")
     if (!any(colnames(dat$tags) == "ic")) stop("Tags are not matched to the grid cells (column tags$ic is missing). Run check_tags()!")
+
+    if (verbose && identical(conf$drift_scheme, "central")) {
+      message("Using central-difference drift scheme (conf$drift_scheme). ",
+              "If the optimizer fails to converge or predictions warn about ",
+              "negative generator rates, the grid is too coarse for the drift ",
+              "(grid-Peclet > 2): refine the grid or switch to conf$drift_scheme = \"upwind\".")
+    }
   }
 
   ## Combine conf and dat

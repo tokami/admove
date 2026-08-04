@@ -15,8 +15,19 @@
 ##'
 ##' The returned list contains logical flags controlling which data sources and
 ##' movement components are used, settings for observation-variance estimation,
-##' the estimation engine, the CTMC approximation method, and default seasonal
-##' settings for covariates and spline effects.
+##' the estimation engine, the CTMC approximation method, the drift
+##' discretisation scheme, and default seasonal settings for covariates and
+##' spline effects.
+##'
+##' `drift_scheme` selects how the drift term (taxis *and* advection) is
+##' discretised on the grid when assembling the generator. `"upwind"` (the
+##' default) is first-order upstream: off-diagonal rates are guaranteed
+##' non-negative, so the generator is always a valid CTMC generator, at the cost
+##' of some numerical diffusion. `"central"` is second-order central difference:
+##' it removes that numerical diffusion but can produce negative off-diagonal
+##' rates when drift dominates diffusion (grid-Peclet > 2), yielding an invalid
+##' generator and possibly negative transition probabilities. Use `"central"`
+##' only when the grid is fine relative to the drift.
 ##'
 ##' Observation uncertainty is **off by default** (`obs_var_type = c(0L, 0L, 0L)`),
 ##' meaning tag locations are treated as exact. To estimate observation variance
@@ -67,6 +78,15 @@ default_conf <- function(dat, verbose = TRUE) {
   ## 1 = expAv (uni = FALSE)
   ## 2 = expAv (uni = TRUE)
   conf$ctmc_method <- 0
+
+  ## Discretisation of the drift term (taxis + advection) in the generator
+  ## "upwind"  = first-order upstream; off-diagonal rates are always >= 0, so
+  ##             the CTMC generator is always valid (default; robust).
+  ## "central" = central difference; second order, no upwind numerical
+  ##             diffusion, but off-diagonal rates can turn negative when
+  ##             drift dominates diffusion (grid-Peclet > 2), which may yield
+  ##             invalid generators / negative probabilities.
+  conf$drift_scheme <- "upwind"
 
   ## No seasonality by default
   if (!is.null(dat$cov)) {
@@ -146,6 +166,13 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   }
 
   conf <- .check_seasonal_lengths(conf, dat)
+
+  if (!is.null(conf$drift_scheme) &&
+        !identical(conf$drift_scheme, "upwind") &&
+        !identical(conf$drift_scheme, "central")) {
+    stop("'conf$drift_scheme' must be either \"upwind\" or \"central\", not ",
+         deparse(conf$drift_scheme), ".", call. = FALSE)
+  }
 
   conf
 }

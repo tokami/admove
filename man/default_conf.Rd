@@ -26,8 +26,19 @@ corresponding model flags.
 
 The returned list contains logical flags controlling which data sources and
 movement components are used, settings for observation-variance estimation,
-the estimation engine, the CTMC approximation method, and default seasonal
-settings for covariates and spline effects.
+the estimation engine, the CTMC approximation method, the drift
+discretisation scheme, and default seasonal settings for covariates and
+spline effects.
+
+\code{drift_scheme} selects how the drift term (taxis \emph{and} advection) is
+discretised on the grid when assembling the generator. \code{"upwind"} (the
+default) is first-order upstream: off-diagonal rates are guaranteed
+non-negative, so the generator is always a valid CTMC generator, at the cost
+of some numerical diffusion. \code{"central"} is second-order central difference:
+it removes that numerical diffusion but can produce negative off-diagonal
+rates when drift dominates diffusion (grid-Peclet > 2), yielding an invalid
+generator and possibly negative transition probabilities. Use \code{"central"}
+only when the grid is fine relative to the drift.
 
 Observation uncertainty is \strong{off by default} (\code{obs_var_type = c(0L, 0L, 0L)}),
 meaning tag locations are treated as exact. To estimate observation variance

@@ -1682,13 +1682,13 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
       ## taxis
       if (conf$use_taxis) {
         move <- (D * (funcs$tax(xygrid, t) + ggrad)) * dt
-        Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist)
+        Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist, conf$drift_scheme)
       }
 
       ## advection
       if (conf$use_advection) {
         move <- funcs$adv(xygrid, t) * dt
-        Astar <- fill_inst_mat(Astar, move, nextTo, next_dist)
+        Astar <- fill_inst_mat(Astar, move, nextTo, next_dist, conf$drift_scheme)
       }
 
       ## movement rates
