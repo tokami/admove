@@ -25,6 +25,7 @@ test_that("default_conf returns expected names", {
       "do_update",
       "engine",
       "ctmc_method",
+      "drift_scheme",
       "seasonal_cov",
       "seasonal_spline"
     )

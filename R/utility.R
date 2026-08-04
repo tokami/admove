@@ -375,6 +375,192 @@ date_2_time <- function(dates, tref = NULL) {
   out
 }
 
+
+## -- time_2_date ---------------------------------------------------------------
+
+## Resolve a flexible time-reference argument to a list(origin, units).
+## Accepts an admove_tref, an admove object (its tref() is used), a list with
+## 'origin'/'units', or a bare Date/POSIXt origin (units default to "day").
+.resolve_tref <- function(ref) {
+  if (is.null(ref)) {
+    stop("'tref' must be provided to convert numeric time to dates.")
+  }
+  if (inherits(ref, c("admove_tags", "admove_cov", "admove_data",
+                      "admove_grid", "admove"))) {
+    ref <- tref(ref)
+  }
+  if (inherits(ref, "admove_tref")) {
+    return(list(origin = ref$origin, units = ref$units))
+  }
+  if (inherits(ref, "Date") || inherits(ref, "POSIXt")) {
+    return(list(origin = ref, units = "day"))
+  }
+  if (is.list(ref)) {
+    origin <- ref$origin
+    if (is.null(origin)) origin <- ref$t0
+    if (is.null(origin)) origin <- ref$start
+    if (is.null(origin)) {
+      stop("If 'tref' is a list, it must contain an element named 'origin'.")
+    }
+    units <- ref$units
+    if (is.null(units)) {
+      stop("If 'tref' is a list, it must contain an element named 'units'.")
+    }
+    return(list(origin = origin, units = units))
+  }
+  stop("'tref' must be an admove_tref, an admove object, a list with ",
+       "'origin'/'units', or a Date/POSIXt origin.")
+}
+
+## Invert a calendar-aware (month/year) numeric time to dates.
+## date_2_time() defines these units via lubridate::time_length() on an
+## interval, whose fractional part depends on the (variable) length of the
+## containing month/year and can even interact with DST. Rather than reproduce
+## that piecewise, DST-aware map in closed form, we invert date_2_time()
+## itself by bisection: it is strictly increasing in date, so this recovers the
+## unique date whenever date_2_time() is injective and is exact to machine
+## precision in the round-trip sense date_2_time(time_2_date(t)) == t.
+.calendar_time_2_date <- function(t, origin, unit) {
+  tz <- attr(origin, "tzone")
+  if (is.null(tz) || !nzchar(tz)) tz <- "UTC"
+
+  fwd <- function(sec) {
+    as.numeric(date_2_time(.POSIXct(sec, tz = tz),
+                           tref = list(origin = origin, units = unit)))
+  }
+
+  sec_unit <- if (unit == "year") 365.25 * 86400 else 365.25 / 12 * 86400
+  os <- as.numeric(origin)
+  lo <- os + (t - 2) * sec_unit
+  hi <- os + (t + 2) * sec_unit
+
+  ## widen the bracket in the (rare) event the root falls outside it
+  for (k in seq_len(64)) {
+    b <- which(fwd(lo) > t)
+    if (!length(b)) break
+    lo[b] <- lo[b] - sec_unit
+  }
+  for (k in seq_len(64)) {
+    b <- which(fwd(hi) < t)
+    if (!length(b)) break
+    hi[b] <- hi[b] + sec_unit
+  }
+
+  ## bisection (date_2_time is monotone increasing in date)
+  for (i in seq_len(60)) {
+    mid <- (lo + hi) / 2
+    higher <- fwd(mid) < t
+    lo[higher] <- mid[higher]
+    hi[!higher] <- mid[!higher]
+  }
+
+  .POSIXct((lo + hi) / 2, tz = tz)
+}
+
+## Core converter: numeric time (+ origin/units) -> Date/POSIXct. Mirrors the
+## unit handling of date_2_time() exactly (fixed durations for sub-monthly
+## units, calendar-aware for month/year), so the two are inverses.
+.time_2_date_core <- function(t, origin, units) {
+  u <- .normalise_time_unit(units)
+  if (is.na(u) || u == "custom") stop("Unsupported time unit: ", units)
+
+  tz <- attr(origin, "tzone")
+  if (is.null(tz) || !nzchar(tz)) tz <- "UTC"
+  is_date <- inherits(origin, "Date") && !inherits(origin, "POSIXt")
+  origin_ct <- as.POSIXct(origin, tz = tz)
+
+  out <- .POSIXct(rep(NA_real_, length(t)), tz = tz)
+  ok <- is.finite(t)
+
+  if (any(ok)) {
+    if (u %in% c("second", "minute", "hour", "day", "week")) {
+      sec_per <- c(second = 1, minute = 60, hour = 3600,
+                   day = 86400, week = 604800)[[u]]
+      out[ok] <- origin_ct + as.difftime(t[ok] * sec_per, units = "secs")
+    } else {
+      out[ok] <- .calendar_time_2_date(t[ok], origin_ct, u)
+    }
+  }
+
+  if (is_date) as.Date(out, tz = tz) else out
+}
+
+#' Convert numeric model time back to dates
+#'
+#' Inverse of [date_2_time()]: given a numeric time scale measured since a
+#' reference origin (for example the `t` column of an `admove_tags` object),
+#' return the corresponding dates / date-times.
+#'
+#' The conversion mirrors [date_2_time()] exactly. Fixed-length units
+#' (`second`, `minute`, `hour`, `day`, `week`) use a constant number of seconds
+#' per unit. Units `month` and `year` are calendar-aware (their length varies),
+#' so the inverse is obtained by numerically inverting [date_2_time()] itself;
+#' the round trip `date_2_time(time_2_date(t, tref), tref)` recovers `t` to
+#' machine precision, and original dates are recovered exactly wherever
+#' [date_2_time()] is injective (e.g. day-resolution data).
+#'
+#' @param x A numeric vector of times since the origin, or an `admove` object
+#'   carrying a time vector: `admove_tags` (its `t`), `admove_data` (its
+#'   `tags$t`), or `admove_cov` (its layer times).
+#' @param tref A time reference supplying `origin` and `units`. One of an
+#'   `admove_tref`, an `admove` object (its [tref()] is used), a list with
+#'   elements `origin` and `units`, or a bare `Date`/`POSIXt` origin (units then
+#'   default to `"day"`). When `x` is an `admove` object and `tref` is `NULL`,
+#'   `tref(x)` is used.
+#' @param ... Further arguments passed to methods.
+#'
+#' @return A `POSIXct` vector (or `Date` when `origin` is a `Date`) the same
+#'   length as the input time vector, with `NA` preserved.
+#'
+#' @seealso [date_2_time()]
+#'
+#' @examples
+#' tr <- create_tref("2003-01-01 UTC", units = "months")
+#' time_2_date(c(9.33, 138.16), tref = tr)
+#'
+#' ## round-trips date_2_time()
+#' d <- as.Date(c("2003-10-11", "2014-07-07"))
+#' time_2_date(date_2_time(d, tref = tr), tref = tr)
+#'
+#' @name time_2_date
+#' @export
+time_2_date <- function(x, tref = NULL, ...) UseMethod("time_2_date")
+
+#' @rdname time_2_date
+#' @export
+time_2_date.numeric <- function(x, tref = NULL, ...) {
+  ref <- .resolve_tref(tref)
+  .time_2_date_core(x, ref$origin, ref$units)
+}
+
+#' @rdname time_2_date
+#' @export
+time_2_date.default <- function(x, tref = NULL, ...) {
+  time_2_date(as.numeric(x), tref = tref, ...)
+}
+
+#' @rdname time_2_date
+#' @export
+time_2_date.admove_tags <- function(x, tref = NULL, ...) {
+  if (is.null(tref)) tref <- tref(x)
+  time_2_date(as.numeric(x$t), tref = tref, ...)
+}
+
+#' @rdname time_2_date
+#' @export
+time_2_date.admove_data <- function(x, tref = NULL, ...) {
+  if (is.null(tref)) tref <- tref(x)
+  time_2_date(as.numeric(x$tags$t), tref = tref, ...)
+}
+
+#' @rdname time_2_date
+#' @export
+time_2_date.admove_cov <- function(x, tref = NULL, ...) {
+  if (is.null(tref)) tref <- tref(x)
+  time_2_date(as.numeric(dimnames(x)[[3]]), tref = tref, ...)
+}
+
+
 group_consecutive_ranges <- function(x){
   x <- sort(unique(x))
   breaks <- c(0, which(diff(x) != 1), length(x))
