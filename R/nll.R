@@ -108,9 +108,8 @@ nll <- function(par, dat) {
 
       ind_tag_type <- as.integer(tag$tag_type)
 
-      dt_min <- min(dat$min_dt, median(diff(tag$t), na.rm = TRUE), na.rm = TRUE)
-      if (is.na(dt_min)) browser()
-      if (time_mode == "fill_gaps" && (dt_min == 0 || is.na(dt_min))) next()
+      dt_min <- min(dat$min_dt, median(diff(sort(tag$t)), na.rm = TRUE), na.rm = TRUE)
+      if (time_mode == "fill_gaps" && (!is.finite(dt_min) || dt_min <= 0)) next()
 
       out <- build_time(tag$t,
                         mode = time_mode,
@@ -226,8 +225,8 @@ nll <- function(par, dat) {
       tag <- dat$tags[[i]]
       nobs <- nrow(tag)
 
-      dt_min <- min(dat$min_dt, median(diff(tag$t)))
-      if (time_mode == "fill_gaps" && (dt_min == 0 || is.na(dt_min))) next()
+      dt_min <- min(dat$min_dt, median(diff(sort(tag$t))))
+      if (time_mode == "fill_gaps" && (!is.finite(dt_min) || dt_min <= 0)) next()
 
       out <- build_time(tag$t,
                         mode = time_mode,

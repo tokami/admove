@@ -50,9 +50,20 @@ The function performs several checks, including:
 \item removal of rows with missing required values in \code{t}, \code{x}, or \code{y},
 \item removal of rows with \code{use = FALSE},
 \item removal of observations outside the spatial domain of \code{grid},
-\item removal of observations outside the temporal domain of \code{dat}, and
+\item removal of observations outside the temporal domain of \code{dat},
+\item chronological reordering of archival and mark-resight tags whose
+observations are not sorted in time,
+\item removal of observations that repeat the time of the previous
+observation of the same tag (zero time step),
+\item removal of mark-recapture tags whose recapture time is at or before
+the release time, and
 \item optional removal of tags with fewer than two observations.
 }
+
+The time checks matter because the likelihood builds its time axis from the
+sorted observation times while reading the positions in the order they are
+stored, so unsorted times would pair times with the wrong positions. Tags
+with a non-positive time step additionally break the internal time grid.
 
 Spatial and temporal reference information are attached to the returned
 object from \code{grid} and \code{dat} when available.

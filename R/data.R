@@ -309,7 +309,7 @@ setup_data <- function(grid = NULL,
 
       if (length(err) > 0) {
 
-        message("For the following grid cell(s) the covariate(s) can not be calculated (lead to NA): ", paste(err, collapse = ", "), ". Removing grid cell(s) in order to avoid problems during fitting later. \n")
+        message(length(err), " grid cell(s) removed because the covariate(s) can not be calculated there (lead to NA): ", .format_ids(err), ". Removing them in order to avoid problems during fitting later. \n")
 
         ind <- match(err, res$grid$celltable)
         res$grid$celltable[ind] <- NA
@@ -363,7 +363,7 @@ setup_data <- function(grid = NULL,
         message(sum(bad), " entr", if (sum(bad) == 1) "y" else "ies",
                 " removed because the tag position falls where a covariate is NA",
                 " (tag id", if (length(bad_ids) == 1) "" else "s", ": ",
-                paste(bad_ids, collapse = ", "), ").")
+                .format_ids(bad_ids), ").")
       }
       res$tags <- res$tags[!bad, , drop = FALSE]
       ## Drop tags left with a single observation (need release + recovery),

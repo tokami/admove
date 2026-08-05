@@ -1677,9 +1677,9 @@ plot_tag_dist <- function(x,
     sel_keys <- as.character(select)
     missing_keys <- sel_keys[!sel_keys %in% available]
     if (length(missing_keys) > 0L)
-      stop("Tag(s) ", paste(missing_keys, collapse = ", "),
+      stop("Tag(s) ", .format_ids(missing_keys),
            " have no precomputed distribution. Available: ",
-           paste(available, collapse = ", "), ".")
+           .format_ids(available), ".")
   }
   if (!is.null(n_tags)) sel_keys <- head(sel_keys, n_tags)
 

@@ -836,7 +836,7 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
     } else {
 
       funcs <- default_sim_funcs(dat, conf, fit$pl)
-      dt_min <- min(dat$min_dt, median(diff(tag$t)))
+      dt_min <- min(dat$min_dt, median(diff(sort(tag$t))))
 
       out <- build_time(tag$t, mode = "fixed_dt",
                         dt_min = dt_min, dt = dt, eps = 1)
@@ -901,7 +901,7 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
   }
 
   if (length(skipped) > 0L)
-    message(length(skipped), " tag(s) skipped: ", paste(skipped, collapse = ", "))
+    message(length(skipped), " tag(s) skipped: ", .format_ids(skipped))
 
   fit$tag_dist <- tag_dist_list
   fit

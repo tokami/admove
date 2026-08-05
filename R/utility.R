@@ -561,6 +561,20 @@ time_2_date.admove_cov <- function(x, tref = NULL, ...) {
 }
 
 
+## Collapse a vector of identifiers (tag ids, grid cells, time slices, ...) into
+## a short comma-separated string for messages, showing at most 'max_show'
+## entries followed by a count of the remainder.
+.format_ids <- function(ids, max_show = 5) {
+  ids <- as.character(ids)
+  if (length(ids) > max_show) {
+    paste0(paste(ids[seq_len(max_show)], collapse = ", "),
+           ", ... and ", length(ids) - max_show, " more")
+  } else {
+    paste(ids, collapse = ", ")
+  }
+}
+
+
 group_consecutive_ranges <- function(x){
   x <- sort(unique(x))
   breaks <- c(0, which(diff(x) != 1), length(x))
@@ -753,8 +767,8 @@ calc_mstar <- function(fit) {
   }
 
   if (length(neg_slices)) {
-    warning("calc_mstar(): negative off-diagonal generator rates in time slice(s) ",
-            paste(neg_slices, collapse = ", "),
+    warning("calc_mstar(): negative off-diagonal generator rates in ", length(neg_slices),
+            " time slice(s) (", .format_ids(neg_slices), ")",
             "; the CTMC generator is invalid there and expm() may yield negative ",
             "probabilities. This usually means drift dominates diffusion at the ",
             "current grid resolution (grid-Peclet > 1); consider a finer grid.",

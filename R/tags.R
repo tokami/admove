@@ -257,9 +257,20 @@ prep_tags <- function(x,
 ##'   \item removal of rows with missing required values in `t`, `x`, or `y`,
 ##'   \item removal of rows with `use = FALSE`,
 ##'   \item removal of observations outside the spatial domain of `grid`,
-##'   \item removal of observations outside the temporal domain of `dat`, and
+##'   \item removal of observations outside the temporal domain of `dat`,
+##'   \item chronological reordering of archival and mark-resight tags whose
+##'     observations are not sorted in time,
+##'   \item removal of observations that repeat the time of the previous
+##'     observation of the same tag (zero time step),
+##'   \item removal of mark-recapture tags whose recapture time is at or before
+##'     the release time, and
 ##'   \item optional removal of tags with fewer than two observations.
 ##' }
+##'
+##' The time checks matter because the likelihood builds its time axis from the
+##' sorted observation times while reading the positions in the order they are
+##' stored, so unsorted times would pair times with the wrong positions. Tags
+##' with a non-positive time step additionally break the internal time grid.
 ##'
 ##' Spatial and temporal reference information are attached to the returned
 ##' object from `grid` and `dat` when available.
@@ -379,13 +390,13 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
     ## position sits on an NA cell.
     ind <- which(is.na(tags$ic))
     if (length(ind) > 0) {
-      bad_ids <- unique(tags$id[ind])
+      na_ids <- unique(tags$id[ind])
       tags <- tags[-ind,]
       if (verbose) {
         message(length(ind), " entr", if (length(ind) == 1) "y" else "ies",
                 " removed because the tag position falls on an NA grid cell (tag id",
-                if (length(bad_ids) == 1) "" else "s", ": ",
-                paste(bad_ids, collapse = ", "), ").")
+                if (length(na_ids) == 1) "" else "s", ": ",
+                .format_ids(na_ids), ").")
       }
     }
 
@@ -402,9 +413,66 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
     }
   }
 
+  ## time ordering within tags
+  ## Row order carries information: build_time() sorts the times internally, but
+  ## the rows (positions) keep their original order, so unsorted times silently
+  ## mismatch times and positions. Non-positive time steps additionally make
+  ## dt_min <= 0, which errors in build_time().
+  row_list <- split(seq_len(nrow(tags)), tags$id)
+  ord <- seq_len(nrow(tags))
+  bad_ids <- NULL
+  resorted_ids <- NULL
+  for (nm in names(row_list)) {
+    rows <- row_list[[nm]]
+    if (length(rows) < 2) next
+    ti <- tags$t[rows]
+    if (tags$tag_type[rows][1] == "c") {
+      ## for mark-recapture tags the row order is meaningful (release first,
+      ## recapture second), so a recapture time at or before the release time is
+      ## a data error rather than unsorted input
+      if (any(diff(ti) <= 0)) bad_ids <- c(bad_ids, nm)
+    } else if (is.unsorted(ti)) {
+      ord[rows] <- rows[order(ti)]
+      resorted_ids <- c(resorted_ids, nm)
+    }
+  }
+
+  if (!is.null(resorted_ids)) {
+    tags <- tags[ord, , drop = FALSE]
+    rownames(tags) <- NULL
+    if (verbose) message(length(resorted_ids), " tag", if (length(resorted_ids) == 1) "" else "s",
+                         " reordered because the observations were not in chronological order (id",
+                         if (length(resorted_ids) == 1) "" else "s", ": ",
+                         .format_ids(resorted_ids), ").")
+  }
+
+  ## duplicated times (dt = 0) within a tag; positions are contiguous per id
+  drop_rows <- integer(0)
+  for (nm in names(row_list)) {
+    rows <- row_list[[nm]]
+    if (length(rows) < 2 || nm %in% bad_ids) next
+    dup <- which(diff(tags$t[rows]) == 0)
+    if (length(dup) > 0) drop_rows <- c(drop_rows, rows[dup + 1])
+  }
+  if (length(drop_rows) > 0) {
+    if (verbose) message(length(drop_rows), " entr", if (length(drop_rows) == 1) "y" else "ies",
+                         " removed because the time is identical to the previous observation of the same tag (zero time step).")
+  }
+  if (!is.null(bad_ids)) {
+    if (verbose) message(length(bad_ids), " mark-recapture tag", if (length(bad_ids) == 1) "" else "s",
+                         " removed because the recapture time is at or before the release time (id",
+                         if (length(bad_ids) == 1) "" else "s", ": ",
+                         .format_ids(bad_ids), ").")
+    drop_rows <- c(drop_rows, which(tags$id %in% bad_ids))
+  }
+  if (length(drop_rows) > 0) {
+    tags <- tags[-unique(drop_rows), , drop = FALSE]
+    if (nrow(tags) == 0) stop("No tags passed the checks!")
+  }
+
   ## keep only recovered tags
+  tags_list <- split(tags, tags$id)
   if (remove_non_recovered_tags) {
-    tags_list <- split(tags, tags$id)
     tags_list <- tags_list[sapply(tags_list, nrow) > 1]
   }
 
