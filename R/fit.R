@@ -116,6 +116,14 @@ admove <- function(dat,
   ## Assume defaults if not provided
   if(is.null(conf)) conf <- default_conf(dat)
   if(!is.null(engine)) conf$engine <- engine
+
+  ## Derive the seasonal spline breakpoints implied by conf$n_seasons before
+  ## anything reads them: the parameter dimensions, the map and the likelihood
+  ## all index dat$time_spline.
+  res_sea <- .resolve_seasons(dat, conf)
+  dat <- res_sea$dat
+  conf <- res_sea$conf
+
   if(is.null(par)) par <- default_par(dat, conf)
   if(is.null(map)) map <- default_map(dat, conf, par)
 
@@ -138,7 +146,10 @@ admove <- function(dat,
                " but must start at 0 when conf$seasonal_spline[", i, "] is TRUE. ",
                "The seasonal spline uses time modulo the period, so the first ",
                "breakpoint must be 0 to ensure all observations are covered. ",
-               "Example: dat$time_spline[[", i, "]] <- c(0, ", ts_i[-1L], ")",
+               "Either set the number of seasons in the configuration instead, ",
+               "with conf <- set_seasons(conf, dat, n = ", max(length(ts_i), 2L),
+               "), which derives the breakpoints for you, or fix them by hand: ",
+               "dat$time_spline[[", i, "]] <- c(0, ", ts_i[-1L], ")",
                call. = FALSE)
         }
       }
@@ -1041,10 +1052,22 @@ summarise_fit <- function(object, CI = 0.95, ...) {
     }
     cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal period:", per_txt))
 
+    ## conf$n_seasons is the specification; fall back to the array dimensions for
+    ## models whose breakpoints were set by hand
     nsea_of <- function(a) if (!is.null(a) && length(dim(a)) >= 3L) dim(a)[3L] else NA_integer_
-    nsea_vals <- c(taxis = nsea_of(x$par$alpha),
-                   diffusion = nsea_of(x$par$beta),
-                   advection = nsea_of(x$par$gamma))
+    if (!is.null(x$conf$n_seasons) && any(x$conf$n_seasons > 1L)) {
+      cn <- names(x$dat$cov)
+      nsea_vals <- x$conf$n_seasons
+      names(nsea_vals) <- if (!is.null(cn) && length(cn) == length(nsea_vals)) {
+        cn
+      } else {
+        paste0("cov", seq_along(nsea_vals))
+      }
+    } else {
+      nsea_vals <- c(taxis = nsea_of(x$par$alpha),
+                     diffusion = nsea_of(x$par$beta),
+                     advection = nsea_of(x$par$gamma))
+    }
     nsea_vals <- nsea_vals[!is.na(nsea_vals)]
     if (length(nsea_vals) > 0L) {
       nsea_txt <- if (length(unique(nsea_vals)) <= 1L) {
@@ -1054,6 +1077,12 @@ summarise_fit <- function(object, CI = 0.95, ...) {
       }
       cat(sprintf(paste0("  %-", labw, "s %s\n"), "number of seasons:", nsea_txt))
     }
+
+    ## beta carries a seasonal dimension whenever a seasonal basis is used, but
+    ## its coefficients are coupled across seasons unless conf$seasonal_dif is
+    ## set, so report what is actually estimated rather than the array dimension.
+    cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal diffusion:",
+                if (isTRUE(x$conf$seasonal_dif)) "yes" else "no (coupled)"))
 
     cov_names <- names(x$dat$cov)
     lab_cov <- function(flag) {

@@ -34,6 +34,6 @@ present.
 }
 \examples{
 conf <- list(use_taxis = FALSE)
-conf <- check_conf(conf, skjepo$dat)
+conf <- check_conf(conf, skjepo$sim$dat)
 
 }

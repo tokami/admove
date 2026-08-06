@@ -29,17 +29,35 @@ By default:
 \itemize{
 \item taxis spline coefficients (\code{alpha}) are mapped using
 \code{.make_alpha_map()}, with the first row fixed and remaining coefficients
-estimated independently;
+estimated independently for each season;
 \item the taxis scaling parameter (\code{logKappa}) is fixed;
 \item diffusion spline coefficients (\code{beta}) are mapped using
-\code{.make_beta_map()};
+\code{.make_beta_map()} and are \strong{coupled across seasons}, so diffusion is
+constant over the seasonal cycle unless \code{conf$seasonal_dif} is \code{TRUE};
 \item advection coefficients (\code{gamma}) are either fixed or, if advection is
 enabled, coupled between the \(x\)- and \(y\)-directions within each
-covariate;
+covariate and season;
 \item observation-error parameters (\code{logSdO}) are fixed unless estimation
 is enabled for the corresponding tag type, in which case \(x\)- and
 \(y\)-direction standard deviations are coupled by default.
 }
+
+Seasonality is opt-in per model component. Setting \code{conf$seasonal_spline}
+gives \code{alpha}, \code{beta} and \code{gamma} a seasonal third dimension, but only the
+taxis and advection coefficients are estimated season by season. Diffusion
+is a second-moment quantity: estimating it separately per season divides the
+information available per season and is easily traded off against a seasonal
+taxis acting on the same covariate. Set \code{conf$seasonal_dif <- TRUE} to
+estimate season-specific diffusion instead. That frees the diffusion
+intercept (\code{beta[1, 1, ]}, the overall diffusion level) as well as the
+covariate-dependent coefficients, so it also has an effect when diffusion is
+a single estimated constant.
+
+Because the seasonal dimension is shared by all covariates but each
+covariate is indexed through its own \code{dat$time_spline[[i]]}, a covariate with
+fewer breaks than the maximum never evaluates its trailing slices. Those
+coefficients are fixed rather than estimated, since they would otherwise be
+free parameters that do not enter the likelihood.
 }
 \examples{
 map <- with(skjepo$sim, default_map(dat, conf, par))

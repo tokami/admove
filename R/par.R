@@ -66,21 +66,21 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
 
   par <- list()
 
+  ## Seasonal structure is specified in conf, so derive the spline breakpoints
+  ## it implies before the array dimensions are taken from them
+  dat <- .resolve_seasons(dat, conf)$dat
+
+  ## Number of spline slices per covariate. The third dimension of alpha, beta
+  ## and gamma is shared, so it is sized by the covariate that uses the most
+  ## slices; default_map() fixes the slices each covariate never evaluates.
+  max_seasonal <- max(.get_nsea(dat))
+
   ## Taxis -----------------------------------------
 
   if (is.null(dat$knots_tax)) {
     knots_tax <- matrix(NA, 1, 1)
   } else {
     knots_tax <- dat$knots_tax
-  }
-
-  max_seasonal <- 1
-  if (any(conf$seasonal_spline)) {
-    for (i in seq_along(dat$time_spline)) {
-      if (isTRUE(conf$seasonal_spline[i])) {
-        max_seasonal <- max(max_seasonal, length(dat$time_spline[[i]]))
-      }
-    }
   }
 
   par$alpha <- array(rep(0, length(knots_tax)),
@@ -97,15 +97,6 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
     knots_dif <- dat$knots_dif
   }
 
-  max_seasonal <- 1
-  if (any(conf$seasonal_spline)) {
-    for (i in seq_along(dat$time_spline)) {
-      if (isTRUE(conf$seasonal_spline[i])) {
-        max_seasonal <- max(max_seasonal, length(dat$time_spline[[i]]))
-      }
-    }
-  }
-
   par$beta <- array(rep(0, length(knots_dif)),
                     dim = c(nrow(knots_dif),
                             ncol(knots_dif),
@@ -117,15 +108,6 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
     cov <- 1
   } else {
     cov <- dat$cov
-  }
-
-  max_seasonal <- 1
-  if (any(conf$seasonal_spline)) {
-    for (i in seq_along(dat$time_spline)) {
-      if (isTRUE(conf$seasonal_spline[i])) {
-        max_seasonal <- max(max_seasonal, length(dat$time_spline[[i]]))
-      }
-    }
   }
 
   par$gamma <- array(rep(0, length(cov)),

@@ -402,6 +402,10 @@ shift_tref <- function(x, tref = NULL, origin = NULL, verbose = TRUE) {
   ## preserve represented dates:
   ## origin_old + t_old == origin_new + t_new
   ## => t_new = t_old - (origin_new - origin_old)
+  has_seasonal <- inherits(x, "admove_data") && !is.null(x$time_spline) &&
+    any(vapply(x$time_spline, function(ts) isTRUE(attr(ts, "seasonal")),
+               logical(1L)))
+
   x <- .shift_time_values(x, delta = delta)
 
   tr1 <- tr0
@@ -411,6 +415,11 @@ shift_tref <- function(x, tref = NULL, origin = NULL, verbose = TRUE) {
   if (isTRUE(verbose)) {
     message("Shifted time values by ", signif(delta, 8), " ", units_time(tr0),
             " to match new tref origin.")
+    if (has_seasonal) {
+      message("Seasonal spline breakpoints are phases within the cycle and were ",
+              "not shifted: the seasons are now anchored on the new origin. ",
+              "Refit if the season boundaries should keep their previous dates.")
+    }
   }
 
   x
@@ -569,7 +578,14 @@ scale_tref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
 
     x$trange <- x$trange * scale
     x$time_cov <- lapply(x$time_cov, function(x) x * scale)
-    x$time_spline <- lapply(x$time_spline, function(x) x * scale)
+    ## rescaling is correct for seasonal breakpoints as well, since the period
+    ## is rescaled by the same factor below -- but arithmetic drops attributes,
+    ## so the seasonal marker has to be carried over
+    x$time_spline <- lapply(x$time_spline, function(ts) {
+      out <- ts * scale
+      if (isTRUE(attr(ts, "seasonal"))) attr(out, "seasonal") <- TRUE
+      out
+    })
     x$pred$time <- x$pred$time * scale
 
   } else if (is.numeric(x) || is.matrix(x) || is.array(x)) {
@@ -908,7 +924,13 @@ if (u == "quarter") {
 
     x$trange <- x$trange - delta
     x$time_cov <- lapply(x$time_cov, function(x) x - delta)
-    x$time_spline <- lapply(x$time_spline, function(x) x - delta)
+    ## Seasonal spline breakpoints are phases within the cycle, anchored at the
+    ## time origin, not absolute times: shifting them would rotate the seasonal
+    ## cycle and break the requirement that the first breakpoint is 0. Seasons
+    ## are re-anchored on the new origin instead.
+    x$time_spline <- lapply(x$time_spline, function(ts) {
+      if (isTRUE(attr(ts, "seasonal"))) ts else ts - delta
+    })
     x$pred$time <- x$pred$time - delta
 
   } else if (is.numeric(x) || is.matrix(x) || is.array(x)) {

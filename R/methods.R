@@ -716,10 +716,7 @@ period.admove_data <- function(x, ...) tref(x)$period
 ##' @rdname period-set
 ##' @export
 `period<-.default` <- function(x, value) {
-  tr <- tref(x)
-  tr$period <- value
-  tref(x) <- tr
-  x
+  .set_period(x, value)
 }
 
 
@@ -733,25 +730,31 @@ period.admove_data <- function(x, ...) tref(x)$period
 ##' @rdname period-set
 ##' @export
 `period<-.admove_cov` <- function(x, value) {
-  tr <- sref(x)
-  tr$period <- value
-  tref(x) <- tr
-  x
+  .set_period(x, value)
 }
 
 ##' @rdname period-set
 ##' @export
 `period<-.admove_tags` <- function(x, value) {
-  tr <- sref(x)
-  tr$period <- value
-  tref(x) <- tr
-  x
+  .set_period(x, value)
 }
 
 ##' @rdname period-set
 ##' @export
 `period<-.admove_data` <- function(x, value) {
-  tr <- sref(x)
+  .set_period(x, value)
+}
+
+
+## Set the seasonal period on the time reference of an object. The period is
+## part of the time reference, so an object without one has nowhere to store it.
+.set_period <- function(x, value) {
+  tr <- tref(x)
+  if (is.null(tr)) {
+    stop("This object has no time reference, so a period cannot be set on it. ",
+         "Add one first, e.g. x <- add_tref(x, create_tref(origin = ..., ",
+         "units = ..., period = ", deparse(value), ")).", call. = FALSE)
+  }
   tr$period <- value
   tref(x) <- tr
   x

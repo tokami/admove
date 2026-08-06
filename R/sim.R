@@ -1232,6 +1232,11 @@ default_sim_par <- function(par = NULL,
 ##' @export
 default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 
+  ## seasonal breakpoints follow from conf, exactly as when fitting
+  res_sea <- .resolve_seasons(dat, conf)
+  dat <- res_sea$dat
+  conf <- res_sea$conf
+
   if (!is.null(dat$cov)) {
 
     ## Make preference functions --------------------------

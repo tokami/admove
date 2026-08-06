@@ -4,11 +4,16 @@
 \alias{default_conf}
 \title{Default model configuration for admove}
 \usage{
-default_conf(dat, verbose = TRUE)
+default_conf(dat, n_seasons = 1, verbose = TRUE)
 }
 \arguments{
 \item{dat}{A data list containing model input data, as produced by
 \code{\link[=setup_data]{setup_data()}}.}
+
+\item{n_seasons}{Number of seasons per covariate, as a single number applied
+to all covariates or one value per covariate. \code{1} (the default) means
+no seasonality. Values above 1 split the seasonal cycle
+(\code{period(dat)}) into that many equal seasons. See \code{\link[=set_seasons]{set_seasons()}}.}
 
 \item{verbose}{Logical; if \code{TRUE}, informative messages may be printed.}
 }
@@ -40,6 +45,24 @@ rates when drift dominates diffusion (grid-Peclet > 2), yielding an invalid
 generator and possibly negative transition probabilities. Use \code{"central"}
 only when the grid is fine relative to the drift.
 
+Seasonality is specified here rather than in the data. \code{n_seasons} gives the
+number of seasons per covariate (\code{1}, the default, means no seasonality) and
+is the only setting needed to make a model seasonal: the breakpoints of the
+seasonal spline basis are derived from it and from the cycle length
+\code{period(dat)} when the model is set up, so they never have to be written into
+\code{dat} by hand. \code{seasonal_spline} is filled in from \code{n_seasons} and is
+retained for models that set breakpoints manually via \code{dat$time_spline}.
+\code{seasonal_cov} is a separate setting controlling whether the covariate
+\emph{fields} themselves repeat over the cycle, and stays \code{FALSE} by default.
+
+\code{seasonal_dif} is a single logical controlling whether
+diffusion is estimated season by season, and is \strong{\code{FALSE} by default} even
+when a seasonal spline basis is in use: diffusion is a second-moment
+quantity, so estimating it per season divides the information available per
+season and is easily traded off against a seasonal taxis acting on the same
+covariate. Taxis and advection remain season-specific. See \code{\link[=default_map]{default_map()}}
+for how these settings translate into fixed and estimated coefficients.
+
 Observation uncertainty is \strong{off by default} (\code{obs_var_type = c(0L, 0L, 0L)}),
 meaning tag locations are treated as exact. To estimate observation variance
 for a tag type, set the corresponding element to \code{1L} (all but last
@@ -47,6 +70,9 @@ observation) or \code{2L} (all observations). For example, to estimate observati
 variance for data-storage tags: \code{conf$obs_var_type[1] <- 1L}.
 }
 \examples{
-conf <- default_conf(skjepo$dat)
+conf <- default_conf(skjepo$sim$dat)
+
+## four seasons per year for every covariate
+conf <- default_conf(skjepo$sim$dat, n_seasons = 4)
 
 }

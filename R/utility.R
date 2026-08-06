@@ -622,6 +622,22 @@ t2index <- function(time, time_vec, period = NULL, seasonal = FALSE){
   findInterval(time, time_vec, rightmost.closed = TRUE, left.open = TRUE)
 }
 
+
+## Number of spline slices (seasons) used by each covariate.
+##
+## alpha/beta/gamma share a single third dimension, sized by the covariate with
+## the most breaks, but each covariate is indexed through its own
+## dat$time_spline[[i]] (see t2index()). A covariate with fewer breaks therefore
+## only ever evaluates its first .get_nsea(dat)[i] slices; the remaining slices
+## never enter the likelihood and must stay fixed in the map.
+.get_nsea <- function(dat) {
+  ts <- dat$time_spline
+  if (is.null(ts) || length(ts) == 0L) return(1L)
+  n <- vapply(ts, length, integer(1L))
+  n[!is.finite(n) | n < 1L] <- 1L
+  n
+}
+
 build_time <- function(t_obs,
                           mode = c("fill_gaps", "fixed_dt"),
                           dt_min,

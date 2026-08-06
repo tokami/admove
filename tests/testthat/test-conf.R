@@ -26,9 +26,42 @@ test_that("default_conf returns expected names", {
       "engine",
       "ctmc_method",
       "drift_scheme",
+      "n_seasons",
       "seasonal_cov",
-      "seasonal_spline"
+      "seasonal_spline",
+      "seasonal_dif"
     )
+  )
+})
+
+
+test_that("default_conf switches seasonal diffusion off by default", {
+
+  dat <- list(
+    tags = NULL,
+    cov = array(1:3, dim = c(3))
+  )
+
+  conf <- default_conf(dat, verbose = FALSE)
+
+  expect_false(conf$seasonal_dif)
+})
+
+
+test_that("check_conf rejects an invalid seasonal_dif", {
+
+  dat <- list(
+    tags = NULL,
+    cov = array(1:3, dim = c(3))
+  )
+
+  expect_error(
+    check_conf(list(seasonal_dif = c(TRUE, FALSE)), dat, verbose = FALSE),
+    "single TRUE or FALSE"
+  )
+  expect_error(
+    check_conf(list(seasonal_dif = NA), dat, verbose = FALSE),
+    "single TRUE or FALSE"
   )
 })
 
