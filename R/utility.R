@@ -233,11 +233,15 @@ date_2_time <- function(dates, tref = NULL) {
     stop("'dates' must be of class 'Date' or 'POSIXt'.")
   }
 
+  ## time zone of 'dates' (a Date is a calendar day, i.e. UTC by convention)
+  tz <- "UTC"
+  if (inherits(dates, "POSIXt")) {
+    tzd <- attr(dates, "tzone", exact = TRUE)
+    if (!is.null(tzd) && length(tzd) && nzchar(tzd[1L])) tz <- tzd[1L]
+  }
+
   ## helper to coerce to same broad class as 'dates'
   if (inherits(dates, "POSIXt")) {
-    tz <- attr(dates, "tzone", exact = TRUE)
-    if (is.null(tz) || !length(tz) || identical(tz, "")) tz <- "UTC"
-
     coerce_time <- function(x) {
       as.POSIXct(x, tz = tz)
     }
@@ -245,6 +249,13 @@ date_2_time <- function(dates, tref = NULL) {
     coerce_time <- function(x) {
       as.Date(x)
     }
+  }
+
+  ## the origin may carry a zone of its own (e.g. "2003-01-01 UTC" or a POSIXct
+  ## in another zone), which as.POSIXct()/as.Date() would silently drop
+  coerce_origin <- function(x) {
+    x <- .origin_2_posix(x, tz = tz)
+    if (inherits(dates, "POSIXt")) x else as.Date(x, tz = attr(x, "tzone"))
   }
 
   dates <- coerce_time(dates)
@@ -290,6 +301,8 @@ date_2_time <- function(dates, tref = NULL) {
 
   ## helper to choose flooring unit for inferred origin
   guess_floor_unit <- function(units) {
+    units <- .normalise_time_unit(units)
+    if (is.na(units)) return("day")
     switch(units,
            second = "second",
            minute = "minute",
@@ -321,7 +334,7 @@ date_2_time <- function(dates, tref = NULL) {
 
     inferred <- FALSE
     units <- guess_units(dates)
-    origin <- coerce_time(tref)
+    origin <- coerce_origin(tref)
 
   } else if (is.list(tref)) {
 
@@ -333,11 +346,15 @@ date_2_time <- function(dates, tref = NULL) {
     if (is.null(origin)) {
       stop("If 'tref' is a list, it must contain an element named 'origin'.")
     }
-    origin <- coerce_time(origin)
+    origin <- coerce_origin(origin)
 
   } else {
     stop("'tref' must be NULL, a Date/POSIXt object, or a list with element 'origin'.")
   }
+
+  ## normalise unit aliases (e.g. "months" -> "month", "secs" -> "second")
+  units_norm <- .normalise_time_unit(units)
+  if (!is.na(units_norm)) units <- units_norm
 
   ## compute numeric time since origin
   out <- rep(NA_real_, length(dates))
@@ -362,7 +379,8 @@ date_2_time <- function(dates, tref = NULL) {
     )
 
   } else {
-    stop("Unsupported units: ", units)
+    stop("Unsupported units: ", units, ". Supported units are 'second', ",
+         "'minute', 'hour', 'day', 'week', 'month' and 'year'.")
   }
 
   attr(out, "tref") <- list(
@@ -464,10 +482,12 @@ date_2_time <- function(dates, tref = NULL) {
   u <- .normalise_time_unit(units)
   if (is.na(u) || u == "custom") stop("Unsupported time unit: ", units)
 
-  tz <- attr(origin, "tzone")
-  if (is.null(tz) || !nzchar(tz)) tz <- "UTC"
   is_date <- inherits(origin, "Date") && !inherits(origin, "POSIXt")
-  origin_ct <- as.POSIXct(origin, tz = tz)
+
+  ## honour a zone carried by the origin itself; zone-less origins are UTC
+  origin_ct <- .origin_2_posix(origin)
+  tz <- attr(origin_ct, "tzone", exact = TRUE) %||% "UTC"
+  if (length(tz) != 1L || is.na(tz) || !nzchar(tz)) tz <- "UTC"
 
   out <- .POSIXct(rep(NA_real_, length(t)), tz = tz)
   ok <- is.finite(t)

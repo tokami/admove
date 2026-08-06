@@ -350,6 +350,23 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
   tags$tag_type <- .get_tag_type(tags$tag_type)
 
 
+  ## ids shared between tag types
+  ## Everything downstream groups observations with split(tags, tags$id), so an
+  ## id reused by two different tag types silently merges two physical tags into
+  ## one: their positions are interleaved into a single track, the merged tag
+  ## takes the tag_type of whichever row comes first, and the internal time step
+  ## collapses to the finer of the two -- which can inflate the number of
+  ## integration steps by orders of magnitude. This happens easily because
+  ## prep_dtags()/prep_stags() fall back to numbering tags 1, 2, 3, ... when no
+  ## id column is supplied, which readily collides with numeric ids carried by
+  ## mark-recapture tags. Make such ids unique per tag type and say so.
+  tags <- .disambiguate_ids(tags, verbose)
+
+  ## duplicate ids within the mark-recapture tags (the one within-type case that
+  ## is detectable: a "c" tag must have exactly two observations)
+  .check_ctag_rows(tags, verbose)
+
+
   ## use missing
   if (!any(colnames(tags) == "use")) tags$use <- 1
 
@@ -528,6 +545,84 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
   }
 
   return(tags_out)
+}
+
+
+## Make tag ids unique across tag types.
+##
+## Only ids that actually occur under more than one tag_type are rewritten, as
+## `<tag_type>-<id>`; every other id is left untouched so that plot labels and
+## any user-side matching keep working. Repeats until the new ids are free, in
+## the unlikely event that a constructed name is already taken.
+##
+## Note what is deliberately NOT flagged here: an id repeated *within* one tag
+## type is the normal representation, not an error -- that is exactly how the
+## successive positions of a data-storage tag are grouped. Reused ids within a
+## type are therefore undetectable in general; the one exception is handled by
+## .check_ctag_rows() below.
+.disambiguate_ids <- function(tags, verbose = TRUE) {
+
+  if (is.null(tags) || nrow(tags) == 0) return(tags)
+
+  ids <- as.character(tags$id)
+  types <- as.character(tags$tag_type)
+
+  ntype <- tapply(types, ids, function(z) length(unique(z)))
+  shared <- names(ntype)[!is.na(ntype) & ntype > 1]
+  if (length(shared) == 0) return(tags)
+
+  rows <- which(ids %in% shared)
+  new <- paste0(types[rows], "-", ids[rows])
+
+  ## avoid colliding with an id that already exists
+  taken <- setdiff(unique(ids), shared)
+  pre <- ""
+  while (any(new %in% taken)) {
+    pre <- paste0(pre, "_")
+    new <- paste0(types[rows], pre, "-", ids[rows])
+  }
+
+  tags$id <- ids
+  tags$id[rows] <- new
+
+  if (verbose) {
+    message(length(shared), " tag id", if (length(shared) == 1) "" else "s",
+            " used by more than one tag type (",
+            .format_ids(shared),
+            "). Observations of different tag types would otherwise be merged ",
+            "into a single tag; the affected ids have been made unique per tag ",
+            "type (e.g. \"", shared[1], "\" -> \"", sort(unique(new))[1],
+            "\"). Supply distinct ids across tag types to avoid this.")
+  }
+
+  tags
+}
+
+
+## Mark-recapture tags carry exactly one release and one recovery, so a "c" tag
+## with more than two rows means two physical tags share an id. Unlike the
+## cross-type case this cannot be repaired automatically -- there is no way to
+## tell which row belongs to which tag -- so warn and leave the data alone
+## rather than silently dropping observations.
+.check_ctag_rows <- function(tags, verbose = TRUE) {
+
+  if (is.null(tags) || nrow(tags) == 0) return(invisible(NULL))
+  if (!any(tags$tag_type %in% "c")) return(invisible(NULL))
+
+  n <- table(as.character(tags$id[tags$tag_type %in% "c"]))
+  bad <- names(n)[n > 2]
+
+  if (length(bad) > 0 && verbose) {
+    warning(length(bad), " mark-recapture tag id",
+            if (length(bad) == 1) "" else "s",
+            " with more than two observations (", .format_ids(bad),
+            "). A mark-recapture tag has exactly one release and one recovery, ",
+            "so these ids are most likely shared by several tags. They will be ",
+            "fitted as single tags with interleaved positions. Please check the ",
+            "ids in the input data.", call. = FALSE)
+  }
+
+  invisible(NULL)
 }
 
 

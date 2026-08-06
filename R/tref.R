@@ -29,12 +29,20 @@
 ##'
 ##' @param origin A date-time corresponding to the temporal origin (e.g. a release
 ##'   date). Will be converted to \code{POSIXct}. Use \code{NA} to leave undefined.
+##'   A \code{Date} becomes midnight in \code{tz}, and a character string may
+##'   carry its own time zone, either as a trailing zone name
+##'   (\code{"2003-01-01 UTC"}), an ISO-8601 \code{"Z"}, or a UTC offset
+##'   (\code{"2003-01-01 00:00:00+02:00"}); such a zone takes precedence over
+##'   \code{tz}.
 ##' @param units Character string describing the units of the stored numeric time
 ##'   axis, e.g. \code{"year"}, \code{"quarter"}, \code{"month"}, \code{"week"},
 ##'   \code{"day"}. Use \code{list_units_time()} for supported options.
 ##' @param period Optional numeric seasonal period (cycle length) in the same
 ##'   units as the stored time axis. If \code{NULL}, a default is inferred for
 ##'   common annual discretizations when \code{units} is known.
+##' @param tz Time zone used to interpret \code{origin} when it does not carry
+##'   one of its own. Default: \code{"UTC"}, matching \code{\link{prep_tags}()}
+##'   and \code{\link{prep_cov}()}. The session's local time zone is never used.
 ##'
 ##' @return An object of class \code{admove_tref}.
 ##'
@@ -52,13 +60,16 @@
 ##' tr10
 ##'
 ##' @export
-create_tref <- function(origin = NA, units = NA_character_, period = NULL) {
+create_tref <- function(origin = NA, units = NA_character_, period = NULL,
+                        tz = "UTC") {
+
+  if (length(tz) != 1L || is.na(tz) || !nzchar(tz)) tz <- "UTC"
 
   ## origin handling
   if (is.null(origin) || (length(origin) == 1 && is.na(origin))) {
-    origin <- as.POSIXct(NA)
+    origin <- .POSIXct(NA_real_, tz = tz)
   } else {
-    origin <- as.POSIXct(origin)
+    origin <- .origin_2_posix(origin, tz = tz)
   }
 
   ## validate / infer period
@@ -377,6 +388,10 @@ shift_tref <- function(x, tref = NULL, origin = NULL, verbose = TRUE) {
     stop("Target origin is NA.")
   }
 
+  ## interpret a zone-less target origin in the zone of the current origin
+  origin_new <- .origin_2_posix(origin_new,
+                                tz = attr(as.POSIXct(origin0), "tzone") %||% "UTC")
+
   if (.same_origin(origin0, origin_new)) {
     if (isTRUE(verbose)) message("Origin unchanged; nothing to shift.")
     return(x)
@@ -590,6 +605,90 @@ scale_tref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
 
 ## Internal functions -----------------------------------------------------------
 
+## Parse a single character origin, honouring any time zone it carries itself.
+.parse_origin_chr <- function(s, tz) {
+
+  if (is.na(s) || !nzchar(s)) return(.POSIXct(NA_real_, tz = tz))
+
+  ## ISO-8601 UTC offset ("+02:00", "-0500") or "Z"; as.POSIXct() ignores both
+  if (grepl("(Z|[+-][0-9]{2}:?[0-9]{2})$", s)) {
+    s2 <- sub("Z$", "+0000", s)
+    s2 <- sub("([+-][0-9]{2}):([0-9]{2})$", "\\1\\2", s2)
+    s2 <- sub("T", " ", s2)
+    ## strptime() only consumes %z when a full time is present
+    if (!grepl("[0-9]{2}:[0-9]{2}", s2)) {
+      s2 <- sub("([+-][0-9]{4})$", " 00:00:00\\1", s2)
+    }
+    p <- strptime(s2, "%Y-%m-%d %H:%M:%OS%z", tz = "UTC")
+    if (!is.na(p)) return(as.POSIXct(p, tz = "UTC"))
+  }
+
+  ## trailing zone name, e.g. "2003-01-01 UTC", "2003-01-01 12:00 Europe/Oslo"
+  m <- regexpr("[[:space:]]+[A-Za-z][A-Za-z0-9_+/-]*$", s)
+  if (m > 0) {
+    zone <- trimws(regmatches(s, m))
+    rest <- trimws(substr(s, 1L, m - 1L))
+    if (nzchar(rest)) {
+      if (zone %in% OlsonNames()) return(as.POSIXct(rest, tz = zone))
+      warning("Unrecognized time zone '", zone, "' in origin '", s,
+              "'; interpreting it as ", tz, ".")
+      return(as.POSIXct(rest, tz = tz))
+    }
+  }
+
+  as.POSIXct(s, tz = tz)
+}
+
+## Coerce an origin specification to POSIXct without silently falling back to
+## the session's local time zone.
+##
+## Character origins may carry a zone of their own, as a trailing zone name
+## ("2003-01-01 UTC"), an ISO-8601 "Z", or a UTC offset ("2003-01-01 00:00+02:00");
+## base as.POSIXct() parses none of these and reads the string as local time
+## instead. Anything without a zone of its own is interpreted in 'tz', a Date
+## becomes midnight in 'tz', and POSIXt input keeps whatever zone it carries.
+.origin_2_posix <- function(origin, tz = "UTC") {
+
+  if (length(tz) != 1L || is.na(tz) || !nzchar(tz)) tz <- "UTC"
+
+  if (is.null(origin)) return(.POSIXct(NA_real_, tz = tz))
+
+  if (inherits(origin, "POSIXt")) {
+    origin <- as.POSIXct(origin)
+    otz <- attr(origin, "tzone", exact = TRUE)
+    if (is.null(otz) || !length(otz) || !nzchar(otz[1L])) {
+      ## unset zone means the instant was resolved in local time: label it as
+      ## such (the instant is unchanged) so the origin is self-describing
+      sys_tz <- Sys.timezone()
+      attr(origin, "tzone") <-
+        if (length(sys_tz) == 1L && !is.na(sys_tz) && nzchar(sys_tz)) sys_tz else tz
+    }
+    return(origin)
+  }
+
+  if (inherits(origin, "Date")) {
+    out <- as.POSIXct(paste(format(origin), "00:00:00"), tz = tz)
+    out[is.na(origin)] <- NA
+    return(out)
+  }
+
+  if (is.numeric(origin)) return(.POSIXct(as.numeric(origin), tz = tz))
+
+  if (!is.character(origin)) {
+    if (all(is.na(origin))) return(.POSIXct(rep(NA_real_, length(origin)), tz = tz))
+    stop("'origin' must be a Date, POSIXt, or a date-time string.")
+  }
+
+  origin <- trimws(origin)
+  if (length(origin) == 1L) return(.parse_origin_chr(origin, tz))
+
+  out <- lapply(origin, .parse_origin_chr, tz = tz)
+  zones <- vapply(out, function(z) attr(z, "tzone") %||% tz, character(1))
+  out <- .POSIXct(vapply(out, as.numeric, numeric(1)),
+                  tz = if (length(unique(zones)) == 1L) zones[1L] else tz)
+  out
+}
+
 .normalise_time_unit <- function(u) {
   if (is.null(u) || length(u) != 1L || is.na(u)) return(NA_character_)
   u0 <- tolower(trimws(u))
@@ -715,6 +814,15 @@ scale_tref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
 .same_origin <- function(x, y) {
   if (.is_na_scalar(x) && .is_na_scalar(y)) return(TRUE)
   if (.is_na_scalar(x) || .is_na_scalar(y)) return(FALSE)
+
+  ## compare the instants, so that a Date, a POSIXct and a date-time string
+  ## denoting the same moment (in any zone) all count as the same origin
+  xt <- try(.origin_2_posix(x), silent = TRUE)
+  yt <- try(.origin_2_posix(y), silent = TRUE)
+  if (!inherits(xt, "try-error") && !inherits(yt, "try-error")) {
+    return(isTRUE(all.equal(as.numeric(xt), as.numeric(yt))))
+  }
+
   isTRUE(all.equal(x, y))
 }
 
@@ -735,7 +843,7 @@ scale_tref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
 
 .tref_origin_offset <- function(origin_from, origin_to, tr) {
 
-  u <- units_time(tr)
+  u <- .normalise_time_unit(units_time(tr))
 
   if (length(u) != 1L || is.na(u)) {
     stop("Cannot shift tref origin because tref$units are missing.")
@@ -745,17 +853,12 @@ scale_tref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
     stop("Cannot shift tref origin because one of the origins is NA.")
   }
 
-  ## harmonise classes
-  if (inherits(origin_from, "POSIXt") || inherits(origin_to, "POSIXt")) {
-    tz <- attr(origin_to, "tzone", exact = TRUE) %||%
-      attr(origin_from, "tzone", exact = TRUE) %||%
-      "UTC"
-    origin_from <- as.POSIXct(origin_from, tz = tz)
-    origin_to <- as.POSIXct(origin_to,   tz = tz)
-  } else {
-    origin_from <- as.Date(origin_from)
-    origin_to <- as.Date(origin_to)
-  }
+  ## harmonise classes and zones (the offset is between instants)
+  tz <- attr(origin_to, "tzone", exact = TRUE) %||%
+    attr(origin_from, "tzone", exact = TRUE) %||%
+    "UTC"
+  origin_from <- .origin_2_posix(origin_from, tz = tz)
+  origin_to <- .origin_2_posix(origin_to, tz = tz)
 
   if (u %in% c("second", "minute", "hour", "day", "week")) {
     return(
@@ -827,7 +930,9 @@ if (u == "quarter") {
   origin_txt <- NULL
   if (!is.null(x$origin) && length(x$origin) == 1L && !is.na(x$origin)) {
     if (inherits(x$origin, "POSIXt")) {
-      origin_txt <- format(x$origin, tz = "UTC", usetz = TRUE)
+      otz <- attr(x$origin, "tzone", exact = TRUE) %||% "UTC"
+      if (length(otz) != 1L || !nzchar(otz)) otz <- "UTC"
+      origin_txt <- format(x$origin, tz = otz, usetz = TRUE)
     } else if (inherits(x$origin, "Date")) {
       origin_txt <- format(x$origin)
     } else {

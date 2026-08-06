@@ -30,16 +30,37 @@ starting values for model fitting and are intended to provide reasonable
 defaults for the selected model setup.
 
 The taxis scaling parameter \code{logKappa} is fixed during estimation (see
-\code{\link[=default_map]{default_map()}}) and therefore its initial value is its final value. Because
-\code{kappa} has units of \eqn{[\text{distance}^2 / \text{time}]}, a value of 1
-is only appropriate when coordinates are already on a unit scale. For
-projected coordinates such as UTM (metres), \code{kappa = 1} makes the taxis
-contribution negligible and renders the taxis spline coefficients
-unidentifiable. The default is therefore set to
-\code{kappa = cellsize^2 / median_dt}, which ensures that a unit covariate
-gradient over one grid-cell width produces movement of one cell width per
-median time step. Override via \verb{par$logKappa <- log(<value>)} after calling
-this function.
+\code{\link[=default_map]{default_map()}}) and therefore its initial value is its final value. This is
+not a restriction: the likelihood depends on the taxis only through
+\code{kappa * grad(h)}, and \code{h} is linear in \code{alpha}, so \code{kappa * alpha} is the
+only identifiable combination. \code{kappa} is therefore a pure scale factor, and
+its only job is to put \code{alpha} on an \eqn{O(1)} scale so that the objective
+is well conditioned. It cannot change the fitted movement field.
+
+Because \code{kappa} has units of \eqn{[\text{distance}^2 / \text{time}]}, a
+value of 1 is only appropriate when coordinates are already on a unit scale.
+The default is instead anchored on observed movement: a preference function
+with unit range over the tag-sampled covariate range \eqn{R} has
+\eqn{|dh/dcov| \approx 1/R}, so the drift accumulated over a time \eqn{T} is
+\eqn{\kappa (G/R) T}, with \eqn{G} the typical covariate gradient at the tag
+positions. Equating that to a characteristic displacement \eqn{L} gives
+
+\deqn{\kappa = L R / (G T),}
+
+where \eqn{L} and \eqn{T} are the median displacement and the median time
+between successive observations, and \eqn{R} and \eqn{G} are evaluated at the
+tag positions and reduced across covariates by their median. Only the tag
+types enabled in \code{conf} contribute, since \code{dat$tags} may still carry types
+that \code{conf} switches off.
+
+If the quantities above cannot be computed (no covariates, no tags, or a
+covariate with no spatial variation), the function falls back to the earlier
+rule \code{kappa = cellsize^2 / median_dt} and, failing that, to \code{kappa = 1}.
+
+Override via \verb{par$logKappa <- log(<value>)} after calling this function. The
+fit is insensitive to the exact value -- anything within roughly an order of
+magnitude gives the same optimum -- so this only needs to be in the right
+range, not finely tuned.
 }
 \examples{
 par <- with(skjepo$sim, default_par(dat, conf))

@@ -4,7 +4,7 @@
 \alias{add_sdreport}
 \title{Add an RTMB sdreport to a fitted admove model}
 \usage{
-add_sdreport(fit, save_covariance = FALSE)
+add_sdreport(fit, save_covariance = FALSE, ad_hessian = TRUE)
 }
 \arguments{
 \item{fit}{A fitted model object of class \code{"admove"}, as returned by
@@ -13,6 +13,11 @@ add_sdreport(fit, save_covariance = FALSE)
 \item{save_covariance}{Logical; if \code{TRUE}, the full covariance matrix
 from the sdreport is retained. If \code{FALSE} (default), the covariance
 matrix is removed to reduce memory use.}
+
+\item{ad_hessian}{Logical; if \code{TRUE} (default), the exact AD Hessian
+from \code{obj$he()} is supplied to \code{\link[RTMB:sdreport]{RTMB::sdreport()}} instead of letting
+it difference the gradient numerically. See Details. Set to \code{FALSE}
+to restore the \code{\link[RTMB:sdreport]{RTMB::sdreport()}} default behaviour.}
 }
 \value{
 An updated object of class \code{"admove"} with sdreport results added.
@@ -32,4 +37,30 @@ This function adds three components to the fitted object:
 }
 
 If these components already exist in \code{fit}, they are overwritten.
+
+For models without random effects -- which is every \code{admove} model --
+\code{\link[RTMB:sdreport]{RTMB::sdreport()}} builds the Hessian with
+\code{stats::optimHess(par, obj$fn, obj$gr)}, i.e. by differencing the
+gradient with a fixed step (\code{ndeps}, default \code{1e-3}). That is both
+inaccurate and fragile here:
+
+\itemize{
+\item the step is absolute, so it is far too coarse whenever the
+parameters sit on a small scale, and the resulting standard errors can be
+wrong by factors of several;
+\item if the likelihood is not finite \code{ndeps} away from the optimum --
+which happens readily when a predicted track leaves the covariate domain
+or crosses a masked (\code{NA}) cell -- the whole Hessian becomes
+\code{NaN}, and with it every standard error, including those of the
+\code{ADREPORT}ed quantities.
+}
+
+\code{obj$he()} instead returns the exact second derivatives from the AD
+tape, at no extra cost (the runtime of \code{\link[RTMB:sdreport]{RTMB::sdreport()}} is dominated by the
+delta-method step for the \code{ADREPORT}ed quantities). It does not mask
+genuine problems: an indefinite Hessian is still reported via
+\code{sdrep$pdHess}, and if the objective really is \code{NaN} at the
+optimum, \code{obj$he()} returns \code{NaN} too. If \code{obj$he()} is
+unavailable or fails, the function silently falls back to the
+\code{\link[RTMB:sdreport]{RTMB::sdreport()}} default.
 }

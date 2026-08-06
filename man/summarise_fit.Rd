@@ -25,3 +25,15 @@ A summary object, typically printed for inspection.
 Summarises the main results of a fitted \code{admove} model, including
 parameter estimates and, where available, associated uncertainty measures.
 }
+\details{
+The parameter table has one row per estimated parameter. Elements that are
+held equal by the parameter map (e.g. the \eqn{x}- and \eqn{y}-direction
+advection coefficients, which \code{\link[=default_map]{default_map()}} couples) are a single
+estimated parameter and are therefore shown once, with a row name listing
+all element indices they cover, such as \code{gamma3,6}. Fixed elements
+(\code{NA} in the map) are omitted, so the number of rows matches the model
+degrees of freedom reported by \code{\link[=logLik]{logLik()}}.
+
+The taxis scaling parameter \code{kappa} is fixed rather than estimated (see
+\code{\link[=default_par]{default_par()}}) and is reported separately above the table.
+}

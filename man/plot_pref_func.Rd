@@ -107,4 +107,14 @@ and coefficients.
 
 If multiple seasonal curves are available for a covariate, they are shown as
 separate line types, and a legend is added.
+
+For \code{type = "taxis"} the curve is the habitat preference function \eqn{h}
+\emph{without} the taxis scaling parameter \code{kappa}: taxis itself is
+\eqn{\kappa \nabla h}, and only the product \code{kappa * alpha} is identifiable
+(see \code{\link[=default_par]{default_par()}}). The y-axis is therefore in units of "preference per
+unit kappa", and its height depends on the value \code{kappa} was fixed at. Two
+fits of the same model with different \code{par$logKappa} produce curves of
+identical shape but different scale; multiply by \code{exp(fit$pl$logKappa)}
+before comparing them, or use \code{\link[=plot_taxis]{plot_taxis()}}, which already includes
+\code{kappa}. The current value is shown by \code{summary()} as \verb{kappa (fixed scale)}.
 }

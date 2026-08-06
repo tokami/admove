@@ -190,6 +190,11 @@ plot_land <- local({
 ##' If `average = TRUE`, the mean taxis over the selected time steps is plotted.
 ##' Otherwise, one panel per selected time step is produced unless `add = TRUE`.
 ##'
+##' The arrows show \eqn{\kappa \nabla h}, i.e. they include the taxis scaling
+##' parameter `kappa`. Since only the product `kappa * alpha` is identifiable
+##' (see [default_par()]), this plot is invariant to the value `kappa` was fixed
+##' at, unlike the preference curve drawn by [plot_pref_func()].
+##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing a plot.
 ##'
@@ -1352,11 +1357,14 @@ plot_compare_one <- function(fit, ...,
 
     }
 
+    ## labs keeps the element names of unlist(pl) as keys, used further below to
+    ## match the parameters of the remaining objects
     labs <- names(pars)
     names(labs) <- names(notMapped)[notMapped]
-    if(length(grep("logSdO",labs)) > 0){
-      names(labs)[grep("logSdO",labs)] <- "sdO"
-    }
+
+    ## axis labels are the row names used by summary(), so that both refer to
+    ## coupled parameters in the same way (e.g. "gamma3,6" for x/y advection)
+    axis_labs <- .par_display_labels(fitlist[[i]], labs)
 
     if(!is.null(bg)){
       graphics::par(bg = bg)
@@ -1372,7 +1380,7 @@ plot_compare_one <- function(fit, ...,
     ##     usr <- par("usr")
     ##     rect(usr[1], usr[3], usr[2], usr[4], col = bg, border = NA)
     ## }
-    axis(1, at = seq(pars), labels = names(labs))
+    axis(1, at = seq(pars), labels = axis_labs)
 
     addi <- seq(-0.1, 0.1, length.out = n)
 
@@ -1892,6 +1900,16 @@ add_lab <- function(lab){
 ##'
 ##' If multiple seasonal curves are available for a covariate, they are shown as
 ##' separate line types, and a legend is added.
+##'
+##' For `type = "taxis"` the curve is the habitat preference function \eqn{h}
+##' *without* the taxis scaling parameter `kappa`: taxis itself is
+##' \eqn{\kappa \nabla h}, and only the product `kappa * alpha` is identifiable
+##' (see [default_par()]). The y-axis is therefore in units of "preference per
+##' unit kappa", and its height depends on the value `kappa` was fixed at. Two
+##' fits of the same model with different `par$logKappa` produce curves of
+##' identical shape but different scale; multiply by `exp(fit$pl$logKappa)`
+##' before comparing them, or use [plot_taxis()], which already includes
+##' `kappa`. The current value is shown by `summary()` as `kappa (fixed scale)`.
 ##'
 ##' @return
 ##' Invisibly returns `NULL` when plotting. If `return_limits = TRUE`, returns a

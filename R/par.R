@@ -18,16 +18,37 @@
 ##' defaults for the selected model setup.
 ##'
 ##' The taxis scaling parameter `logKappa` is fixed during estimation (see
-##' [default_map()]) and therefore its initial value is its final value. Because
-##' `kappa` has units of \eqn{[\text{distance}^2 / \text{time}]}, a value of 1
-##' is only appropriate when coordinates are already on a unit scale. For
-##' projected coordinates such as UTM (metres), `kappa = 1` makes the taxis
-##' contribution negligible and renders the taxis spline coefficients
-##' unidentifiable. The default is therefore set to
-##' `kappa = cellsize^2 / median_dt`, which ensures that a unit covariate
-##' gradient over one grid-cell width produces movement of one cell width per
-##' median time step. Override via `par$logKappa <- log(<value>)` after calling
-##' this function.
+##' [default_map()]) and therefore its initial value is its final value. This is
+##' not a restriction: the likelihood depends on the taxis only through
+##' `kappa * grad(h)`, and `h` is linear in `alpha`, so `kappa * alpha` is the
+##' only identifiable combination. `kappa` is therefore a pure scale factor, and
+##' its only job is to put `alpha` on an \eqn{O(1)} scale so that the objective
+##' is well conditioned. It cannot change the fitted movement field.
+##'
+##' Because `kappa` has units of \eqn{[\text{distance}^2 / \text{time}]}, a
+##' value of 1 is only appropriate when coordinates are already on a unit scale.
+##' The default is instead anchored on observed movement: a preference function
+##' with unit range over the tag-sampled covariate range \eqn{R} has
+##' \eqn{|dh/dcov| \approx 1/R}, so the drift accumulated over a time \eqn{T} is
+##' \eqn{\kappa (G/R) T}, with \eqn{G} the typical covariate gradient at the tag
+##' positions. Equating that to a characteristic displacement \eqn{L} gives
+##'
+##' \deqn{\kappa = L R / (G T),}
+##'
+##' where \eqn{L} and \eqn{T} are the median displacement and the median time
+##' between successive observations, and \eqn{R} and \eqn{G} are evaluated at the
+##' tag positions and reduced across covariates by their median. Only the tag
+##' types enabled in `conf` contribute, since `dat$tags` may still carry types
+##' that `conf` switches off.
+##'
+##' If the quantities above cannot be computed (no covariates, no tags, or a
+##' covariate with no spatial variation), the function falls back to the earlier
+##' rule `kappa = cellsize^2 / median_dt` and, failing that, to `kappa = 1`.
+##'
+##' Override via `par$logKappa <- log(<value>)` after calling this function. The
+##' fit is insensitive to the exact value -- anything within roughly an order of
+##' magnitude gives the same optimum -- so this only needs to be in the right
+##' range, not finely tuned.
 ##'
 ##' @return
 ##' A named list of initial parameter values.
@@ -114,20 +135,44 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
 
 
   ## Taxis scaling -------------------------------------
-  ## kappa has units [distance^2 / time]; scale it so that a unit covariate
-  ## gradient over one grid-cell width produces movement of one cell width per
-  ## median time step: kappa = cellsize^2 / median_dt.
-  ## Falls back to log(1) when grid or tag timing are unavailable.
-  cs <- if (!is.null(dat$grid)) dat$grid$cellsize[1] else 1
-  all_dts <- if (!is.null(dat$tags)) {
-    tags_split <- split(dat$tags, dat$tags$id)
-    unlist(lapply(tags_split, function(tg) diff(tg$t)))
-  } else {
-    NULL
+  ## kappa is a pure scale factor (only kappa * alpha is identifiable), so its
+  ## job is to put alpha on an O(1) scale. Anchor it on observed movement,
+  ## kappa = L * R / (G * T), rather than on the integration step -- see the
+  ## @details section above. Only the tag types enabled in conf are used.
+  tags_use <- .get_tags_in_use(dat, conf)
+  steps <- .get_tag_steps(tags_use)
+
+  kappa <- NA_real_
+
+  if (!is.null(steps) && !is.null(dat$cov) && !is.null(dat$time_cov)) {
+    tl <- median(steps$dt[steps$dt > 0], na.rm = TRUE)
+    ll <- median(steps$dl[steps$dl > 0], na.rm = TRUE)
+    if (is.finite(tl) && tl > 0 && is.finite(ll) && ll > 0) {
+      cs_sum <- .cov_scales_at_tags(dat, tags_use)
+      ki <- ll * cs_sum$range / (cs_sum$grad * tl)
+      ki <- ki[is.finite(ki) & ki > 0]
+      if (length(ki) > 0) kappa <- median(ki)
+    }
   }
-  med_dt <- if (length(all_dts) > 0) median(all_dts, na.rm = TRUE) else 1
-  if (is.na(med_dt) || med_dt <= 0) med_dt <- 1
-  par$logKappa <- log(cs^2 / med_dt)
+
+  ## Fallback: the earlier grid- and time-step-based rule, then 1.
+  if (!is.finite(kappa) || kappa <= 0) {
+    cs <- if (!is.null(dat$grid)) dat$grid$cellsize[1] else 1
+    med_dt <- if (!is.null(steps)) median(steps$dt[steps$dt > 0], na.rm = TRUE) else NA_real_
+    if (!is.finite(med_dt) || med_dt <= 0) med_dt <- 1
+    kappa <- cs^2 / med_dt
+    if (!is.finite(kappa) || kappa <= 0) kappa <- 1
+    if (verbose) {
+      message("Could not derive kappa from the tag displacements and covariate ",
+              "gradients; falling back to cellsize^2 / median_dt = ",
+              signif(kappa, 4), ". Check par$logKappa.")
+    }
+  } else if (verbose) {
+    message("kappa set to ", signif(kappa, 4),
+            " from the observed tag displacements and covariate gradients.")
+  }
+
+  par$logKappa <- log(kappa)
 
 
 
@@ -137,6 +182,138 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
 
   ## return
   par
+}
+
+
+## Internal helpers for the kappa default ------------------------------------
+
+## Subset the tags to the types enabled in conf. dat$tags may still carry types
+## that conf switches off (check_tags() only drops them inside admove()), and
+## including them skews any scale derived from the tag timing -- e.g. a handful
+## of data-storage tags sampled hourly would otherwise dominate the median time
+## step of thousands of mark-recapture tags.
+.get_tags_in_use <- function(dat, conf) {
+
+  if (is.null(dat$tags) || nrow(dat$tags) == 0) return(NULL)
+
+  keep <- c("d", "s", "c")[c(isTRUE(conf$use_dtags),
+                             isTRUE(conf$use_stags),
+                             isTRUE(conf$use_ctags))]
+
+  if (length(keep) == 0) return(dat$tags)
+
+  out <- dat$tags[dat$tags$tag_type %in% keep, , drop = FALSE]
+  if (nrow(out) == 0) return(dat$tags)
+
+  out
+}
+
+
+## Time steps and displacements between successive observations of each tag.
+## Grouped by tag type as well as id: default_par() runs before check_tags(),
+## so an id shared between tag types has not been disambiguated yet and would
+## otherwise merge two tags into one spurious track.
+.get_tag_steps <- function(tags) {
+
+  if (is.null(tags) || nrow(tags) < 2) return(NULL)
+
+  grp <- paste0(as.character(tags$tag_type), "-", as.character(tags$id))
+
+  out <- lapply(split(tags, grp), function(tg) {
+    if (nrow(tg) < 2) return(NULL)
+    o <- order(tg$t)
+    data.frame(dt = diff(tg$t[o]),
+               dl = sqrt(diff(tg$x[o])^2 + diff(tg$y[o])^2))
+  })
+
+  out <- do.call(rbind, out)
+  if (is.null(out) || nrow(out) == 0) return(NULL)
+
+  out
+}
+
+
+## Central differences of a matrix along its first dimension, one-sided at the
+## edges. Vectorised: this is called once per covariate time slice, so a
+## per-cell loop (as in .dxfield()) would be prohibitively slow here.
+.grad_x <- function(m, d) {
+
+  nr <- nrow(m)
+  if (nr < 2 || !is.finite(d) || d == 0) return(array(NA_real_, dim = dim(m)))
+
+  g <- (rbind(m[-1,, drop = FALSE], NA) -
+          rbind(NA, m[-nr,, drop = FALSE])) / (2 * d)
+  g[1,] <- (m[2,] - m[1,]) / d
+  g[nr,] <- (m[nr,] - m[nr - 1,]) / d
+
+  g
+}
+
+
+.grad_y <- function(m, d) t(.grad_x(t(m), d))
+
+
+## Per covariate: the range of the values the tags actually sampled and the
+## median gradient magnitude at the tag positions. Uses nearest-cell lookup
+## rather than interpolation -- kappa only has to be right to within an order of
+## magnitude, and this avoids building interpolators for every time slice.
+.cov_scales_at_tags <- function(dat, tags) {
+
+  ncov <- length(dat$cov)
+  rng <- rep(NA_real_, ncov)
+  grd <- rep(NA_real_, ncov)
+
+  if (is.null(tags) || nrow(tags) == 0) return(list(range = rng, grad = grd))
+
+  for (i in seq_len(ncov)) {
+
+    a <- unclass(dat$cov[[i]])
+    dn <- dimnames(a)
+    if (is.null(dn)) next
+
+    xc <- suppressWarnings(as.numeric(dn[[1]]))
+    yc <- suppressWarnings(as.numeric(dn[[2]]))
+    if (length(xc) < 2 || length(yc) < 2) next
+    if (any(!is.finite(xc)) || any(!is.finite(yc))) next
+
+    dx <- mean(diff(xc))
+    dy <- mean(diff(yc))
+
+    ix <- .nearest_index(tags$x, xc)
+    iy <- .nearest_index(tags$y, yc)
+    it <- as.integer(t2index(tags$t, dat$time_cov[[i]]))
+
+    vals <- rep(NA_real_, nrow(tags))
+    gmag <- rep(NA_real_, nrow(tags))
+
+    for (j in sort(unique(it[it > 0]))) {
+      rows <- which(it == j & !is.na(ix) & !is.na(iy))
+      if (length(rows) == 0) next
+      m <- a[,,j]
+      ind <- cbind(ix[rows], iy[rows])
+      vals[rows] <- m[ind]
+      gmag[rows] <- sqrt(.grad_x(m, dx)[ind]^2 + .grad_y(m, dy)[ind]^2)
+    }
+
+    if (any(is.finite(vals))) rng[i] <- diff(range(vals[is.finite(vals)]))
+    gok <- gmag[is.finite(gmag) & gmag > 0]
+    if (length(gok) > 0) grd[i] <- median(gok)
+  }
+
+  list(range = rng, grad = grd)
+}
+
+
+## Index of the nearest cell centre, clamped to the field.
+.nearest_index <- function(v, centres) {
+
+  step <- mean(diff(centres))
+  if (!is.finite(step) || step == 0) return(rep(NA_integer_, length(v)))
+
+  idx <- as.integer(round((v - centres[1]) / step)) + 1L
+  idx[!is.finite(idx)] <- NA_integer_
+
+  pmin(pmax(idx, 1L), length(centres))
 }
 
 

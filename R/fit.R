@@ -145,6 +145,9 @@ admove <- function(dat,
     }
   }
 
+  ## check that kappa is not estimated alongside alpha
+  .check_kappa_map(par, map, conf)
+
   ## check that mapping in line with obs_var_type
   ind_t_use <- c(conf$use_dtags, conf$use_stags, conf$use_ctags)
   obs_var_type_map <- !apply(matrix(map$logSdO, 2, 3)[,ind_t_use, drop = FALSE], 2, function(x) any(is.na(x)))
@@ -337,6 +340,10 @@ admove <- function(dat,
 ##' @param save_covariance Logical; if \code{TRUE}, the full covariance matrix
 ##'   from the sdreport is retained. If \code{FALSE} (default), the covariance
 ##'   matrix is removed to reduce memory use.
+##' @param ad_hessian Logical; if \code{TRUE} (default), the exact AD Hessian
+##'   from \code{obj$he()} is supplied to [RTMB::sdreport()] instead of letting
+##'   it difference the gradient numerically. See Details. Set to \code{FALSE}
+##'   to restore the [RTMB::sdreport()] default behaviour.
 ##'
 ##' @details
 ##' This function adds three components to the fitted object:
@@ -349,18 +356,50 @@ admove <- function(dat,
 ##'
 ##' If these components already exist in \code{fit}, they are overwritten.
 ##'
+##' For models without random effects -- which is every \code{admove} model --
+##' [RTMB::sdreport()] builds the Hessian with
+##' \code{stats::optimHess(par, obj$fn, obj$gr)}, i.e. by differencing the
+##' gradient with a fixed step (\code{ndeps}, default \code{1e-3}). That is both
+##' inaccurate and fragile here:
+##'
+##' \itemize{
+##'   \item the step is absolute, so it is far too coarse whenever the
+##'     parameters sit on a small scale, and the resulting standard errors can be
+##'     wrong by factors of several;
+##'   \item if the likelihood is not finite \code{ndeps} away from the optimum --
+##'     which happens readily when a predicted track leaves the covariate domain
+##'     or crosses a masked (\code{NA}) cell -- the whole Hessian becomes
+##'     \code{NaN}, and with it every standard error, including those of the
+##'     \code{ADREPORT}ed quantities.
+##' }
+##'
+##' \code{obj$he()} instead returns the exact second derivatives from the AD
+##' tape, at no extra cost (the runtime of [RTMB::sdreport()] is dominated by the
+##' delta-method step for the \code{ADREPORT}ed quantities). It does not mask
+##' genuine problems: an indefinite Hessian is still reported via
+##' \code{sdrep$pdHess}, and if the objective really is \code{NaN} at the
+##' optimum, \code{obj$he()} returns \code{NaN} too. If \code{obj$he()} is
+##' unavailable or fails, the function silently falls back to the
+##' [RTMB::sdreport()] default.
+##'
 ##' @return
 ##' An updated object of class \code{"admove"} with sdreport results added.
 ##'
 ##' @export
-add_sdreport <- function(fit, save_covariance = FALSE) {
+add_sdreport <- function(fit, save_covariance = FALSE, ad_hessian = TRUE) {
 
   .check_class(fit, "admove")
 
   res <- fit
 
+  hess <- if (isTRUE(ad_hessian)) .get_ad_hessian(fit$obj) else NULL
+
   t1 <- Sys.time()
-  sdrep <- RTMB::sdreport(obj = fit$obj)
+  if (is.null(hess)) {
+    sdrep <- RTMB::sdreport(obj = fit$obj)
+  } else {
+    sdrep <- RTMB::sdreport(obj = fit$obj, hessian.fixed = hess)
+  }
   t2 <- Sys.time()
 
   pl <- as.list(sdrep, "Est")
@@ -920,6 +959,18 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
 ##'   intervals. Default is \code{0.95}.
 ##' @param ... Additional arguments passed to internal summary methods.
 ##'
+##' @details
+##' The parameter table has one row per estimated parameter. Elements that are
+##' held equal by the parameter map (e.g. the \eqn{x}- and \eqn{y}-direction
+##' advection coefficients, which [default_map()] couples) are a single
+##' estimated parameter and are therefore shown once, with a row name listing
+##' all element indices they cover, such as \code{gamma3,6}. Fixed elements
+##' (\code{NA} in the map) are omitted, so the number of rows matches the model
+##' degrees of freedom reported by [logLik()].
+##'
+##' The taxis scaling parameter \code{kappa} is fixed rather than estimated (see
+##' [default_par()]) and is reported separately above the table.
+##'
 ##' @return
 ##' A summary object, typically printed for inspection.
 ##'
@@ -1022,11 +1073,36 @@ summarise_fit <- function(object, CI = 0.95, ...) {
     cat("\n")
   }
 
-  idx <- lapply(x$map, function(x) if(length(x) == 0) FALSE else !is.na(x))
-  tmp <- x$pl[!(names(x$pl) %in% names(x$map))]
-  idx <- c(idx, lapply(tmp, function(x) rep(TRUE, length(x))))
-  pl <- unlist(x$pl)[unlist(idx[match(names(x$pl), names(idx))])]
-  plsd <- unlist(x$plsd)[unlist(idx[match(names(x$plsd), names(idx))])]
+  ## kappa is a fixed scale factor (only kappa * alpha is identifiable), so it
+  ## is never part of the estimates below -- report it separately so that it is
+  ## visible which scale the taxis parameters refer to.
+  kappa_fixed <- !is.null(x$map$logKappa) && all(is.na(x$map$logKappa))
+  if (kappa_fixed && !is.null(x$pl$logKappa) && isTRUE(x$conf$use_taxis)) {
+
+    us <- tryCatch(units_space(x$dat), error = function(e) NA_character_)
+    ut <- tryCatch(units_time(x$dat), error = function(e) NA_character_)
+
+    kappa_unit <- if (length(us) == 1L && !is.na(us) && nzchar(us) &&
+                        length(ut) == 1L && !is.na(ut) && nzchar(ut)) {
+      paste0(" ", us, "^2/", ut)
+    } else {
+      ""
+    }
+
+    cat(sprintf(paste0("  %-", labw, "s %s\n"), "kappa (fixed scale):",
+                paste0(signif(exp(x$pl$logKappa), ndigits), kappa_unit)))
+    cat("\n")
+  }
+
+  sel <- .select_estimated_par(x$pl, x$map)
+  keep <- sel$keep
+
+  pl <- unlist(x$pl, use.names = FALSE)[keep]
+  names(pl) <- sel$labels[keep]
+
+  plsd_all <- unlist(x$plsd, use.names = FALSE)
+  plsd <- if (length(plsd_all) == length(keep)) plsd_all[keep] else numeric(0)
+
   pllow <- pl - zscore * plsd
   plup <- pl + zscore * plsd
 
@@ -1225,6 +1301,118 @@ plot_fit <- function(x,
 
 ## Internal functions -----------------------------------------------------------------
 
+## kappa enters the likelihood only as kappa * grad(h), and h is linear in
+## alpha, so rescaling (kappa, alpha) -> (c * kappa, alpha / c) leaves the
+## objective unchanged: the two are exactly confounded and the Hessian is
+## singular in that direction. The default map fixes logKappa; warn if a
+## user-supplied map frees it again.
+##
+## The one exception is a map that holds some alpha coefficient at a non-zero
+## value. That pins the scale of alpha, kappa becomes identifiable, and the
+## warning would be wrong -- so it is skipped in that case.
+.check_kappa_map <- function(par, map, conf) {
+
+  if (!isTRUE(conf$use_taxis)) return(invisible(NULL))
+  if (is.null(par$logKappa)) return(invisible(NULL))
+
+  kappa_free <- is.null(map$logKappa) || !all(is.na(map$logKappa))
+  if (!kappa_free) return(invisible(NULL))
+
+  alpha_fixed <- if (is.null(map$alpha)) {
+    rep(FALSE, length(par$alpha))
+  } else {
+    is.na(map$alpha)
+  }
+  anchored <- any(alpha_fixed & as.vector(par$alpha) != 0)
+  if (anchored) return(invisible(NULL))
+
+  warning("logKappa is not fixed in 'map', but kappa is confounded with alpha: ",
+          "only the product kappa * alpha is identifiable, so the likelihood is ",
+          "flat along that direction and the Hessian is singular. Estimates and ",
+          "standard errors cannot be trusted. Fix it with ",
+          "map$logKappa <- factor(NA) (the default_map() behaviour) and set the ",
+          "scale via par$logKappa instead. See ?default_par.",
+          call. = FALSE)
+
+  invisible(NULL)
+}
+
+## Which elements of the parameter list are estimated, and how to label them.
+##
+## Elements of a parameter that share a map level are a single estimated
+## parameter -- they contribute one entry to opt$par and always carry identical
+## estimates and standard errors -- so only the first element of each level is
+## kept. The label lists all element indices the level covers (e.g. "gamma3,6"),
+## following the naming of unlist(pl): no index for length-one parameters.
+##
+## Returns a list with 'keep' (logical, over unlist(pl)) and 'labels'
+## (character, same length).
+.select_estimated_par <- function(pl, map) {
+
+  keep <- vector("list", length(pl))
+  labels <- vector("list", length(pl))
+  names(keep) <- names(labels) <- names(pl)
+
+  for (nm in names(pl)) {
+
+    n <- length(unlist(pl[[nm]]))
+    mp <- map[[nm]]
+
+    lab <- function(ii) paste0(nm, if (n > 1) paste(ii, collapse = ",") else "")
+
+    ## no map entry: every element is estimated on its own
+    if (is.null(mp)) {
+      keep[[nm]] <- rep(TRUE, n)
+      labels[[nm]] <- vapply(seq_len(n), lab, character(1))
+      next
+    }
+
+    ## empty or malformed map entry: nothing to report
+    if (length(mp) != n) {
+      keep[[nm]] <- rep(FALSE, n)
+      labels[[nm]] <- rep(NA_character_, n)
+      next
+    }
+
+    mp <- as.character(mp)
+    k <- rep(FALSE, n)
+    l <- rep(NA_character_, n)
+
+    for (lev in unique(mp[!is.na(mp)])) {
+      ii <- which(mp == lev)
+      k[ii[1L]] <- TRUE
+      l[ii[1L]] <- lab(ii)
+    }
+
+    keep[[nm]] <- k
+    labels[[nm]] <- l
+  }
+
+  list(keep = unlist(keep, use.names = FALSE),
+       labels = unlist(labels, use.names = FALSE))
+}
+
+
+## Display labels for the estimated parameters of a fitted or simulated object,
+## looked up by the element names of unlist(pl) (e.g. "gamma3" -> "gamma3,6").
+## Keeps summary() and plot_compare(quantity = "par") referring to coupled
+## parameters in the same way. Keys without a label are returned unchanged.
+.par_display_labels <- function(x, keys) {
+
+  pl <- if (inherits(x, "admove_sim")) x$par_sim else x$pl
+  if (is.null(pl) || is.null(x$map)) return(keys)
+
+  sel <- .select_estimated_par(pl, x$map)
+
+  lookup <- sel$labels[sel$keep]
+  names(lookup) <- names(unlist(pl))[sel$keep]
+
+  out <- unname(lookup[keys])
+  out[is.na(out)] <- keys[is.na(out)]
+  out
+}
+
+
 .get_pl_from_opt <- function(par, map, opt) {
 
   pl <- par
@@ -1244,6 +1432,35 @@ plot_fit <- function(x,
 
   pl
 }
+
+## Exact AD Hessian of the fixed effects, for RTMB::sdreport(hessian.fixed=).
+## Returns NULL whenever it cannot be produced, so the caller falls back to
+## sdreport()'s own finite-difference default.
+##
+## The evaluation point is derived exactly as TMB::sdreport() derives par.fixed,
+## so the two paths are comparable: obj$env$last.par.best, minus the random
+## effects if there are any. admove never uses random effects, but the check
+## costs nothing and keeps this correct if that ever changes -- obj$he() is the
+## Hessian of the inner objective, not of the Laplace approximation, so it must
+## not be used in that case.
+.get_ad_hessian <- function(obj) {
+
+  if (is.null(obj) || !is.function(obj$he)) return(NULL)
+
+  rand <- obj$env$random
+  if (!is.null(rand) && length(rand) > 0) return(NULL)
+
+  par_fixed <- obj$env$last.par.best
+  if (is.null(par_fixed)) return(NULL)
+
+  hess <- try(obj$he(par_fixed), silent = TRUE)
+  if (inherits(hess, "try-error")) return(NULL)
+  if (!is.matrix(hess)) return(NULL)
+  if (nrow(hess) != length(par_fixed) || ncol(hess) != length(par_fixed)) return(NULL)
+
+  hess
+}
+
 
 .get_lower_bounds <- function(par){
   lower <- lapply(par, function(z) {

@@ -95,4 +95,9 @@ recomputed from the simulated covariates and parameter values.
 
 If \code{average = TRUE}, the mean taxis over the selected time steps is plotted.
 Otherwise, one panel per selected time step is produced unless \code{add = TRUE}.
+
+The arrows show \eqn{\kappa \nabla h}, i.e. they include the taxis scaling
+parameter \code{kappa}. Since only the product \code{kappa * alpha} is identifiable
+(see \code{\link[=default_par]{default_par()}}), this plot is invariant to the value \code{kappa} was fixed
+at, unlike the preference curve drawn by \code{\link[=plot_pref_func]{plot_pref_func()}}.
 }

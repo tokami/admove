@@ -4,11 +4,16 @@
 \alias{create_tref}
 \title{Time reference for admove objects}
 \usage{
-create_tref(origin = NA, units = NA_character_, period = NULL)
+create_tref(origin = NA, units = NA_character_, period = NULL, tz = "UTC")
 }
 \arguments{
 \item{origin}{A date-time corresponding to the temporal origin (e.g. a release
-date). Will be converted to \code{POSIXct}. Use \code{NA} to leave undefined.}
+date). Will be converted to \code{POSIXct}. Use \code{NA} to leave undefined.
+A \code{Date} becomes midnight in \code{tz}, and a character string may
+carry its own time zone, either as a trailing zone name
+(\code{"2003-01-01 UTC"}), an ISO-8601 \code{"Z"}, or a UTC offset
+(\code{"2003-01-01 00:00:00+02:00"}); such a zone takes precedence over
+\code{tz}.}
 
 \item{units}{Character string describing the units of the stored numeric time
 axis, e.g. \code{"year"}, \code{"quarter"}, \code{"month"}, \code{"week"},
@@ -17,6 +22,10 @@ axis, e.g. \code{"year"}, \code{"quarter"}, \code{"month"}, \code{"week"},
 \item{period}{Optional numeric seasonal period (cycle length) in the same
 units as the stored time axis. If \code{NULL}, a default is inferred for
 common annual discretizations when \code{units} is known.}
+
+\item{tz}{Time zone used to interpret \code{origin} when it does not carry
+one of its own. Default: \code{"UTC"}, matching \code{\link{prep_tags}()}
+and \code{\link{prep_cov}()}. The session's local time zone is never used.}
 }
 \value{
 An object of class \code{admove_tref}.
