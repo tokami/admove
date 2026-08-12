@@ -266,9 +266,10 @@ plot_taxis <- function(x,
 
       kappa <- exp(x$pl$logKappa)
       ncp <- nrow(x$dat$pred$grid$xygrid)
+      habi <- .get_habi(x)
       tax.x <- tax.y <- matrix(NA_real_, ncp, nsea)
       for (s in seq_len(nsea)) {
-        tmp <- x$pred$habi$tax$grad(x$dat$pred$grid$xygrid, t_sea_abs[s])
+        tmp <- habi$tax$grad(x$dat$pred$grid$xygrid, t_sea_abs[s])
         tax.x[, s] <- kappa * tmp[, 1]
         tax.y[, s] <- kappa * tmp[, 2]
       }
@@ -601,10 +602,11 @@ plot_advection <- function(x,
       t_sea_abs <- t_ref + (t_mid - t_ref %% per + per) %% per
 
       ncp <- nrow(x$dat$pred$grid$xygrid)
+      habi <- .get_habi(x)
       adv.x <- adv.y <- matrix(NA_real_, ncp, nsea)
       for (s in seq_len(nsea)) {
-        adv.x[, s] <- x$pred$habi$adv_x$val(x$dat$pred$grid$xygrid, t_sea_abs[s])
-        adv.y[, s] <- x$pred$habi$adv_y$val(x$dat$pred$grid$xygrid, t_sea_abs[s])
+        adv.x[, s] <- habi$adv_x$val(x$dat$pred$grid$xygrid, t_sea_abs[s])
+        adv.y[, s] <- habi$adv_y$val(x$dat$pred$grid$xygrid, t_sea_abs[s])
       }
       adv.x <- adv.x[, select_sea, drop = FALSE]
       adv.y <- adv.y[, select_sea, drop = FALSE]

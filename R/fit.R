@@ -560,40 +560,13 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
   kappa <- exp(par_est$logKappa)
 
 
-  ## Make preference functions --------------------------
-  pref_funcs <- .make_pref_funcs(par_est$alpha, par_est$beta, par_est$gamma,
-                                 dat$knots_tax, dat$knots_dif)
-
-
-  ## Local interpolation --------------------------------
-  liv <- .get_liv(dat$cov)
-
-
-  ## Setup habi objects ---------------------------------
-  habi_tax <- .make_habi(liv, dat$xrange_cov,
-                        dat$yrange_cov, dat$time_cov,
-                        pref_funcs$tax, pref_funcs$dtax,
-                        dat$time_spline, period(fit),
-                        conf$seasonal_cov,
-                        conf$seasonal_spline)
-  habi_dif <- .make_habi(liv, dat$xrange_cov,
-                        dat$yrange_cov, dat$time_cov,
-                        pref_funcs$dif, pref_funcs$ddif,
-                        dat$time_spline, period(fit),
-                        conf$seasonal_cov,
-                        conf$seasonal_spline)
-  habi_adv_x <- .make_habi(liv, dat$xrange_cov,
-                          dat$yrange_cov, dat$time_cov,
-                          pref_funcs$adv_x, pref_funcs$dadv_x,
-                          dat$time_spline, period(fit),
-                          conf$seasonal_cov,
-                          conf$seasonal_spline)
-  habi_adv_y <- .make_habi(liv, dat$xrange_cov,
-                          dat$yrange_cov, dat$time_cov,
-                          pref_funcs$adv_y, pref_funcs$dadv_y,
-                          dat$time_spline, period(fit),
-                          conf$seasonal_cov,
-                          conf$seasonal_spline)
+  ## Preference functions, local interpolation and habi objects --------------
+  hb <- .build_habi(dat, conf, par_est, period(fit))
+  pref_funcs <- hb$pref_funcs
+  habi_tax <- hb$habi$tax
+  habi_dif <- hb$habi$dif
+  habi_adv_x <- hb$habi$adv_x
+  habi_adv_y <- hb$habi$adv_y
 
 
   hT_pred <- hTdx_pred <- hTdy_pred <- hD_pred <-

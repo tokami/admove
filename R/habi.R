@@ -169,3 +169,71 @@
   )
   return(res)
 }
+
+
+## Build the preference functions and the four habi objects (taxis, diffusion,
+## advection in x and y) from data, configuration and parameter estimates.
+## Shared by add_predictions() and .get_habi() so the two always construct them
+## the same way.
+.build_habi <- function(dat, conf, par_est, per) {
+
+  pref_funcs <- .make_pref_funcs(par_est$alpha, par_est$beta, par_est$gamma,
+                                 dat$knots_tax, dat$knots_dif)
+
+  liv <- .get_liv(dat$cov)
+
+  mk <- function(s, ds) .make_habi(liv, dat$xrange_cov,
+                                   dat$yrange_cov, dat$time_cov,
+                                   s, ds,
+                                   dat$time_spline, per,
+                                   conf$seasonal_cov,
+                                   conf$seasonal_spline)
+
+  list(pref_funcs = pref_funcs,
+       habi = list(tax = mk(pref_funcs$tax, pref_funcs$dtax),
+                   dif = mk(pref_funcs$dif, pref_funcs$ddif),
+                   adv_x = mk(pref_funcs$adv_x, pref_funcs$dadv_x),
+                   adv_y = mk(pref_funcs$adv_y, pref_funcs$dadv_y)))
+}
+
+
+## The habi objects are closures over RTMB::interpol2Dfun() interpolants, and
+## those hold an external pointer to a C++ object. R does not serialise external
+## pointers: after save()/load() (or saveRDS()/readRDS()) they come back as nil
+## and any call fails with "external pointer is not valid". Probe the stored
+## objects with a single evaluation and, if they are stale, rebuild them from
+## the data and estimates the fit carries. Everything needed is stored, so this
+## is always possible -- it just costs the interpolant setup again.
+.get_habi <- function(x) {
+
+  habi <- x$pred$habi
+
+  if (.habi_usable(habi, x)) return(habi)
+
+  if (is.null(x$dat$cov))
+    stop("The fitted object has no covariates, so habitat fields are not ",
+         "available.", call. = FALSE)
+
+  par_est <- get_par_est(x$par, x$map, x$opt)
+
+  .build_habi(x$dat, x$conf, par_est, period(x))$habi
+}
+
+
+## TRUE when the stored habi objects can still be evaluated. The probe uses the
+## first prediction cell and time so that at least one covariate interpolant is
+## actually hit (a time outside every covariate's range would short-circuit the
+## loop in val() and hide a dead pointer).
+.habi_usable <- function(habi, x) {
+
+  if (is.null(habi) || !is.function(habi$tax$val)) return(FALSE)
+
+  xy <- x$dat$pred$grid$xygrid
+  tt <- x$dat$pred$time
+  if (is.null(xy) || nrow(xy) < 1L || length(tt) < 1L) return(FALSE)
+
+  isTRUE(tryCatch({
+    habi$tax$val(xy[1L, , drop = FALSE], tt[1L])
+    TRUE
+  }, error = function(e) FALSE))
+}
