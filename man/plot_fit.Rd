@@ -30,6 +30,10 @@ Available options are:
 \describe{
 \item{\code{"pref"}}{Taxis habitat-preference function vs the covariate(s).}
 \item{\code{"taxis"}}{Taxis (movement direction and magnitude) in space.}
+\item{\code{"advection"}}{Advection (direction and magnitude) in space, one
+panel per season. Skipped automatically when the model carries no
+advection (fitted with \code{conf$use_advection = FALSE}, or every \code{gamma}
+coefficient zero), since the whole field would be zero.}
 \item{\code{"dif"}}{Diffusion in space.}
 \item{\code{"pref_dif"}}{Diffusion as a function of the covariate(s). Only
 informative when diffusion has more than one knot (\code{nknots_dif > 1});

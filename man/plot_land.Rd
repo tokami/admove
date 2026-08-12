@@ -56,4 +56,10 @@ plotting region defined by \code{par("usr")}.
 
 For geographic coordinate systems, the plotting extent is truncated to valid
 longitude and latitude ranges before cropping.
+
+For projected coordinate systems, the land is first cut down to the
+geographic footprint of the plotting region and only then transformed.
+Projecting the whole world into a local CRS is not safe: polygon rings that
+cross the projection's antimeridian come out as degenerate shapes spanning
+the map, which can leave the entire region drawn as land.
 }

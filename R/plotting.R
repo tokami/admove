@@ -34,6 +34,12 @@
 ##' For geographic coordinate systems, the plotting extent is truncated to valid
 ##' longitude and latitude ranges before cropping.
 ##'
+##' For projected coordinate systems, the land is first cut down to the
+##' geographic footprint of the plotting region and only then transformed.
+##' Projecting the whole world into a local CRS is not safe: polygon rings that
+##' cross the projection's antimeridian come out as degenerate shapes spanning
+##' the map, which can leave the entire region drawn as land.
+##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of adding land masses
 ##' to an existing plot.
@@ -72,22 +78,32 @@ plot_land <- local({
     if (is.null(units)) units <- "degree"
     if (is.null(crs_scale)) crs_scale <- 1
 
-    land_ll <- .get_land(download_map, scale = scale)
-    land_crs <- sf::st_transform(land_ll, crs)
-    land_fix <- sf::st_make_valid(land_crs)
+    usr <- par("usr")  ## c(x1, x2, y1, y2)
+
+    is_longlat <- isTRUE(sf::st_is_longlat(crs))
+
+    ## Work on the bare geometry: cropping an sf data frame fails when one row
+    ## splits into several features, which is exactly what happens to the single
+    ## global land feature.
+    land_g <- sf::st_geometry(.get_land(download_map, scale = scale))
+
+    ## Never project the whole world into a local CRS: every polygon ring that
+    ## crosses the projection's antimeridian (lon_0 + 180) comes out as a
+    ## degenerate shape spanning the map, and st_make_valid() then merges those
+    ## into one blob that can cover the entire plotting window -- the map is then
+    ## drawn as all land, no sea. Cut the land down to the window's geographic
+    ## footprint first, so only nearby polygons are ever projected.
+    if (!is_longlat) {
+      land_g <- .crop_land_to_window(land_g, usr, crs, crs_scale)
+    }
+
+    land_fix <- sf::st_make_valid(sf::st_transform(land_g, crs))
 
     ## crs_scale maps: CRS-units -> grid-units
     ## For CRS in meters and grid in km: crs_scale = 0.001
     if (!isTRUE(all.equal(crs_scale, 1))) {
-      land_fix <- sf::st_set_geometry(
-        land_fix,
-        sf::st_geometry(land_fix) * crs_scale
-        )
+      land_fix <- land_fix * crs_scale
     }
-
-    usr <- par("usr")  ## c(x1, x2, y1, y2)
-
-    is_longlat <- isTRUE(sf::st_is_longlat(sf::st_crs(land_crs)))
 
     if (is_longlat) {
       usr[3] <- max(-90, usr[3])
@@ -112,11 +128,11 @@ plot_land <- local({
       cr <- try(suppressWarnings(sf::st_crop(land_fix, sf::st_as_sfc(bb))),
                 silent = TRUE)
       if (inherits(cr, "try-error")) {
-        warning("Counldn't plot land masses. Check the spatial reference info: sref(x).")
+        warning("Couldn't plot land masses. Check the spatial reference info: sref(x).")
         return(invisible(NULL))
       }
-      if (nrow(cr) > 0) {
-        g <- sf::st_geometry(cr)
+      if (length(cr) > 0) {
+        g <- cr
         if (offset != 0) g <- g + c(offset, 0)
         plot(g, add = TRUE, col = col, border = border)
       }
@@ -137,6 +153,159 @@ plot_land <- local({
     invisible(NULL)
   }
 })
+
+
+## Restrict geographic land polygons to the part of the world covered by the
+## current plotting window, so that only that part is ever projected into a
+## local CRS. See the comment in plot_land() for why projecting the whole world
+## is not an option.
+##
+## `usr` is par("usr") in grid units, `crs` the target CRS and `crs_scale` the
+## CRS-units -> grid-units factor. The window rectangle is densified before
+## being transformed back to lon/lat, because in a projected CRS the geographic
+## footprint of a rectangle is curved and its corners alone understate it.
+##
+## Returns `land_g` unchanged whenever the window cannot be mapped back to
+## lon/lat, so a failure here costs accuracy rather than the whole plot.
+.crop_land_to_window <- function(land_g, usr, crs, crs_scale = 1) {
+
+  if (!requireNamespace("sf", quietly = TRUE)) return(land_g)
+
+  win <- try(sf::st_as_sfc(sf::st_bbox(c(xmin = usr[1L] / crs_scale,
+                                         xmax = usr[2L] / crs_scale,
+                                         ymin = usr[3L] / crs_scale,
+                                         ymax = usr[4L] / crs_scale),
+                                       crs = crs)),
+             silent = TRUE)
+  if (inherits(win, "try-error")) return(land_g)
+
+  step <- max(diff(usr[1:2]), diff(usr[3:4])) / (50 * crs_scale)
+  if (is.finite(step) && step > 0) {
+    seg <- try(sf::st_segmentize(win, dfMaxLength = step), silent = TRUE)
+    if (!inherits(seg, "try-error")) win <- seg
+  }
+
+  win_ll <- try(suppressWarnings(sf::st_transform(win, sf::st_crs(land_g))),
+                silent = TRUE)
+  if (inherits(win_ll, "try-error") || length(win_ll) == 0L) return(land_g)
+
+  bb <- sf::st_bbox(win_ll)
+  if (any(!is.finite(as.numeric(bb)))) return(land_g)
+
+  ## The footprint splits into an eastern and a western part when it straddles
+  ## the antimeridian; each part gets its own longitude window, since their
+  ## common bounding box would span the globe and crop nothing at all.
+  wrapped <- try(suppressWarnings(sf::st_wrap_dateline(win_ll)), silent = TRUE)
+  if (!inherits(wrapped, "try-error")) win_ll <- wrapped
+  parts <- try(suppressWarnings(sf::st_cast(win_ll, "POLYGON")), silent = TRUE)
+  if (inherits(parts, "try-error")) parts <- win_ll
+
+  pad <- 2
+  lon_windows <- lapply(seq_along(parts), function(i) {
+    b <- sf::st_bbox(parts[i])
+    c(max(-180, b[["xmin"]] - pad), min(180, b[["xmax"]] + pad))
+  })
+
+  ymin <- max(-90, bb[["ymin"]] - pad)
+  ymax <- min( 90, bb[["ymax"]] + pad)
+
+  ## Crop with planar rather than spherical semantics: under s2 the edges of a
+  ## lon/lat "rectangle" are geodesics, so a wide box bows towards the pole and
+  ## silently drops land (a full-width box degenerates altogether). Planar
+  ## semantics are what a lon/lat bounding box is meant to mean here.
+  s2_old <- suppressMessages(sf::sf_use_s2(FALSE))
+  on.exit(suppressMessages(sf::sf_use_s2(s2_old)), add = TRUE)
+
+  ## Split polygons that cross +/-180 (e.g. Fiji) before doing anything planar
+  ## with them: in the [-180, 180] frame such a polygon is a sliver reaching
+  ## right across the map, which survives cropping as a band of "land" through
+  ## open ocean. The geographic branch of plot_land() splits them for the same
+  ## reason.
+  wrap <- try(suppressWarnings(sf::st_wrap_dateline(land_g)), silent = TRUE)
+  if (!inherits(wrap, "try-error")) land_g <- wrap
+
+  ## polygons made valid under s2 need not be valid to GEOS
+  land_p <- try(suppressWarnings(sf::st_make_valid(land_g)), silent = TRUE)
+  if (inherits(land_p, "try-error")) return(land_g)
+
+  ## Covering every longitude means the window wraps right around a pole-centred
+  ## projection. The pole is then inside the window but outside the latitude
+  ## range of the window edges, so the band has to be extended to reach it --
+  ## and the land must not be cut at all: a cut along any meridian leaves a
+  ## boundary that closes across the pole, filling the polar ocean with land.
+  ## Whole polygons are safe here, because an azimuthal projection about the
+  ## pole has no seam line for them to cross, only the opposite pole.
+  if (sum(vapply(lon_windows, diff, numeric(1L))) >= 350) {
+    if (ymax > 0) ymax <- 90 else ymin <- -90
+    return(.land_in_lat_band(land_p, ymin, ymax))
+  }
+
+  failed <- FALSE
+  crops <- lapply(lon_windows, function(w) {
+    if (w[2L] <= w[1L]) return(NULL)
+    box <- .lonlat_box(w[1L], w[2L], ymin, ymax, crs = sf::st_crs(land_p))
+    cr <- try(suppressWarnings(sf::st_intersection(land_p, box)), silent = TRUE)
+    if (inherits(cr, "try-error")) {
+      failed <<- TRUE
+      return(NULL)
+    }
+    if (length(cr) == 0L) NULL else cr
+  })
+  crops <- crops[!vapply(crops, is.null, logical(1L))]
+
+  ## no crops because the window holds no land is a valid answer; no crops
+  ## because cropping failed is not, and falls back to the uncropped land
+  if (length(crops) == 0L) return(if (failed) land_g else land_p[0L])
+
+  do.call(c, crops)
+}
+
+
+## Whole land polygons reaching into a latitude band, selected by bounding box
+## and returned uncut. Used where cutting is not an option (see the pole-wrapping
+## case in .crop_land_to_window()); the polygons that survive still exclude the
+## far hemisphere, which is what keeps the projection well behaved.
+.land_in_lat_band <- function(land_p, ymin, ymax) {
+
+  polys <- try(suppressWarnings(sf::st_cast(land_p, "POLYGON")), silent = TRUE)
+  if (inherits(polys, "try-error")) return(land_p)
+
+  lat <- vapply(seq_along(polys), function(i) {
+    b <- sf::st_bbox(polys[i])
+    c(b[["ymin"]], b[["ymax"]])
+  }, numeric(2L))
+
+  keep <- lat[2L, ] >= ymin & lat[1L, ] <= ymax
+  if (!any(keep)) return(polys[0L])
+
+  polys[keep]
+}
+
+
+## A lon/lat rectangle whose edges are followed in small steps rather than drawn
+## corner to corner. Cutting land along a single long edge would leave a segment
+## that projects to a straight line across the map -- a parallel is not straight
+## in a projected CRS -- which makes the projected polygon self-intersect and
+## come back from st_make_valid() as wedge-shaped artefacts.
+##
+## The steps are built here rather than with st_segmentize(), whose dfMaxLength
+## is metres on geographic coordinates: a value meant as degrees silently asks
+## for millions of points.
+.lonlat_box <- function(x1, x2, y1, y2, crs, step = 1) {
+
+  nx <- max(2L, ceiling(abs(x2 - x1) / step) + 1L)
+  ny <- max(2L, ceiling(abs(y2 - y1) / step) + 1L)
+  xs <- seq(x1, x2, length.out = nx)
+  ys <- seq(y1, y2, length.out = ny)
+
+  ring <- rbind(cbind(xs, y1),
+                cbind(x2, ys[-1L]),
+                cbind(rev(xs)[-1L], y2),
+                cbind(x1, rev(ys)[-1L]))
+  dimnames(ring) <- NULL
+
+  sf::st_sfc(sf::st_polygon(list(ring)), crs = crs)
+}
 
 
 
@@ -501,7 +670,9 @@ plot_taxis <- function(x,
 ##' @param plot_land Logical; if `TRUE`, land masses are added using
 ##'   [plot_land()]. Default is `FALSE`.
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of advection
-##'   magnitude is drawn underneath the arrows.
+##'   magnitude is drawn underneath the arrows. It is skipped when the magnitude
+##'   is the same in every cell, since a flat raster carries no information; the
+##'   constant value is stated above the panel instead.
 ##' @param auto_layout Logical; if `TRUE`, the plotting layout is set
 ##'   automatically. If multiple time steps are plotted and `average = FALSE`,
 ##'   panels are arranged using [n2mfrow()]. Default is `TRUE`.
@@ -659,6 +830,9 @@ plot_advection <- function(x,
         if (r <= nr) par(mfg = c(r, co, nr, nc))
       }
 
+      mag <- sqrt(adv.x[, i]^2 + adv.y[, i]^2)
+      mag_const <- .is_constant_field(mag)
+
       if(!add){
         if(!is.null(bg)){
           graphics::par(bg = bg)
@@ -673,9 +847,11 @@ plot_advection <- function(x,
              main = mains[i],
              asp = 1,
              ...)
-        if (image_bg) {
+        ## a spatially constant magnitude (in particular an all-zero field from
+        ## a model fitted without advection) would colour every cell identically;
+        ## state the value instead of drawing a flat raster
+        if (image_bg && !mag_const) {
           ig <- x$dat$pred$grid$igrid
-          mag <- sqrt(adv.x[, i]^2 + adv.y[, i]^2)
           z <- matrix(NA_real_, length(x$dat$pred$grid$xgr) - 1L,
                       length(x$dat$pred$grid$ygr) - 1L)
           z[cbind(ig$idx, ig$idy)] <- mag
@@ -688,13 +864,28 @@ plot_advection <- function(x,
         plot_land(sref = sref(x$dat))
       }
 
-      arrows(x$dat$pred$grid$xygrid[,1],
-             x$dat$pred$grid$xygrid[,2],
-             x$dat$pred$grid$xygrid[,1] + adv.x[,i] * cor,
-             x$dat$pred$grid$xygrid[,2] + adv.y[,i] * cor,
-             col = col,
-             lwd = lwd,
-             length = .1)
+      ## zero-length arrows draw a degenerate dot and warn once per cell; mark
+      ## the cell positions directly instead so the grid stays visible
+      if (all(mag == 0, na.rm = TRUE)) {
+        points(x$dat$pred$grid$xygrid[,1],
+               x$dat$pred$grid$xygrid[,2],
+               col = col,
+               lwd = lwd,
+               pch = 16,
+               cex = 0.2)
+      } else {
+        arrows(x$dat$pred$grid$xygrid[,1],
+               x$dat$pred$grid$xygrid[,2],
+               x$dat$pred$grid$xygrid[,1] + adv.x[,i] * cor,
+               x$dat$pred$grid$xygrid[,2] + adv.y[,i] * cor,
+               col = col,
+               lwd = lwd,
+               length = .1)
+      }
+
+      if (mag_const && !add) {
+        .add_const_note(mag[1L], "|advection|")
+      }
 
       if(!add) box(lwd = 1.5)
 
@@ -762,6 +953,9 @@ plot_advection <- function(x,
         grid$cellsize[1] / max_mag else 1
     }
 
+    mag <- rowMeans(sqrt(adv.x^2 + adv.y^2))
+    mag_const <- .is_constant_field(mag)
+
     if(!add){
       if(!is.null(bg)){
         graphics::par(bg = bg)
@@ -776,9 +970,9 @@ plot_advection <- function(x,
            main = main,
            asp = 1,
            ...)
-      if (image_bg) {
+      ## see the fitted branch: a constant magnitude gets stated, not rastered
+      if (image_bg && !mag_const) {
         ig <- dat$pred$grid$igrid
-        mag <- rowMeans(sqrt(adv.x^2 + adv.y^2))
         z <- matrix(NA_real_, length(dat$pred$grid$xgr) - 1L,
                     length(dat$pred$grid$ygr) - 1L)
         z[cbind(ig$idx, ig$idy)] <- mag
@@ -794,14 +988,28 @@ plot_advection <- function(x,
 
     for(i in 1:ncol(adv.x)){
 
-      arrows(dat$pred$grid$xygrid[,1],
-             dat$pred$grid$xygrid[,2],
-             dat$pred$grid$xygrid[,1] + adv.x[,i] * cor,
-             dat$pred$grid$xygrid[,2] + adv.y[,i] * cor,
-             col = col,
-             lwd = lwd,
-             length = .1)
+      if (all(adv.x[,i] == 0 & adv.y[,i] == 0, na.rm = TRUE)) {
+        ## zero-length arrows warn once per cell; mark the cells instead
+        points(dat$pred$grid$xygrid[,1],
+               dat$pred$grid$xygrid[,2],
+               col = col,
+               lwd = lwd,
+               pch = 16,
+               cex = 0.2)
+      } else {
+        arrows(dat$pred$grid$xygrid[,1],
+               dat$pred$grid$xygrid[,2],
+               dat$pred$grid$xygrid[,1] + adv.x[,i] * cor,
+               dat$pred$grid$xygrid[,2] + adv.y[,i] * cor,
+               col = col,
+               lwd = lwd,
+               length = .1)
+      }
 
+    }
+
+    if (mag_const && !add) {
+      .add_const_note(mag[1L], "|advection|")
     }
 
     if(!add) box(lwd = 1.5)
@@ -833,7 +1041,10 @@ plot_advection <- function(x,
 ##' @param plot_land Logical; if `TRUE`, land masses are added using
 ##'   [plot_land()]. Default: `FALSE`.
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of diffusion
-##'   intensity is drawn underneath the circles.
+##'   intensity is drawn underneath the circles. It is skipped when diffusion is
+##'   the same in every cell (e.g. a single-knot, covariate-independent
+##'   diffusion), since a flat raster carries no information; the constant value
+##'   is stated above the panel instead.
 ##' @param auto_layout Logical; if `TRUE`, graphical parameters are set and
 ##'   restored automatically. Default: `TRUE`.
 ##' @param add Logical; if `TRUE`, diffusion is added to an existing plot. If
@@ -898,6 +1109,7 @@ plot_diffusion <- function(x,
     }
 
     dif.est <- exp(apply(x$pred$hD, 1, mean))
+    dif_const <- .is_constant_field(dif.est)
 
     if (is.null(cor)) {
       max_size <- max(sqrt(dif.est), na.rm = TRUE)
@@ -906,7 +1118,9 @@ plot_diffusion <- function(x,
         (x$dat$pred$grid$cellsize[1] / char_u) / max_size else 1
     }
 
-    if (image_bg && !add) {
+    ## a spatially constant D would colour every cell identically; state the
+    ## value instead of drawing a flat raster that reads as "no signal"
+    if (image_bg && !add && !dif_const) {
       ig <- x$dat$pred$grid$igrid
       z <- matrix(NA_real_, length(x$dat$pred$grid$xgr) - 1L,
                   length(x$dat$pred$grid$ygr) - 1L)
@@ -925,6 +1139,10 @@ plot_diffusion <- function(x,
            col = col,
            lwd = lwd,
            cex = sqrt(dif.est) * cor)
+
+    if (dif_const && !add) {
+      .add_const_note(dif.est[1L], "D")
+    }
 
   } else if(inherits(x, "admove_sim")) {
 
@@ -982,6 +1200,7 @@ plot_diffusion <- function(x,
                      function(t) apply(dat$pred$grid$xygrid, 1,
                                        function(x) exp(funcs$dif(as.matrix(x),t)[1])))
     dif_avg <- rowMeans(D.true)
+    dif_const <- .is_constant_field(dif_avg)
 
     if (is.null(cor)) {
       max_size <- max(sqrt(dif_avg), na.rm = TRUE)
@@ -990,7 +1209,7 @@ plot_diffusion <- function(x,
         (dat$pred$grid$cellsize[1] / char_u) / max_size else 1
     }
 
-    if (image_bg && !add) {
+    if (image_bg && !add && !dif_const) {
       ig <- dat$pred$grid$igrid
       z <- matrix(NA_real_, length(dat$pred$grid$xgr) - 1L,
                   length(dat$pred$grid$ygr) - 1L)
@@ -1009,6 +1228,10 @@ plot_diffusion <- function(x,
            col = col,
            lwd = lwd,
            cex = sqrt(dif_avg) * cor)
+
+    if (dif_const && !add) {
+      .add_const_note(dif_avg[1L], "D")
+    }
 
   }
   if(!add) box(lwd = 1.5)
@@ -1838,6 +2061,30 @@ add_lab <- function(lab){
   legend("topleft", legend = lab,
          bg = "white", x.intersp = -0.4,
          cex = 1.8, text.font = 2)
+}
+
+
+## TRUE when a spatial field takes the same value everywhere. Such a field
+## carries no spatial information, so the raster background would be a single
+## flat colour that is easily misread as "no signal" rather than "constant".
+.is_constant_field <- function(z) {
+  z <- z[is.finite(z)]
+  if (length(z) < 2L) return(TRUE)
+  r <- range(z)
+  diff(r) <= 1e-8 * max(1, abs(r[1L]))
+}
+
+
+## Note in the corner of a spatial panel stating the constant value of a field
+## that has no spatial variation, so a uniform panel is not mistaken for a
+## missing or failed one.
+.add_const_note <- function(value, what, digits = 3) {
+  txt <- if (isTRUE(all.equal(unname(value), 0)))
+    paste0(what, " = 0 everywhere")
+  else
+    paste0(what, " = ", signif(value, digits), " (constant)")
+  ## just above the panel box, so the note never sits on top of the field
+  mtext(txt, side = 3, line = 0.1, adj = 1, cex = 0.7, font = 3)
 }
 
 

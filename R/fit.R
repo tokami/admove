@@ -1139,6 +1139,10 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 ##'   \describe{
 ##'     \item{`"pref"`}{Taxis habitat-preference function vs the covariate(s).}
 ##'     \item{`"taxis"`}{Taxis (movement direction and magnitude) in space.}
+##'     \item{`"advection"`}{Advection (direction and magnitude) in space, one
+##'       panel per season. Skipped automatically when the model carries no
+##'       advection (fitted with `conf$use_advection = FALSE`, or every `gamma`
+##'       coefficient zero), since the whole field would be zero.}
 ##'     \item{`"dif"`}{Diffusion in space.}
 ##'     \item{`"pref_dif"`}{Diffusion as a function of the covariate(s). Only
 ##'       informative when diffusion has more than one knot (`nknots_dif > 1`);
@@ -1237,10 +1241,14 @@ plot_fit <- function(x,
   ## uninformative, so pref_dif is shown only for multi-knot, non-fixed covariates
   nknots_dif <- if (!is.null(fit$par$beta)) dim(fit$par$beta)[1L] else 1L
   sel_dif <- if (nknots_dif > 1L) active_cov(fit$map$beta, fit$par$beta) else integer(0)
+  ## the advection panels are per season rather than per covariate, so
+  ## active_cov() does not apply; they are dropped when the model carries no
+  ## advection at all, in which case every arrow and the whole field is zero
+  adv_active <- .adv_active(fit)
   panels_per_q <- vapply(quantity, function(q) {
     if (q == "pref") length(sel_tax)
     else if (q == "taxis") nsea_fit
-    else if (q == "advection") nsea_adv
+    else if (q == "advection") if (adv_active) nsea_adv else 0L
     else if (q == "pref_dif") length(sel_dif)
     else 1L
   }, integer(1L))
@@ -1249,7 +1257,8 @@ plot_fit <- function(x,
   if (total_panels == 0L) {
     warning("Nothing to plot: all requested quantities have zero panels ",
             "(e.g. only preference quantities were selected but every covariate ",
-            "is fixed/mapped). Nothing drawn.")
+            "is fixed/mapped, or only advection was selected for a model fitted ",
+            "without it). Nothing drawn.")
     return(invisible(NULL))
   }
 
@@ -1302,6 +1311,23 @@ plot_fit <- function(x,
 
 
 ## Internal functions -----------------------------------------------------------------
+
+## TRUE when a fitted object carries a non-zero advection field: it was fitted
+## with advection on and at least one gamma coefficient is non-zero. Fixed
+## (mapped NA) but non-zero coefficients still produce a real field, so the test
+## is on the values rather than on the map. With advection off, or every gamma
+## at zero, the field is identically zero everywhere and there is nothing to
+## draw -- plot_fit() drops the panels in that case.
+.adv_active <- function(fit) {
+
+  if (!isTRUE(fit$conf$use_advection)) return(FALSE)
+
+  gamma_est <- if (!is.null(fit$pl$gamma)) fit$pl$gamma else fit$par$gamma
+  if (is.null(gamma_est)) return(FALSE)
+
+  any(gamma_est != 0, na.rm = TRUE)
+}
+
 
 ## kappa enters the likelihood only as kappa * grad(h), and h is linear in
 ## alpha, so rescaling (kappa, alpha) -> (c * kappa, alpha / c) leaves the

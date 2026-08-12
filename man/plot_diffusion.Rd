@@ -43,7 +43,10 @@ call. Default: \code{0.5}.}
 \code{\link[=plot_land]{plot_land()}}. Default: \code{FALSE}.}
 
 \item{image_bg}{Logical; if \code{TRUE} (default), a colour image of diffusion
-intensity is drawn underneath the circles.}
+intensity is drawn underneath the circles. It is skipped when diffusion is
+the same in every cell (e.g. a single-knot, covariate-independent
+diffusion), since a flat raster carries no information; the constant value
+is stated above the panel instead.}
 
 \item{auto_layout}{Logical; if \code{TRUE}, graphical parameters are set and
 restored automatically. Default: \code{TRUE}.}

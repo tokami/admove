@@ -56,7 +56,9 @@ call. Default is \code{0.5}.}
 \code{\link[=plot_land]{plot_land()}}. Default is \code{FALSE}.}
 
 \item{image_bg}{Logical; if \code{TRUE} (default), a colour image of advection
-magnitude is drawn underneath the arrows.}
+magnitude is drawn underneath the arrows. It is skipped when the magnitude
+is the same in every cell, since a flat raster carries no information; the
+constant value is stated above the panel instead.}
 
 \item{auto_layout}{Logical; if \code{TRUE}, the plotting layout is set
 automatically. If multiple time steps are plotted and \code{average = FALSE},
