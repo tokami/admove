@@ -43,6 +43,19 @@ time sequences. Because habitat is obtained by local interpolation of the
 fitted covariate fields, predictions are only valid within the covariate
 spatial and temporal coverage.
 
+The two edges of the temporal coverage behave differently. A prediction time
+\emph{before} a covariate's first time drops that covariate from the habitat
+sum entirely, leaving the habitat term at zero: diffusion then collapses to
+\code{exp(0)} and taxis to zero, giving a generator that looks valid but
+carries no habitat information at all. Since the result is a plain zero
+rather than \code{NA}, nothing downstream can detect it, so a warning is
+issued instead. A prediction time \emph{after} the last covariate time is
+not warned about: the lookup clamps and reuses the last available field,
+which is stale rather than empty, and is the intended behaviour for a static
+covariate carrying a single time stamp. The same clamping applies to gaps in
+an irregular covariate time series, where the most recent earlier field is
+reused.
+
 It also stores \code{fit$pred$mstar}, a list of length \code{nt} holding the
 continuous-time Markov chain (CTMC) generator matrices, one sparse
 (\code{"dgCMatrix"}) \code{nc x nc} matrix per prediction time slice (see

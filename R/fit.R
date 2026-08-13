@@ -515,6 +515,19 @@ add_report <- function(fit) {
 ##' fitted covariate fields, predictions are only valid within the covariate
 ##' spatial and temporal coverage.
 ##'
+##' The two edges of the temporal coverage behave differently. A prediction time
+##' \emph{before} a covariate's first time drops that covariate from the habitat
+##' sum entirely, leaving the habitat term at zero: diffusion then collapses to
+##' \code{exp(0)} and taxis to zero, giving a generator that looks valid but
+##' carries no habitat information at all. Since the result is a plain zero
+##' rather than \code{NA}, nothing downstream can detect it, so a warning is
+##' issued instead. A prediction time \emph{after} the last covariate time is
+##' not warned about: the lookup clamps and reuses the last available field,
+##' which is stale rather than empty, and is the intended behaviour for a static
+##' covariate carrying a single time stamp. The same clamping applies to gaps in
+##' an irregular covariate time series, where the most recent earlier field is
+##' reused.
+##'
 ##' It also stores \code{fit$pred$mstar}, a list of length \code{nt} holding the
 ##' continuous-time Markov chain (CTMC) generator matrices, one sparse
 ##' (\code{"dgCMatrix"}) \code{nc x nc} matrix per prediction time slice (see
@@ -545,6 +558,10 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
     dat <- .set_pred_target(dat, grid = grid, time = time)
     res$dat <- dat
   }
+
+  ## checked here rather than in .set_pred_target() so that a prediction time
+  ## written straight into dat$pred$time is caught as well
+  .check_pred_time_coverage(dat, conf)
 
 
   ## dimensions
@@ -630,6 +647,74 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 
   return(res)
 }
+
+
+## Warn when prediction times precede the time coverage of a covariate.
+##
+## .make_habi() accumulates a covariate only while both its time index and its
+## spline index are >= 1, and t2index() (findInterval) returns 0 for a time
+## before the first entry of either. The covariate is then skipped and the
+## habitat term is simply left at zero rather than becoming NA -- which is
+## indistinguishable in the output from a genuine zero: diffusion collapses to
+## exp(0) = 1 and taxis to 0, producing a valid-looking but meaningless
+## generator that the NA check in add_predictions() cannot catch.
+##
+## Only times *before* the coverage are flagged. findInterval clamps above it,
+## so a later time reuses the last available layer -- stale rather than empty,
+## and deliberate for a static covariate carrying a single time stamp.
+##
+## The indices are recomputed with t2index() itself so this can never disagree
+## with what .make_habi() actually does.
+.check_pred_time_coverage <- function(dat, conf) {
+
+  time <- dat$pred$time
+  if (is.null(dat$cov) || is.null(time) || length(time) == 0L)
+    return(invisible(NULL))
+
+  ncov <- length(dat$cov)
+  per <- dat$period
+  sea_cov <- if (!is.null(conf$seasonal_cov)) conf$seasonal_cov else rep(FALSE, ncov)
+  sea_spl <- if (!is.null(conf$seasonal_spline)) conf$seasonal_spline else rep(FALSE, ncov)
+
+  msg <- character(0)
+
+  for (i in seq_len(ncov)) {
+
+    tc <- dat$time_cov[[i]]
+    ts <- dat$time_spline[[i]]
+    if (is.null(tc) || length(tc) == 0L) next
+
+    idx <- function(tv, seasonal) vapply(time, function(t)
+      as.integer(t2index(t, tv, period = per, seasonal = seasonal)), integer(1L))
+
+    bad <- idx(tc, sea_cov[i]) < 1L
+    if (!is.null(ts) && length(ts) > 0L) bad <- bad | idx(ts, sea_spl[i]) < 1L
+
+    if (!any(bad)) next
+
+    nm <- names(dat$cov)[i]
+    if (is.null(nm) || is.na(nm) || !nzchar(nm)) nm <- paste0("cov", i)
+
+    msg <- c(msg, paste0("'", nm, "' (starts at ", .fmt_num(min(tc)),
+                         ") is undefined at ", sum(bad), " of ", length(time),
+                         " prediction time(s), from ", .fmt_num(min(time[bad])),
+                         " to ", .fmt_num(max(time[bad]))))
+  }
+
+  if (length(msg) == 0L) return(invisible(NULL))
+
+  warning("Prediction times precede the covariate time coverage: ",
+          paste(msg, collapse = "; "), ". The habitat term is zero at those ",
+          "times, so diffusion collapses to exp(0) and taxis to zero: the ",
+          "predictions and the CTMC generator are not meaningful there. ",
+          "Restrict 'dat$pred$time' to the covariate time range.",
+          call. = FALSE)
+
+  invisible(NULL)
+}
+
+
+.fmt_num <- function(x) format(x, trim = TRUE, digits = 6)
 
 
 ## Validate a user-supplied prediction grid / time and write it into dat$pred.
