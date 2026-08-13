@@ -68,6 +68,18 @@ meaning tag locations are treated as exact. To estimate observation variance
 for a tag type, set the corresponding element to \code{1L} (all but last
 observation) or \code{2L} (all observations). For example, to estimate observation
 variance for data-storage tags: \code{conf$obs_var_type[1] <- 1L}.
+
+The smooth used for the habitat preference functions is selected by
+\code{conf$smooth_method}:
+\itemize{
+\item \code{"natural"} (default) — a natural cubic spline through the knot values:
+piecewise cubic, twice continuously differentiable, with local support and
+\strong{linear extrapolation} beyond the outer knots (robust in the covariate
+tails).
+\item \code{"poly"} — the legacy single global interpolating polynomial of degree
+\code{nknots - 1}; retained for reproducibility of older fits, but prone to
+oscillation and unbounded extrapolation.
+}
 }
 \examples{
 conf <- default_conf(skjepo$sim$dat)

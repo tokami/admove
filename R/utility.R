@@ -1080,7 +1080,97 @@ make_x_y_cov <- function(x, tref = NULL) {
 
 
 
-.poly_fun <- function(xp, yp, deriv = FALSE, adv = FALSE) {
+## Natural cubic spline through the knots (xp, yp), returning either the value
+## function (deriv = FALSE) or its analytic first derivative (deriv = TRUE).
+##
+## `yp` are the estimated function values at the knots (the parameters), so the
+## spline interpolates them exactly. Boundary conditions are "natural" (second
+## derivative zero at the outer knots), which makes the spline extrapolate
+## LINEARLY beyond the knot range - far more robust in the covariate tails than a
+## global polynomial.
+##
+## Implemented with plain automatic-differentiation operations only - no
+## comparisons or branching on the (possibly AD) evaluation point, which RTMB
+## forbids. The spline is written in a truncated-power basis
+##
+##   S(x) = a + b * x + sum_i c_i * pos(x - t_i)^3,   pos(z) = max(0, z),
+##
+## subject to the two "natural" constraints  sum_i c_i = 0  and  sum_i c_i t_i = 0,
+## which force the second derivative to vanish at the ends and hence make S linear
+## beyond the outer knots. pos(z) = 0.5 * (z + abs(z)) is AD-safe (uses abs, not a
+## comparison), so the whole basis is a single smooth formula valid for every x.
+##
+## The coefficients theta = (a, b, c_1..c_n) solve a fixed (n+2) linear system
+## whose matrix depends only on the knots (numeric); the right-hand side is linear
+## in the knot values yp, so RTMB::solve(numeric matrix, AD rhs) is AD-safe -
+## exactly the pattern used by the legacy Vandermonde solve. This avoids RTMB's
+## atomic splinefun, which is not robust when composed with other atomics (e.g.
+## the interpol2Dfun habitat interpolation) inside nll().
+.natural_spline_fun <- function(xp, yp, deriv = FALSE) {
+
+  "c" <- RTMB::ADoverload("c")
+
+  n <- length(xp)
+
+  pos <- function(z) 0.5 * (z + abs(z))              # max(0, z), AD-safe
+
+  ## Two knots -> straight line (natural spline degenerates to linear)
+  if (n == 2) {
+    slope <- (yp[2] - yp[1]) / (xp[2] - xp[1])
+    if (!deriv) {
+      return(function(x) yp[1] + slope * (x - xp[1]))
+    } else {
+      return(function(x) rep(slope, length(x)))
+    }
+  }
+
+  ## Linear system for theta = (a, b, c_1..c_n):
+  ##   interpolation:  a + b t_j + sum_i c_i (t_j - t_i)_+^3 = y_j   (j = 1..n)
+  ##   natural end 1:  sum_i c_i       = 0
+  ##   natural end 2:  sum_i c_i t_i   = 0
+  G <- matrix(0, n + 2, n + 2)
+  G[1:n, 1]           <- 1                            # a
+  G[1:n, 2]           <- xp                           # b * t_j
+  for (j in seq_len(n)) {                             # c_i * (t_j - t_i)_+^3
+    G[j, 2 + seq_len(n)] <- pmax(0, xp[j] - xp)^3
+  }
+  G[n + 1, 2 + seq_len(n)] <- 1                       # sum c_i = 0
+  G[n + 2, 2 + seq_len(n)] <- xp                      # sum c_i t_i = 0
+
+  rhs <- c(yp, 0, 0)
+  theta <- RTMB::solve(G, rhs)                        # AD vector, length n + 2
+  a  <- theta[1]
+  b  <- theta[2]
+  cc <- theta[2 + seq_len(n)]                         # cubic coefficients
+
+  if (!deriv) {
+    function(x) {
+      out <- a + b * x
+      for (i in seq_len(n)) out <- out + cc[i] * pos(x - xp[i])^3
+      out
+    }
+  } else {
+    function(x) {
+      out <- b + 0 * x                                # keep length(x)
+      for (i in seq_len(n)) out <- out + cc[i] * 3 * pos(x - xp[i])^2
+      out
+    }
+  }
+}
+
+
+## Build a preference smooth (and its first derivative) from knot locations `xp`
+## and knot values `yp`. `yp` are the estimated function values at the knots, so
+## the smooth always interpolates them exactly. `method` selects the construction:
+##   "natural" - natural cubic spline (see .natural_spline_fun): piecewise cubic,
+##               C2, linear extrapolation beyond the outer knots. Default.
+##   "poly"    - legacy single global interpolating polynomial (Vandermonde solve);
+##               retained for reproducibility of older fits.
+## The `adv` and single-knot cases are method-independent (linear-through-origin and
+## constant respectively).
+.poly_fun <- function(xp, yp, deriv = FALSE, adv = FALSE, method = "natural") {
+
+  if (is.null(method)) method <- "natural"
 
   if (!adv && length(xp) > 1 && all(diff(xp) == 0)) return(NULL)
 
@@ -1095,7 +1185,11 @@ make_x_y_cov <- function(x, tref = NULL) {
       val <- yp[1]
       f <- function(x) val
       df <- function(x) rep(0, length(x))
-    } else {
+    } else if (method == "natural") {
+      ## Natural cubic spline through the knot values (see .natural_spline_fun).
+      f <- .natural_spline_fun(xp, yp, deriv = FALSE)
+      df <- .natural_spline_fun(xp, yp, deriv = TRUE)
+    } else if (method == "poly") {
       ## Solve for polynomial coefficients
       n <- length(xp)
       A <- outer(xp, 0:(n-1), "^")
@@ -1121,6 +1215,8 @@ make_x_y_cov <- function(x, tref = NULL) {
         ##           sum(alpha[-c(1:2)] *
         ##               (2:(n-1)) * x^(1:(n-2))))
       }
+    } else {
+      stop("Unknown smooth method '", method, "' (expected 'natural' or 'poly').")
     }
   }
 
@@ -1130,7 +1226,10 @@ make_x_y_cov <- function(x, tref = NULL) {
 
 
 .make_pref_funcs <- function(alpha, beta, gamma,
-                            knots_tax, knots_dif) {
+                            knots_tax, knots_dif,
+                            method = "natural") {
+
+  if (is.null(method)) method <- "natural"
 
   ncov <- dim(knots_tax)[2]
 
@@ -1146,18 +1245,22 @@ make_x_y_cov <- function(x, tref = NULL) {
     ## advection
     pref_funcs$tax[[i]] <- pref_funcs$dtax[[i]] <- vector("list", dim(alpha)[3])
     for(j in 1:dim(alpha)[3]){
-      pref_funcs$tax[[i]][[j]] <- .poly_fun(knots_tax[,i], alpha[,i,j])
+      pref_funcs$tax[[i]][[j]] <- .poly_fun(knots_tax[,i], alpha[,i,j],
+                                          method = method)
       pref_funcs$dtax[[i]][[j]] <- .poly_fun(knots_tax[,i],
                                           alpha[,i,j],
-                                          deriv = TRUE)
+                                          deriv = TRUE,
+                                          method = method)
     }
 
     ## diffusion
     pref_funcs$dif[[i]] <- pref_funcs$ddif[[i]] <- vector("list", dim(beta)[3])
     for(j in 1:dim(beta)[3]){
-      pref_funcs$dif[[i]][[j]] <- .poly_fun(knots_dif[,i], beta[,i,j])
+      pref_funcs$dif[[i]][[j]] <- .poly_fun(knots_dif[,i], beta[,i,j],
+                                          method = method)
       pref_funcs$ddif[[i]][[j]] <- .poly_fun(knots_dif[,i], beta[,i,j],
-                                          deriv=TRUE)
+                                          deriv=TRUE,
+                                          method = method)
     }
 
     ## advection (x)

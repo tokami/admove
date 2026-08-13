@@ -2419,7 +2419,8 @@ plot_pref_func <- function(x,
     }
 
     get_true.pref <- .poly_fun(as.numeric(knots),
-                                       as.numeric(par))
+                                       as.numeric(par),
+                                       method = conf$smooth_method)
 
     pref <- get_true.pref(dat$pred$cov[,i])
 
@@ -2665,9 +2666,11 @@ plot_pref_grid <- function(x,
 
         if (inherits(knots, "matrix")) {
           get_true.pref <- .poly_fun(as.numeric(knots[,i]),
-                                             as.numeric(par_est[,i,j]))
+                                             as.numeric(par_est[,i,j]),
+                                             method = x$conf$smooth_method)
         } else {
-          get_true.pref <- .poly_fun(knots, par_est)
+          get_true.pref <- .poly_fun(knots, par_est,
+                                             method = x$conf$smooth_method)
         }
 
 
@@ -2785,7 +2788,8 @@ plot_pref_grid <- function(x,
     ##     funcs$tax(xy,NA)))
 
     get_true.pref <- .poly_fun(as.numeric(knots_tax),
-                                       as.numeric(x$par_sim$alpha))
+                                       as.numeric(x$par_sim$alpha),
+                                       method = conf$smooth_method)
 
     i = 1
     pref_pred <- get_true.pref(as.numeric(cov[[i]]))
@@ -2851,7 +2855,8 @@ plot_pref_grid <- function(x,
 
 
     get_true.pref <- .poly_fun(as.numeric(x$knots),
-                                       as.numeric(x$par$alpha))
+                                       as.numeric(x$par$alpha),
+                                       method = conf$smooth_method)
 
     i = 1
     pref_pred <- get_true.pref(as.numeric(cov[[i]]))

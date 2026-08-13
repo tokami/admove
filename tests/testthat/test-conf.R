@@ -29,7 +29,8 @@ test_that("default_conf returns expected names", {
       "n_seasons",
       "seasonal_cov",
       "seasonal_spline",
-      "seasonal_dif"
+      "seasonal_dif",
+      "smooth_method"
     )
   )
 })
@@ -62,6 +63,38 @@ test_that("check_conf rejects an invalid seasonal_dif", {
   expect_error(
     check_conf(list(seasonal_dif = NA), dat, verbose = FALSE),
     "single TRUE or FALSE"
+  )
+})
+
+
+test_that("default_conf sets natural spline as default smooth", {
+
+  dat <- list(
+    tags = NULL,
+    cov = array(1:5, dim = c(5))
+  )
+
+  conf <- default_conf(dat, verbose = FALSE)
+
+  expect_equal(conf$smooth_method, "natural")
+})
+
+
+test_that("check_conf accepts valid smooth_method and rejects invalid", {
+
+  dat <- list(
+    tags = data.frame(tag_type = c("d")),
+    cov = array(1:3, dim = c(3))
+  )
+
+  expect_equal(
+    check_conf(list(smooth_method = "poly"), dat, verbose = FALSE)$smooth_method,
+    "poly"
+  )
+
+  expect_error(
+    check_conf(list(smooth_method = "bspline"), dat, verbose = FALSE),
+    "smooth_method"
   )
 })
 

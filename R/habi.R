@@ -178,7 +178,8 @@
 .build_habi <- function(dat, conf, par_est, per) {
 
   pref_funcs <- .make_pref_funcs(par_est$alpha, par_est$beta, par_est$gamma,
-                                 dat$knots_tax, dat$knots_dif)
+                                 dat$knots_tax, dat$knots_dif,
+                                 method = conf$smooth_method)
 
   liv <- .get_liv(dat$cov)
 
