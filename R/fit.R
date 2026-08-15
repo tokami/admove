@@ -130,6 +130,9 @@ admove <- function(dat,
   conf$engine <- .get_engine_integer(conf$engine)
   conf <- .check_seasonal_lengths(conf, dat)
 
+  ## knot matrices must line up with the covariate fields and the spline arrays
+  .check_knots_dims(dat, par)
+
   ## check and clean tags
   dat$tags <- check_tags(dat$tags, dat$grid, dat, conf, TRUE, verbose)
 
@@ -1446,6 +1449,59 @@ plot_fit <- function(x,
           "map$logKappa <- factor(NA) (the default_map() behaviour) and set the ",
           "scale via par$logKappa instead. See ?default_par.",
           call. = FALSE)
+
+  invisible(NULL)
+}
+
+## Check that the taxis and diffusion knot matrices are consistent with the
+## number of covariate fields and with the spline-coefficient arrays. A common
+## trap is to call setup_data(), then overwrite dat$knots_tax or dat$knots_dif
+## by hand without regenerating par -- the mismatch would otherwise surface as
+## an opaque subscript error deep inside the likelihood.
+.check_knots_dims <- function(dat, par) {
+
+  if (is.null(dat$cov)) return(invisible(NULL))
+
+  ncov <- length(dat$cov)
+
+  check_one <- function(knots, coef, knots_name, coef_name) {
+
+    if (is.null(knots)) {
+      stop("dat$cov has ", ncov, " covariate field(s) but dat$", knots_name,
+           " is NULL. Provide a knot matrix with one column per covariate, ",
+           "or regenerate the data with setup_data().", call. = FALSE)
+    }
+
+    if (!is.matrix(knots)) {
+      stop("dat$", knots_name, " must be a matrix (knots in rows, one column ",
+           "per covariate field), but it is a ", class(knots)[1L], ".",
+           call. = FALSE)
+    }
+
+    if (ncol(knots) != ncov) {
+      stop("dat$", knots_name, " has ", ncol(knots), " column(s) but dat$cov ",
+           "has ", ncov, " covariate field(s); they must match (one knot ",
+           "column per covariate). Did you edit dat$", knots_name,
+           " after setup_data() without matching the covariates?", call. = FALSE)
+    }
+
+    ## par may not be supplied yet; only cross-check when it is.
+    if (is.null(coef)) return(invisible(NULL))
+
+    if (nrow(knots) != dim(coef)[1L] || ncol(knots) != dim(coef)[2L]) {
+      stop("dat$", knots_name, " is ", nrow(knots), " x ", ncol(knots),
+           " but par$", coef_name, " is ", dim(coef)[1L], " x ", dim(coef)[2L],
+           " (knots x covariates). They must agree. If you changed dat$",
+           knots_name, " after setup_data(), regenerate the parameters with ",
+           "par <- default_par(dat, conf) and the map with ",
+           "map <- default_map(dat, conf, par).", call. = FALSE)
+    }
+
+    invisible(NULL)
+  }
+
+  check_one(dat$knots_tax, par$alpha, "knots_tax", "alpha")
+  check_one(dat$knots_dif, par$beta, "knots_dif", "beta")
 
   invisible(NULL)
 }
