@@ -170,6 +170,19 @@ create_tref <- function(origin = NA, units = NA_character_, period = NULL,
 ##' Period is treated strictly: if both \code{x} and \code{tref} define a finite
 ##' period and the two differ, an error is raised.
 ##'
+##' Case 1 above is the dangerous one and therefore warns (unless
+##' \code{verbose = FALSE}). When the origin or the units of \code{x} are
+##' \code{NA} there is nothing to convert *from*, so the stored numeric time
+##' values are left untouched and merely re-interpreted in the new reference.
+##' If they were not already expressed in the new units since the new origin,
+##' the object silently ends up on a completely different time axis than the
+##' rest of the model -- and nothing downstream catches it, because
+##' \code{t2index()} clamps out-of-range times to the nearest covariate slice.
+##' The remedy is to give the object a real time reference when it is prepared,
+##' via the \code{date_origin}, \code{date_format} or \code{date_decimal}
+##' arguments of [prep_tags()] / [prep_cov()], rather than attaching one
+##' afterwards.
+##'
 ##' @examples
 ##' ## Assume x and y are objects with numeric time and tref metadata
 ##' ## x <- add_tref(x, list(origin = as.Date("2020-01-01"), units = "day"))
@@ -213,15 +226,25 @@ add_tref <- function(x, tref = NULL, verbose = TRUE, shift_origin = FALSE) {
 
     origin0_na <- .is_na_scalar(origin0)
     originN_na <- .is_na_scalar(origin_new)
+    units0_na <- .is_na_scalar(units_time(tref0))
+    unitsN_na <- .is_na_scalar(units_new)
 
     ## if new is NA and old is defined -> keep old
     if (originN_na && !origin0_na) {
       origin_new <- origin0
     }
 
-    ## if old is NA and new is defined -> set it
-    if (origin0_na && !originN_na && isTRUE(verbose)) {
-      message("Setting tref$origin on object (was NA).")
+    ## if old is NA and new is defined -> set it. There is no source reference
+    ## to convert from, so the stored time values are re-interpreted rather than
+    ## converted; warn, because that is how a tag or covariate ends up on a
+    ## different time axis than the rest of the model without anything failing.
+    if ((origin0_na && !originN_na) || (units0_na && !unitsN_na)) {
+      .warn_tref_relabel(x,
+                         set_origin = origin0_na && !originN_na,
+                         set_units = units0_na && !unitsN_na,
+                         origin_new = origin_new,
+                         units_new = units_new,
+                         verbose = verbose)
     }
 
     ## if both defined but differ
@@ -907,6 +930,70 @@ if (u == "quarter") {
 
   stop("Unsupported tref units: ", u)
 }
+
+## Numeric time values carried by an object, or NULL when it has none. Used to
+## show the affected range in .warn_tref_relabel().
+.get_time_values <- function(x) {
+
+  v <- if (inherits(x, "admove_tags")) {
+    x$t
+  } else if (inherits(x, "admove_cov")) {
+    suppressWarnings(as.numeric(attributes(x)$dimnames[[3]]))
+  } else if (inherits(x, "admove_data")) {
+    x$trange
+  } else if (is.numeric(x)) {
+    as.numeric(x)
+  } else {
+    NULL
+  }
+
+  if (is.null(v)) return(NULL)
+  v <- v[is.finite(v)]
+  if (length(v) == 0) return(NULL)
+
+  v
+}
+
+
+## Warn that a tref field was NA and has been filled in, which re-interprets the
+## stored time values instead of converting them. Gated on `verbose` like the
+## other diagnostics of add_tref(), so that the deliberate `tref(x) <- ...`
+## replacement methods (which pass verbose = FALSE) stay quiet.
+.warn_tref_relabel <- function(x, set_origin, set_units, origin_new, units_new,
+                               verbose = TRUE) {
+
+  if (!isTRUE(verbose)) return(invisible(NULL))
+
+  what <- c("origin"[isTRUE(set_origin)], "units"[isTRUE(set_units)])
+
+  new_txt <- paste(c(if (isTRUE(set_origin)) paste0("origin = ", format(origin_new)),
+                     if (isTRUE(set_units)) paste0("units = ", units_new)),
+                   collapse = ", ")
+
+  rng <- .get_time_values(x)
+  rng_txt <- if (is.null(rng)) "" else {
+    paste0(" The stored time values (range ", signif(min(rng), 8), " to ",
+           signif(max(rng), 8), ") are left unchanged.")
+  }
+
+  warning("tref$", paste(what, collapse = " and tref$"),
+          " of the object ", if (length(what) > 1) "were" else "was",
+          " NA and ", if (length(what) > 1) "have" else "has",
+          " been set to ", new_txt, ". There is no source time reference to ",
+          "convert from, so the values are re-interpreted, not converted.",
+          rng_txt,
+          " If they are not already expressed in these units since this origin, ",
+          "the object now sits on a different time axis than the rest of the ",
+          "model, and nothing downstream will fail: t2index() clamps ",
+          "out-of-range times to the nearest covariate slice. Fix by giving the ",
+          "object a real time reference when it is prepared, with the ",
+          "'date_origin', 'date_format' or 'date_decimal' argument of ",
+          "prep_tags() / prep_cov().",
+          call. = FALSE)
+
+  invisible(NULL)
+}
+
 
 .shift_time_values <- function(x, delta) {
 

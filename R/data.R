@@ -378,17 +378,22 @@ setup_data <- function(grid = NULL,
 
   ## Check covariate–tag time overlap -----------------
   ## t2index() uses findInterval(..., rightmost.closed = TRUE, left.open = TRUE),
-  ## which returns 0 only when t < min(time_cov). Tags above the covariate range
-  ## always get the last valid index, and a single-slice covariate (min == max)
-  ## is accessible for any t >= that value. So we only need to warn when ALL tag
-  ## times fall strictly below the covariate's minimum time.
+  ## which returns 0 only when t < min(time_cov) and otherwise clamps: a tag
+  ## above the covariate range silently gets the LAST slice. Both directions are
+  ## therefore checked. Above the range some overshoot is normal -- slices are
+  ## labelled by their start, so a tag in the last month sits up to one slice
+  ## spacing beyond the last label -- so only a substantial overshoot is
+  ## flagged, and a single-slice covariate (a climatology) is skipped since it
+  ## is legitimately used for every time.
   if (!is.null(res$time_cov) && !is.null(res$tags) && nrow(res$tags) > 0) {
+    tag_min <- min(res$tags$t, na.rm = TRUE)
     tag_max <- max(res$tags$t, na.rm = TRUE)
     for (i in seq_along(res$time_cov)) {
-      cov_min <- min(res$time_cov[[i]], na.rm = TRUE)
+      tc <- res$time_cov[[i]]
+      cov_min <- min(tc, na.rm = TRUE)
+      cov_max <- max(tc, na.rm = TRUE)
+
       if (tag_max < cov_min) {
-        tag_min <- min(res$tags$t, na.rm = TRUE)
-        cov_max <- max(res$time_cov[[i]], na.rm = TRUE)
         warning(
           "All tag times are below the minimum time of covariate cov[[", i,
           "]]: tags span [", signif(tag_min, 5), ", ", signif(tag_max, 5),
@@ -399,6 +404,31 @@ setup_data <- function(grid = NULL,
           "parameter movement. Fix: ensure both use the same time system, ",
           "e.g. call prep_cov(..., date_decimal = TRUE) and ",
           "setup_data(..., shift_tref = TRUE).",
+          call. = FALSE
+        )
+        next
+      }
+
+      if (length(tc) < 2) next
+
+      tol <- stats::median(diff(sort(tc)), na.rm = TRUE)
+      if (!is.finite(tol) || tol <= 0) tol <- 0
+
+      above <- which(res$tags$t > cov_max + tol)
+      if (length(above) > 0) {
+        warning(
+          length(above), " of ", nrow(res$tags), " tag observation",
+          if (length(above) == 1) "" else "s",
+          " lie beyond the last time slice of covariate cov[[", i,
+          "]]: those tag times span [", signif(min(res$tags$t[above]), 8),
+          ", ", signif(max(res$tags$t[above]), 8), "], covariate spans [",
+          signif(cov_min, 5), ", ", signif(cov_max, 5), "]. ",
+          "t2index() clamps them, so they are all evaluated against the LAST ",
+          "covariate slice regardless of their date, silently and without ",
+          "error. Fix: ensure the tags and the covariate use the same time ",
+          "system, e.g. give the tags a real time reference in prep_tags() ",
+          "via 'date_origin' / 'date_format' / 'date_decimal', or extend the ",
+          "covariate in time.",
           call. = FALSE
         )
       }

@@ -38,8 +38,10 @@ constant over the seasonal cycle unless \code{conf$seasonal_dif} is \code{TRUE};
 enabled, coupled between the \(x\)- and \(y\)-directions within each
 covariate and season;
 \item observation-error parameters (\code{logSdO}) are fixed unless estimation
-is enabled for the corresponding tag type, in which case \(x\)- and
-\(y\)-direction standard deviations are coupled by default.
+is enabled for the corresponding tag type via \code{conf$obs_var_type}, in
+which case \(x\)- and \(y\)-direction standard deviations are coupled by
+default. All three tag types are supported, mark-recapture tags
+included.
 }
 
 Seasonality is opt-in per model component. Setting \code{conf$seasonal_spline}

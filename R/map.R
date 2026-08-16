@@ -22,8 +22,10 @@
 ##'     enabled, coupled between the \(x\)- and \(y\)-directions within each
 ##'     covariate and season;
 ##'   \item observation-error parameters (`logSdO`) are fixed unless estimation
-##'     is enabled for the corresponding tag type, in which case \(x\)- and
-##'     \(y\)-direction standard deviations are coupled by default.
+##'     is enabled for the corresponding tag type via `conf$obs_var_type`, in
+##'     which case \(x\)- and \(y\)-direction standard deviations are coupled by
+##'     default. All three tag types are supported, mark-recapture tags
+##'     included.
 ##' }
 ##'
 ##' Seasonality is opt-in per model component. Setting `conf$seasonal_spline`
@@ -88,16 +90,22 @@ default_map <- function(dat, conf, par){
   }
 
   ## Observation error ----------------------------------------
-  logSdO <- rep(NA, 6)
+  ## par$logSdO is a 2 x 3 matrix: rows are the x and y direction, columns are
+  ## the tag types in the order dtags, stags, ctags. x and y are coupled within
+  ## a tag type, and every tag type that estimates its own observation error
+  ## gets its own level. Mark-recapture tags are included: the reported
+  ## recapture position carries error too (vessel position, rounding to a
+  ## fishing block), and nll.R implements obs_var_type for all three types.
+  logSdO <- rep(NA_integer_, 6)
+  use_type <- c(isTRUE(conf$use_dtags), isTRUE(conf$use_stags),
+                isTRUE(conf$use_ctags))
+  next_id <- 1L
 
-  if(conf$use_dtags && conf$obs_var_type[1] %in% c(1,2)){
-    logSdO[1:2] <- c(1, 1) ## assume equal var in x,y
-  }
-
-  if(conf$use_stags && conf$obs_var_type[2] %in% c(1,2)){
-    mini <- min(logSdO[1:2])
-    if (is.na(mini)) mini <- 0
-    logSdO[3:4] <- c(mini + 1, mini + 1) ## assume equal var in x,y
+  for (i in seq_len(3)) {
+    if (use_type[i] && conf$obs_var_type[i] %in% c(1, 2)) {
+      logSdO[(2 * i - 1):(2 * i)] <- next_id  ## assume equal var in x,y
+      next_id <- next_id + 1L
+    }
   }
 
   map$logSdO <- factor(logSdO)

@@ -2368,7 +2368,7 @@ plot_pref_func <- function(x,
                col = cols[i],
                lty = 1:dim(par_est)[3],
                lwd = lwd,
-               bg = "white"
+               bg = "white",
                ncol = leg_ncol)
 
       }

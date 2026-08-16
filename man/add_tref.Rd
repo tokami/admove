@@ -68,6 +68,19 @@ not done silently; use \code{shift_origin = TRUE} or call
 
 Period is treated strictly: if both \code{x} and \code{tref} define a finite
 period and the two differ, an error is raised.
+
+Case 1 above is the dangerous one and therefore warns (unless
+\code{verbose = FALSE}). When the origin or the units of \code{x} are
+\code{NA} there is nothing to convert \emph{from}, so the stored numeric time
+values are left untouched and merely re-interpreted in the new reference.
+If they were not already expressed in the new units since the new origin,
+the object silently ends up on a completely different time axis than the
+rest of the model -- and nothing downstream catches it, because
+\code{t2index()} clamps out-of-range times to the nearest covariate slice.
+The remedy is to give the object a real time reference when it is prepared,
+via the \code{date_origin}, \code{date_format} or \code{date_decimal}
+arguments of \code{\link[=prep_tags]{prep_tags()}} / \code{\link[=prep_cov]{prep_cov()}}, rather than attaching one
+afterwards.
 }
 \examples{
 ## Assume x and y are objects with numeric time and tref metadata

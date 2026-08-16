@@ -54,8 +54,14 @@
 ##' Observation uncertainty is **off by default** (`obs_var_type = c(0L, 0L, 0L)`),
 ##' meaning tag locations are treated as exact. To estimate observation variance
 ##' for a tag type, set the corresponding element to `1L` (all but last
-##' observation) or `2L` (all observations). For example, to estimate observation
-##' variance for data-storage tags: `conf$obs_var_type[1] <- 1L`.
+##' observation of each tag) or `2L` (all observations). For example, to estimate
+##' observation variance for data-storage tags: `conf$obs_var_type[1] <- 1L`.
+##' The three elements are the tag types in the order data-storage,
+##' mark-resight, mark-recapture, and all three are supported: for
+##' mark-recapture tags (`obs_var_type[3]`) the term absorbs the error in the
+##' reported recapture position. Note that `1L` and `2L` coincide for a tag with
+##' only two observations if `do_update` is `FALSE` for that type, since nothing
+##' is conditioned on in between.
 ##'
 ##' The smooth used for the habitat preference functions is selected by
 ##' `conf$smooth_method`:

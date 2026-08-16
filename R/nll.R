@@ -105,6 +105,7 @@ nll <- function(par, dat) {
     for (i in seq_len(ntags)) {
 
       tag <- dat$tags[[i]]
+      nobs <- nrow(tag)
       last_xy <- as.matrix(tag[1,2:3,drop = FALSE])
 
       ind_tag_type <- as.integer(tag$tag_type)
@@ -171,7 +172,12 @@ nll <- function(par, dat) {
             F <- PP
 
             ## obs uncertainty
-            if ((dat$obs_var_type[ind_tt] == 1 && ind_obs_j != nts) ||
+            ## obs_var_type 1 means "all but the last observation", so the
+            ## comparison is against the last row of this tag -- not against
+            ## nts, which counts the integration time points and is larger than
+            ## nrow(tag) whenever gaps are filled (the default). Comparing to
+            ## nts made type 1 behave like type 2.
+            if ((dat$obs_var_type[ind_tt] == 1 && ind_obs_j != nobs) ||
                   dat$obs_var_type[ind_tt] == 2 ||
                   dat$obs_var_type[ind_tt] == 3) {
               if (dat$obs_var_type[ind_tt] == 3) {
@@ -330,7 +336,10 @@ nll <- function(par, dat) {
             this_dist[tag$ic[ind_obs_j]] <- 1
 
             ## obs uncertainty
-            if ((dat$obs_var_type[ind_tt] == 1 && ind_obs_j != nts) ||
+            ## see the note in the KF branch: "all but the last observation" is
+            ## a comparison against nrow(tag), not against the number of
+            ## integration time points
+            if ((dat$obs_var_type[ind_tt] == 1 && ind_obs_j != nobs) ||
                   dat$obs_var_type[ind_tt] == 2 ||
                   dat$obs_var_type[ind_tt] == 3) {
 

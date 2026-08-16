@@ -161,3 +161,43 @@ test_that(".get_nsea reports one slice per covariate", {
   expect_equal(admove:::.get_nsea(list(time_spline = NULL)), 1L)
   expect_equal(admove:::.get_nsea(list(time_spline = list())), 1L)
 })
+
+
+test_that("logSdO is mapped for every tag type that estimates observation error", {
+
+  ## par$logSdO is 2 x 3: rows x/y, columns dtags, stags, ctags
+  x <- make_inputs(list(c(0, 6), 0), nsea_dim = 2)
+  x$conf$use_dtags <- x$conf$use_stags <- x$conf$use_ctags <- TRUE
+
+  ## nothing estimated
+  expect_true(all(is.na(as.integer(default_map(x$dat, x$conf, x$par)$logSdO))))
+
+  ## data-storage tags only: entries 1:2, coupled
+  x$conf$obs_var_type <- c(1L, 0L, 0L)
+  m <- as.integer(default_map(x$dat, x$conf, x$par)$logSdO)
+  expect_equal(m[1], m[2])
+  expect_true(all(is.na(m[3:6])))
+
+  ## mark-recapture tags only: entries 5:6, coupled (used to be impossible)
+  x$conf$obs_var_type <- c(0L, 0L, 2L)
+  m <- as.integer(default_map(x$dat, x$conf, x$par)$logSdO)
+  expect_true(all(is.na(m[1:4])))
+  expect_equal(m[5], m[6])
+  expect_false(is.na(m[5]))
+
+  ## all three: three distinct levels, x and y coupled within each
+  x$conf$obs_var_type <- c(1L, 1L, 1L)
+  m <- as.integer(default_map(x$dat, x$conf, x$par)$logSdO)
+  expect_equal(m[c(1, 3, 5)], m[c(2, 4, 6)])
+  expect_length(unique(m), 3L)
+})
+
+
+test_that("a tag type that is switched off does not get observation error", {
+
+  x <- make_inputs(list(c(0, 6), 0), nsea_dim = 2)
+  x$conf$use_ctags <- FALSE
+  x$conf$obs_var_type <- c(0L, 0L, 2L)
+
+  expect_true(all(is.na(as.integer(default_map(x$dat, x$conf, x$par)$logSdO))))
+})

@@ -32,6 +32,24 @@
 ##'   explicit upper bounds are supplied.
 ##' @param rel_tol Relative convergence tolerance passed to [stats::nlminb()].
 ##'   Default is \code{1e-10}.
+##' @param grad_tol Convergence tolerance on the gradient, **relative to the
+##'   objective**: a fit counts as converged when the largest absolute gradient
+##'   component is below \code{grad_tol * max(1, abs(objective))}. Default
+##'   \code{1e-4}. [stats::nlminb()] can report \code{convergence = 0}
+##'   ("relative convergence") at a point that is not stationary, and
+##'   [RTMB::sdreport()] can then return a positive-definite Hessian and small
+##'   standard errors there, so the optimizer's own status is not sufficient.
+##'   The tolerance is relative because the gradient scales with the objective,
+##'   which scales with the number of observations: an absolute threshold that
+##'   is right for a few hundred tags flags every fit of a few thousand. The
+##'   maximum gradient component is stored in the fitted object as
+##'   \code{max_gradient} and reported by [summarise_fit()].
+##' @param n_restarts Number of times the optimizer may be restarted from its
+##'   own solution while the maximum gradient component is still above
+##'   \code{grad_tol}. Default \code{2}. A restart costs nothing when the first
+##'   call already converged. It helps when [stats::nlminb()] stops early with a
+##'   stalled trust region, but it cannot escape a point the optimizer is
+##'   genuinely stuck at -- there it only makes the reported status honest.
 ##' @param do_predictions Logical; if \code{TRUE} (default), model predictions
 ##'   are computed after fitting. If \code{FALSE}, prediction-related outputs are
 ##'   skipped, and some plotting methods may not be available.
@@ -88,6 +106,8 @@ admove <- function(dat,
                    lower = NULL,
                    upper = NULL,
                    rel_tol = 1e-10,
+                   grad_tol = 1e-4,
+                   n_restarts = 2,
                    do_predictions = TRUE,
                    do_sdreport = TRUE,
                    do_report = TRUE,
@@ -251,13 +271,50 @@ admove <- function(dat,
                        control = ctrl,
                        lower = lower2,
                        upper = upper2)
+
+  ## nlminb can stop at a point that is not stationary and still report
+  ## convergence = 0, so judge on the gradient as well. Restarting from the
+  ## previous solution gives the trust region a fresh start; when the optimizer
+  ## is genuinely stuck the parameters simply do not move and the reported
+  ## status usually turns into "false convergence (8)", which is informative in
+  ## itself. Stop as soon as the gradient is small or the solution stops moving.
+  max_gradient <- .max_abs_gradient(obj, opt$par)
+  n_restarts <- max(0L, as.integer(n_restarts))
+
+  if (n_restarts > 0) {
+    for (i in seq_len(n_restarts)) {
+      if (!.not_converged(opt, max_gradient, grad_tol)) break
+      if (!is.finite(max_gradient)) break
+      opt_new <- stats::nlminb(opt$par, obj$fn, obj$gr,
+                               control = ctrl,
+                               lower = lower2,
+                               upper = upper2)
+      moved <- !isTRUE(all.equal(unname(opt_new$par), unname(opt$par)))
+      opt <- opt_new
+      max_gradient <- .max_abs_gradient(obj, opt$par)
+      if (verbose) {
+        message("Restart ", i, ": objective ", signif(opt$objective, 10),
+                ", max|gradient| ", signif(max_gradient, 4),
+                if (!moved) " (parameters unchanged)" else "")
+      }
+      if (!moved) break
+    }
+  }
+
   t3 <- Sys.time()
 
-  if(verbose) message(paste0("Minimisation done (",
-                                signif(as.numeric(difftime(t3, t2,
-                                                           units = "mins")),2),
-                                "min). Model ", "not "[opt$convergence],
-                                "converged."))
+  if (verbose) {
+    status <- .convergence_status(opt, max_gradient, grad_tol)
+    message(paste0("Minimisation done (",
+                   signif(as.numeric(difftime(t3, t2, units = "mins")), 2),
+                   "min). Model ", "not "[identical(status, "bad")],
+                   "converged (max|gradient| ", signif(max_gradient, 4),
+                   " of ", signif(.grad_threshold(grad_tol, opt$objective), 4),
+                   if (identical(status, "gradient_ok"))
+                     paste0("; the optimizer reported \"", opt$message,
+                            "\", but the gradient is at zero"),
+                   ")."))
+  }
 
   res <- list(dat = dat,
               conf = conf,
@@ -265,6 +322,8 @@ admove <- function(dat,
               map = map,
               opt = opt,
               obj = obj,
+              max_gradient = max_gradient,
+              grad_tol = grad_tol,
               low = lower,
               hig = upper)
 
@@ -1061,14 +1120,34 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 
   cat("<admove>\n")
 
+  ## The optimizer's own status is not sufficient: nlminb can report
+  ## "relative convergence (4)" at a point that is far from stationary, where
+  ## sdreport() then still returns a positive-definite Hessian and (spuriously
+  ## small) standard errors. Judge on the gradient too. Fits made before
+  ## max_gradient was stored fall back to evaluating it here.
+  grad_tol <- if (is.null(x$grad_tol)) 1e-4 else x$grad_tol
+  max_gradient <- x$max_gradient
+  if (is.null(max_gradient)) max_gradient <- .max_abs_gradient(x$obj, x$opt$par)
+  status <- .convergence_status(x$opt, max_gradient, grad_tol)
+  bad <- identical(status, "bad")
+
   cat(paste(' Convergence: ', x$opt$convergence,
             '  MSG: ', x$opt$message, '\n', sep=''))
-  if (x$opt$convergence > 0) {
+  cat(paste0(' Max. gradient component: ', signif(max_gradient, 4),
+             ' (tolerance ',
+             signif(.grad_threshold(grad_tol, x$opt$objective), 4), ')\n'))
+  if (bad) {
     cat('WARNING: Model did not obtain proper convergence! Estimates and uncertainties are most likely invalid and cannot be trusted.\n')
+    if (isTRUE(x$opt$convergence == 0)) {
+      cat('         The optimizer reported convergence, but the gradient is not zero: it stopped away from a stationary point.\n')
+    }
+  } else if (identical(status, "gradient_ok")) {
+    cat('NOTE: The optimizer stopped with a warning, but the gradient is at zero, so this is a\n')
+    cat('      stalled line search at the optimum rather than a failed fit. Check the estimates.\n')
   }
 
   ## if('sderr' %in% names(x)) cat('WARNING: Could not calculate all standard deviations. The optimum found may be invalid. Proceed with caution.\n')
-  if (x$opt$convergence > 0) {
+  if (bad) {
     txtobj <- 'Objective function: '
   } else {
     txtobj <- 'Objective function at optimum: '
@@ -1628,6 +1707,62 @@ plot_fit <- function(x,
   if (nrow(hess) != length(par_fixed) || ncol(hess) != length(par_fixed)) return(NULL)
 
   hess
+}
+
+
+## Largest absolute gradient component at `par`, or NA when it cannot be
+## evaluated (e.g. every parameter fixed in the map, so there is nothing to
+## differentiate).
+.max_abs_gradient <- function(obj, par) {
+
+  if (is.null(obj) || !is.function(obj$gr)) return(NA_real_)
+  if (length(par) == 0) return(0)
+
+  g <- tryCatch(obj$gr(par), error = function(e) NULL)
+  if (is.null(g) || length(g) == 0) return(NA_real_)
+
+  max(abs(as.numeric(g)))
+}
+
+
+## Gradient below which a fit counts as stationary. Relative to the objective,
+## because the gradient scales with it: the same model fitted to 40 tags and to
+## 4000 tags stops at very different absolute gradients, and an absolute
+## threshold chosen for one flags every fit of the other.
+.grad_threshold <- function(grad_tol, objective) {
+
+  sc <- if (is.null(objective) || length(objective) != 1L ||
+              !is.finite(objective)) 1 else max(1, abs(objective))
+
+  grad_tol * sc
+}
+
+
+## Convergence verdict, in three states. The optimizer's status code and the
+## gradient disagree often enough that collapsing them loses information:
+##   "ok"          both agree the fit is at an optimum
+##   "gradient_ok" the optimizer stopped unhappily (typically "false
+##                 convergence (8)": the line search could not improve on the
+##                 current point) but the gradient is at zero. That is normally
+##                 a stalled line search AT the optimum, not a failure.
+##   "bad"         the gradient is not zero, whatever the optimizer reports --
+##                 including the dangerous case of convergence = 0 at a
+##                 non-stationary point, where sdreport() still returns small
+##                 standard errors.
+.convergence_status <- function(opt, max_gradient, grad_tol) {
+
+  if (is.null(opt) || is.null(opt$convergence)) return("bad")
+  if (!is.finite(max_gradient)) return("bad")
+  if (max_gradient > .grad_threshold(grad_tol, opt$objective)) return("bad")
+  if (opt$convergence > 0) return("gradient_ok")
+
+  "ok"
+}
+
+
+## Whether another optimizer restart is worth trying: anything short of "ok".
+.not_converged <- function(opt, max_gradient, grad_tol) {
+  !identical(.convergence_status(opt, max_gradient, grad_tol), "ok")
 }
 
 

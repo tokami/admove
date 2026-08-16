@@ -4,7 +4,7 @@
 \alias{default_par}
 \title{Default initial parameter values for admove}
 \usage{
-default_par(dat, conf = NULL, verbose = TRUE)
+default_par(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE)
 }
 \arguments{
 \item{dat}{A data list containing model input data, as produced by
@@ -13,6 +13,15 @@ default_par(dat, conf = NULL, verbose = TRUE)
 \item{conf}{An optional configuration list, typically created by
 \code{\link[=default_conf]{default_conf()}}. If \code{NULL}, a default configuration is generated
 from \code{dat}.}
+
+\item{cov_taxis}{Covariates that carry the habitat preference, given as
+names or indices into \code{dat$cov}. Only these are used to scale \code{logKappa}.
+Defaults to all covariates. Covariates that only enter the model as
+advection inputs -- typically the zonal and meridional current components,
+whose taxis coefficients are fixed in the \code{map} -- should be excluded:
+their range and gradient say nothing about the taxis scale, but they
+contribute to the median otherwise, so switching advection on and off
+changes \code{kappa} for no good reason.}
 
 \item{verbose}{Logical; if \code{TRUE}, informative messages are printed.}
 }
@@ -49,9 +58,19 @@ positions. Equating that to a characteristic displacement \eqn{L} gives
 
 where \eqn{L} and \eqn{T} are the median displacement and the median time
 between successive observations, and \eqn{R} and \eqn{G} are evaluated at the
-tag positions and reduced across covariates by their median. Only the tag
-types enabled in \code{conf} contribute, since \code{dat$tags} may still carry types
-that \code{conf} switches off.
+tag positions and reduced across the \code{cov_taxis} covariates by their median.
+Only the tag types enabled in \code{conf} contribute, since \code{dat$tags} may still
+carry types that \code{conf} switches off.
+
+\eqn{L} and \eqn{T} are computed \strong{per tag type} and the resulting
+\eqn{\kappa_{type}} combined by their geometric mean, rather than pooling all
+steps into one median. Tag types differ in their step scale by construction
+-- a mark-recapture tag contributes one net displacement over months, a
+data-storage tag hundreds of daily increments -- so a median over the pooled
+steps takes \eqn{T} from whichever type has more steps and \eqn{L} from the
+mixture, and can land outside the range of the per-type values. The
+geometric mean is the natural average for a multiplicative scale factor and
+always lies between them.
 
 If the quantities above cannot be computed (no covariates, no tags, or a
 covariate with no spatial variation), the function falls back to the earlier

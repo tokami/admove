@@ -9,6 +9,14 @@
 ##' @param conf An optional configuration list, typically created by
 ##'   [default_conf()]. If \code{NULL}, a default configuration is generated
 ##'   from \code{dat}.
+##' @param cov_taxis Covariates that carry the habitat preference, given as
+##'   names or indices into `dat$cov`. Only these are used to scale `logKappa`.
+##'   Defaults to all covariates. Covariates that only enter the model as
+##'   advection inputs -- typically the zonal and meridional current components,
+##'   whose taxis coefficients are fixed in the `map` -- should be excluded:
+##'   their range and gradient say nothing about the taxis scale, but they
+##'   contribute to the median otherwise, so switching advection on and off
+##'   changes `kappa` for no good reason.
 ##' @param verbose Logical; if \code{TRUE}, informative messages are printed.
 ##'
 ##' @details
@@ -37,9 +45,19 @@
 ##'
 ##' where \eqn{L} and \eqn{T} are the median displacement and the median time
 ##' between successive observations, and \eqn{R} and \eqn{G} are evaluated at the
-##' tag positions and reduced across covariates by their median. Only the tag
-##' types enabled in `conf` contribute, since `dat$tags` may still carry types
-##' that `conf` switches off.
+##' tag positions and reduced across the `cov_taxis` covariates by their median.
+##' Only the tag types enabled in `conf` contribute, since `dat$tags` may still
+##' carry types that `conf` switches off.
+##'
+##' \eqn{L} and \eqn{T} are computed **per tag type** and the resulting
+##' \eqn{\kappa_{type}} combined by their geometric mean, rather than pooling all
+##' steps into one median. Tag types differ in their step scale by construction
+##' -- a mark-recapture tag contributes one net displacement over months, a
+##' data-storage tag hundreds of daily increments -- so a median over the pooled
+##' steps takes \eqn{T} from whichever type has more steps and \eqn{L} from the
+##' mixture, and can land outside the range of the per-type values. The
+##' geometric mean is the natural average for a multiplicative scale factor and
+##' always lies between them.
 ##'
 ##' If the quantities above cannot be computed (no covariates, no tags, or a
 ##' covariate with no spatial variation), the function falls back to the earlier
@@ -57,7 +75,7 @@
 ##' par <- with(skjepo$sim, default_par(dat, conf))
 ##'
 ##' @export
-default_par <- function(dat, conf = NULL, verbose = TRUE) {
+default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 
   if (is.null(conf)) {
     if (verbose) message("No configuration list provided, using default_conf(dat). ")
@@ -120,22 +138,17 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
   ## kappa is a pure scale factor (only kappa * alpha is identifiable), so its
   ## job is to put alpha on an O(1) scale. Anchor it on observed movement,
   ## kappa = L * R / (G * T), rather than on the integration step -- see the
-  ## @details section above. Only the tag types enabled in conf are used.
+  ## @details section above. Only the tag types enabled in conf are used, only
+  ## the cov_taxis covariates enter the median across covariates, and the tag
+  ## types are reduced separately and then combined.
   tags_use <- .get_tags_in_use(dat, conf)
+  idx_tax <- .resolve_cov_taxis(cov_taxis, dat)
   steps <- .get_tag_steps(tags_use)
 
   kappa <- NA_real_
+  kappa_type <- .kappa_by_tag_type(dat, tags_use, idx_tax)
 
-  if (!is.null(steps) && !is.null(dat$cov) && !is.null(dat$time_cov)) {
-    tl <- median(steps$dt[steps$dt > 0], na.rm = TRUE)
-    ll <- median(steps$dl[steps$dl > 0], na.rm = TRUE)
-    if (is.finite(tl) && tl > 0 && is.finite(ll) && ll > 0) {
-      cs_sum <- .cov_scales_at_tags(dat, tags_use)
-      ki <- ll * cs_sum$range / (cs_sum$grad * tl)
-      ki <- ki[is.finite(ki) & ki > 0]
-      if (length(ki) > 0) kappa <- median(ki)
-    }
-  }
+  if (length(kappa_type) > 0) kappa <- exp(mean(log(kappa_type)))
 
   ## Fallback: the earlier grid- and time-step-based rule, then 1.
   if (!is.finite(kappa) || kappa <= 0) {
@@ -150,8 +163,15 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
               signif(kappa, 4), ". Check par$logKappa.")
     }
   } else if (verbose) {
+    per_type <- ""
+    if (length(kappa_type) > 1) {
+      per_type <- paste0(" (geometric mean of ",
+                         paste0(.tag_type_label(names(kappa_type)), ": ",
+                                signif(kappa_type, 4), collapse = ", "), ")")
+    }
     message("kappa set to ", signif(kappa, 4),
-            " from the observed tag displacements and covariate gradients.")
+            " from the observed tag displacements and covariate gradients",
+            per_type, ".")
   }
 
   par$logKappa <- log(kappa)
@@ -168,6 +188,79 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
 
 
 ## Internal helpers for the kappa default ------------------------------------
+
+## Human-readable names for the tag type letters, for messages.
+.tag_type_label <- function(ty) {
+  lab <- c(d = "data-storage", s = "mark-resight", c = "mark-recapture")
+  out <- unname(lab[as.character(ty)])
+  out[is.na(out)] <- as.character(ty)[is.na(out)]
+  out
+}
+
+
+## Covariates that carry the habitat preference, as indices into dat$cov.
+## Everything else (typically the current components used for advection only)
+## is excluded from the kappa scale.
+.resolve_cov_taxis <- function(cov_taxis, dat) {
+
+  ncov <- if (!is.null(dat$cov)) length(dat$cov) else 0L
+  if (ncov == 0L) return(integer(0))
+  if (is.null(cov_taxis)) return(seq_len(ncov))
+
+  if (is.character(cov_taxis)) {
+    idx <- match(cov_taxis, names(dat$cov))
+    if (anyNA(idx)) {
+      stop("Unknown covariate(s) in 'cov_taxis': ",
+           paste(cov_taxis[is.na(idx)], collapse = ", "),
+           if (!is.null(names(dat$cov)))
+             paste0(". Available: ", paste(names(dat$cov), collapse = ", ")),
+           call. = FALSE)
+    }
+  } else {
+    idx <- suppressWarnings(as.integer(cov_taxis))
+    if (anyNA(idx) || any(idx < 1L) || any(idx > ncov)) {
+      stop("'cov_taxis' must index covariates 1:", ncov, ".", call. = FALSE)
+    }
+  }
+
+  sort(unique(idx))
+}
+
+
+## kappa = L * R / (G * T) evaluated separately for each tag type present, named
+## by the tag type letter. Pooling the steps of different tag types would take T
+## from whichever type contributes the most steps (a handful of data-storage
+## tags sampled daily outnumber thousands of mark-recapture displacements) and L
+## from the mixture of both, giving a value that need not lie between the
+## per-type ones.
+.kappa_by_tag_type <- function(dat, tags, idx) {
+
+  out <- numeric(0)
+
+  if (is.null(tags) || nrow(tags) == 0 || is.null(dat$cov) ||
+        is.null(dat$time_cov) || length(idx) == 0) {
+    return(out)
+  }
+
+  for (ty in unique(as.character(tags$tag_type))) {
+
+    tt <- tags[as.character(tags$tag_type) == ty, , drop = FALSE]
+
+    steps <- .get_tag_steps(tt)
+    if (is.null(steps)) next
+
+    tl <- median(steps$dt[steps$dt > 0], na.rm = TRUE)
+    ll <- median(steps$dl[steps$dl > 0], na.rm = TRUE)
+    if (!is.finite(tl) || tl <= 0 || !is.finite(ll) || ll <= 0) next
+
+    cs_sum <- .cov_scales_at_tags(dat, tt, idx)
+    ki <- ll * cs_sum$range / (cs_sum$grad * tl)
+    ki <- ki[is.finite(ki) & ki > 0]
+    if (length(ki) > 0) out[ty] <- median(ki)
+  }
+
+  out
+}
 
 ## Subset the tags to the types enabled in conf. dat$tags may still carry types
 ## that conf switches off (check_tags() only drops them inside admove()), and
@@ -239,16 +332,18 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
 ## median gradient magnitude at the tag positions. Uses nearest-cell lookup
 ## rather than interpolation -- kappa only has to be right to within an order of
 ## magnitude, and this avoids building interpolators for every time slice.
-.cov_scales_at_tags <- function(dat, tags) {
+## `idx` restricts the work to the covariates that carry the taxis; the returned
+## vectors follow `idx`.
+.cov_scales_at_tags <- function(dat, tags, idx = seq_along(dat$cov)) {
 
-  ncov <- length(dat$cov)
-  rng <- rep(NA_real_, ncov)
-  grd <- rep(NA_real_, ncov)
+  rng <- rep(NA_real_, length(idx))
+  grd <- rep(NA_real_, length(idx))
 
   if (is.null(tags) || nrow(tags) == 0) return(list(range = rng, grad = grd))
 
-  for (i in seq_len(ncov)) {
+  for (k in seq_along(idx)) {
 
+    i <- idx[k]
     a <- unclass(dat$cov[[i]])
     dn <- dimnames(a)
     if (is.null(dn)) next
@@ -277,9 +372,9 @@ default_par <- function(dat, conf = NULL, verbose = TRUE) {
       gmag[rows] <- sqrt(.grad_x(m, dx)[ind]^2 + .grad_y(m, dy)[ind]^2)
     }
 
-    if (any(is.finite(vals))) rng[i] <- diff(range(vals[is.finite(vals)]))
+    if (any(is.finite(vals))) rng[k] <- diff(range(vals[is.finite(vals)]))
     gok <- gmag[is.finite(gmag) & gmag > 0]
-    if (length(gok) > 0) grd[i] <- median(gok)
+    if (length(gok) > 0) grd[k] <- median(gok)
   }
 
   list(range = rng, grad = grd)
