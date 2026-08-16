@@ -533,7 +533,8 @@ add_report <- function(fit) {
   .check_class(fit, "admove")
 
   t1 <- Sys.time()
-  rep <- fit$obj$report()
+  pp <- fit$obj$env$last.par.best
+  rep <- if (is.null(pp)) fit$obj$report() else fit$obj$report(pp)
   t2 <- Sys.time()
   fit$rep <- rep
 
