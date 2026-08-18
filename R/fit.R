@@ -1662,6 +1662,24 @@ plot_fit <- function(x,
 }
 
 
+## The fitted parameter list of an admove object, in the full parameter shape
+## (fixed entries included). admove() stores this as `pl` either from sdreport()
+## or from .get_pl_from_opt(), so it is available whether or not do_sdreport was
+## run; the fallback covers objects that predate that.
+##
+## Plotting code must use this rather than reshaping opt$par by hand: opt$par
+## holds only the FREE parameters, and which ones those are depends entirely on
+## the map. Assuming "the first row is fixed and the rest are free" is right for
+## the default alpha map, wrong for beta (.make_beta_map() frees the intercept
+## of one covariate and fixes the others), and wrong for any hand-edited map.
+.fitted_par <- function(x) {
+
+  if (!is.null(x$pl)) return(x$pl)
+
+  .get_pl_from_opt(x$par, x$map, x$opt)
+}
+
+
 .get_pl_from_opt <- function(par, map, opt) {
 
   pl <- par

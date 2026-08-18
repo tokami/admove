@@ -2208,16 +2208,9 @@ plot_pref_func <- function(x,
         select <- 1:dim(x$par$alpha)[2]
       }
 
-      if (!is.null(sdr)) {
-        ind <- which(names(sdr$value) == "pref_taxis_pred")
-        par_est <- x$pl$alpha[,select,, drop = FALSE]
-      }else{
-        ind <- which(names(x$rep) == "pref_taxis_pred")
-        tmp <- array(x$opt$par[names(x$opt$par) == "alpha"],
-                     dim = c(nrow(x$par$alpha)-1,
-                             dim(x$par$alpha)[2:3]))
-        par_est <- abind::abind(array(0,c(1,dim(tmp)[2:3])), tmp, along = 1)[,select, , drop = FALSE]
-      }
+      ind <- if (!is.null(sdr)) which(names(sdr$value) == "pref_taxis_pred") else
+        which(names(x$rep) == "pref_taxis_pred")
+      par_est <- .fitted_par(x)$alpha[,select,, drop = FALSE]
       knots <- x$dat$knots_tax[,select]
 
     } else if(type == "diffusion") {
@@ -2226,16 +2219,9 @@ plot_pref_func <- function(x,
         select <- 1:ncol(x$par$beta)
       }
 
-      if(!is.null(sdr)){
-        ind <- which(names(sdr$value) == "pref_dif_pred")
-        par_est <- x$pl$beta[,select,, drop = FALSE]
-      }else{
-        ind <- which(names(x$rep) == "pref_dif_pred")
-        tmp <- array(x$opt$par[names(x$opt$par) == "beta"],
-                     dim = c(nrow(x$par$beta)-1,
-                             dim(x$par$beta)[2:3]))
-        par_est <- abind::abind(array(0,c(1,dim(tmp)[2:3])), tmp, along = 1)[,select, , drop = FALSE]
-      }
+      ind <- if (!is.null(sdr)) which(names(sdr$value) == "pref_dif_pred") else
+        which(names(x$rep) == "pref_dif_pred")
+      par_est <- .fitted_par(x)$beta[,select,, drop = FALSE]
       knots <- x$dat$knots_dif[,select]
 
     } else stop("only taxis and diffusion implemented yet.")
@@ -2561,16 +2547,9 @@ plot_pref_grid <- function(x,
         select.sea <- 1:dim(x$par$alpha)[3]
       }
 
-      if (!is.null(sdr)) {
-        ind <- which(names(sdr$value) == "pref_taxis_pred")
-        par_est <- x$pl$alpha[,select_cov,select.sea, drop = FALSE]
-      } else {
-        ind <- which(names(x$rep) == "pref_taxis_pred")
-        tmp <- array(x$opt$par[names(x$opt$par) == "alpha"],
-                     dim = c(nrow(x$par$alpha)-1,
-                             dim(x$par$alpha)[2:3]))
-        par_est <- abind::abind(array(0,c(1,dim(tmp)[2:3])), tmp, along = 1)[,select_cov, select.sea , drop = FALSE]
-      }
+      ind <- if (!is.null(sdr)) which(names(sdr$value) == "pref_taxis_pred") else
+        which(names(x$rep) == "pref_taxis_pred")
+      par_est <- .fitted_par(x)$alpha[,select_cov,select.sea, drop = FALSE]
       knots <- x$dat$knots_tax[,select_cov]
       ## if (!is.null(par)) par_true <- par$alpha[,select_cov,select.sea]
 
@@ -2584,17 +2563,9 @@ plot_pref_grid <- function(x,
         select.sea <- 1:dim(x$par$beta)[3]
       }
 
-      if(!is.null(sdr)){
-        ind <- which(names(sdr$value) == "pref_dif_pred")
-        par_est <- x$pl$beta[,select_cov]
-      }else{
-        ind <- which(names(x$rep) == "pref_dif_pred")
-        par_est <- x$opt$par[names(x$opt$par) == "beta"]
-        tmp <- matrix(x$opt$par[names(x$opt$par) == "beta"],
-                      nrow = nrow(x$par$beta),
-                      ncol = ncol(x$par$beta))
-        par_est <- tmp[,select_cov]
-      }
+      ind <- if (!is.null(sdr)) which(names(sdr$value) == "pref_dif_pred") else
+        which(names(x$rep) == "pref_dif_pred")
+      par_est <- .fitted_par(x)$beta[,select_cov, select.sea, drop = FALSE]
       knots <- x$dat$knots_dif[,select_cov]
       ## if(!is.null(par)) par_true <- par$beta[,select_cov]
 

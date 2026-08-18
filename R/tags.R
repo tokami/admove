@@ -1373,6 +1373,11 @@ plot_tags <- function(x,
   }
   cols <- cols_use
 
+  tag_type_labs <- c("Data-storage tags",
+                     "Mark-resight tags",
+                     "Mark-recapture tags",
+                     "Acoustic tags")
+
   plot_one <- function(tags) {
 
     if(!add){
@@ -1425,22 +1430,32 @@ plot_tags <- function(x,
 
   }
 
+  use_layout <- FALSE
+
   if (by_tag) {
 
     tag_types <- do.call(rbind,tags)$tag_type
     n <- length(tags)
 
     mfrow <- n2mfrow(n, asp = 2)
-    if(auto_layout){
+    if(auto_layout && !add){
       par(mfrow = mfrow,
           mar = c(0.1,0.1,0.1,0.1),
           oma = c(4,4,1,1))
+      use_layout <- TRUE
     }
     main <- ""
   } else if (by_tag_type) {
     tag_types <- unique(do.call(rbind,tags)$tag_type)
     n <- length(tag_types)
     mfrow <- n2mfrow(n, asp = 2)
+    if(auto_layout && !add && n > 1){
+      par(mfrow = mfrow,
+          mar = c(0.1,0.1,0.1,0.1),
+          oma = c(4,4,1,1))
+      use_layout <- TRUE
+      main <- ""
+    }
   }else {
     n <- 1
 
@@ -1453,8 +1468,13 @@ plot_tags <- function(x,
 
   for (i in 1:n) {
 
-    xaxt <- ifelse(i %in% (prod(mfrow) - mfrow[2]+1):prod(mfrow), "s", "n")
-    yaxt <- ifelse(i %in% seq(1, prod(mfrow), mfrow[2]), "s", "n")
+    if (use_layout) {
+      xaxt <- ifelse(i %in% (prod(mfrow) - mfrow[2]+1):prod(mfrow), "s", "n")
+      yaxt <- ifelse(i %in% seq(1, prod(mfrow), mfrow[2]), "s", "n")
+    } else {
+      xaxt <- "s"
+      yaxt <- "s"
+    }
 
     if (by_tag) {
       tags2 <- tags[i]
@@ -1502,10 +1522,16 @@ plot_tags <- function(x,
              cex = 0.8,
              pch = NA,
              bg = "white")
+    } else if (by_tag_type && n > 1) {
+      legend("topleft",
+             legend = tag_type_labs[as.integer(tag_types[i])],
+             cex = 0.8,
+             pch = NA,
+             bg = "white")
     }
   }
 
-  if (by_tag) {
+  if (use_layout) {
     mtext(xlab, 1, 2, outer = TRUE)
     mtext(ylab, 2, 2, outer = TRUE)
   }
