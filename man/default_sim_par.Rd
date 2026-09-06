@@ -8,6 +8,7 @@ default_sim_par(
   par = NULL,
   dat = NULL,
   time_unit = NULL,
+  conf = NULL,
   alpha_template = c(0, 5, 4),
   target_tax_per_time = NULL,
   target_tax_frac = 1/10,
@@ -26,6 +27,11 @@ and available covariates.}
 
 \item{time_unit}{Optional time unit label attached to the returned parameter
 object when \code{dat} is not provided.}
+
+\item{conf}{Optional configuration list. Only its seasonal settings are
+used, to size the third dimension of \code{alpha}, \code{beta} and
+\code{gamma} exactly as \code{\link[=default_par]{default_par()}} does. If \code{NULL} and
+\code{dat} is supplied, \code{\link[=default_conf]{default_conf()}} is used.}
 
 \item{alpha_template}{Numeric vector giving the template spline coefficients
 used to construct default taxis parameters.}
@@ -70,4 +76,13 @@ The returned parameter list includes defaults for taxis (\code{alpha}),
 diffusion (\code{beta}), advection (\code{gamma}), taxis scaling
 (\code{logKappa}), and observation error (\code{logSdO}). User-supplied
 values in \code{par} overwrite the corresponding defaults.
+
+The spline coefficients are arrays of knots by covariates by seasons, with
+the same dimensions as those returned by \code{\link[=default_par]{default_par()}} for the same data
+and configuration. With several covariates the target taxis and diffusion
+rates are split equally between them, because the habitat preference
+functions sum the contributions of all covariates. The taxis template in
+\code{alpha_template} is resampled when the data use a different number of
+taxis knots. Supplied \code{alpha}, \code{beta} and \code{gamma} values
+must match these dimensions.
 }

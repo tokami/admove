@@ -47,9 +47,9 @@ effects.
 }
 \description{
 Produces a set of summary plots for an object of class \code{"admove_sim"}.
-Depending on the contents of the simulation object, the plots may include a
-covariate field, habitat preference function, taxis, diffusion, and the
-simulated tag tracks.
+Depending on the contents of the simulation object, the plots may include
+one covariate field and one habitat preference function per covariate,
+taxis, diffusion, and the simulated tag tracks.
 }
 \details{
 When \code{auto_layout = TRUE}, the function arranges multiple panels in a

@@ -8,23 +8,41 @@
 ##' optional covariate fields, simulated tags, and the corresponding
 ##' \code{admove_data} object required for model fitting.
 ##'
+##' @param x Any admove object to simulate from. It is recognised by its class
+##'   and used as the argument it describes: a fitted model (\code{admove}) or
+##'   simulation (\code{admove_sim}) as \code{fit}, a data object
+##'   (\code{admove_data}) as \code{dat}, covariate fields
+##'   (\code{admove_cov}, \code{admove_cov_list}, or a list of covariates) as
+##'   \code{cov}, and anything else as \code{grid}. Arguments given explicitly
+##'   always take precedence, so single pieces of a fitted model can be
+##'   replaced, for instance \code{sim_data(fit, grid = new_grid)}. May be
+##'   \code{NULL}, in which case the individual arguments are used.
 ##' @param grid Optional spatial grid used for simulation. If not already an
-##'   \code{admove_grid}, it is converted using [create_grid()].
-##' @param cov Optional covariate fields. If \code{NULL}, or if
-##'   \code{simulate_cov = TRUE}, covariates are simulated internally using
-##'   [sim_cov()].
-##' @param par Optional named list of simulation parameters. Missing parameters
-##'   are filled using [default_sim_par()].
+##'   \code{admove_grid}, it is converted using [create_grid()]. If no grid is
+##'   given, it is taken from \code{dat} or \code{fit}, or derived from the
+##'   covariate fields.
+##' @param cov Optional covariate fields, overriding those of \code{dat} or
+##'   \code{fit}. If \code{NULL}, or if \code{simulate_cov = TRUE},
+##'   covariates are simulated internally using [sim_cov()], one field per
+##'   covariate.
+##' @param par Optional named list of simulation parameters, overriding the
+##'   estimates of \code{fit}. Missing parameters are filled using
+##'   [default_sim_par()].
 ##' @param dat Optional \code{admove_data} object used as a template for the
-##'   simulation. If supplied, missing inputs such as grid, covariates, time
-##'   range, and spline knots are extracted from it.
-##' @param conf Optional configuration list for the movement model.
-##' @param fit Optional fitted \code{admove} model. If supplied, the simulation
-##'   can reuse information from the fitted model, such as the original data
-##'   object.
+##'   simulation, overriding the data of \code{fit}. If supplied, missing
+##'   inputs such as grid, covariates, time range, and spline knots are
+##'   extracted from it.
+##' @param conf Optional configuration list for the movement model. It is used
+##'   for the simulation and returned with the simulated data. If \code{NULL},
+##'   the configuration of \code{fit} is used, or [default_conf()].
+##' @param fit Optional fitted \code{admove} model, or an \code{admove_sim}
+##'   object. If supplied, the simulation reuses the data object, the estimated
+##'   parameters, and the configuration of the fitted model, unless \code{dat},
+##'   \code{par}, or \code{conf} are given explicitly.
 ##' @param trange Numeric vector of length 2 giving the simulation time range.
 ##'   If \code{NULL}, a default range is used or extracted from \code{dat}.
-##' @param dt Optional model time-step size.
+##' @param dt Optional simulation time step for the tag trajectories, passed to
+##'   [sim_tags()] as \code{dt_tags}.
 ##' @param simulate_cov Logical; if \code{TRUE}, covariate fields are simulated
 ##'   even when covariates are already available from \code{dat} or \code{fit}.
 ##' @param simple Logical; if \code{TRUE}, simple deterministic covariate fields
@@ -89,6 +107,15 @@
 ##' existing grid, covariates, or fitted model, or simulate these components
 ##' from scratch.
 ##'
+##' Inputs are merged from the outside in: what is given explicitly is used
+##' first, anything still missing is taken from \code{dat}, then from
+##' \code{fit}, and whatever remains is simulated or defaulted. Replacing a
+##' component of a fitted model therefore works as expected: the data object of
+##' the model is rebuilt around the new grid, covariates, knots or time range,
+##' and its estimated parameters and configuration are only carried over while
+##' they still describe the covariate and seasonal structure of the simulated
+##' data.
+##'
 ##' Covariates are simulated with [sim_cov()] if needed. Tag release events are
 ##' either provided directly or generated with [sim_release_events()]. Tag data
 ##' for the requested tag types are then simulated using [sim_tags()]. Finally,
@@ -107,12 +134,13 @@
 ##' sim <- sim_data()
 ##'
 ##' @export
-sim_data <- function(grid = NULL,
+sim_data <- function(x = NULL,
                      cov = NULL,
                      par = NULL,
                      dat = NULL,
                      conf = NULL,
                      fit = NULL,
+                     grid = NULL,
                      ## time
                      trange = NULL,
                      dt = NULL,
@@ -152,25 +180,24 @@ sim_data <- function(grid = NULL,
                      plot = FALSE,
                      verbose = TRUE) {
 
-  if (!is.null(fit) && .check_class(fit, "admove")) {
-    dat0 <- fit$dat
-    par0 <- get_par_est(fit$par, fit$map, fit$opt)
-    conf0 <- fit$conf
-    if (is.null(dat)) dat <- dat0
-  }
-
-  if (!is.null(dat) && .check_class(dat, "admove_data")) {
-    grid0 <- dat$grid
-    cov0 <- dat$cov
-    trange0 <- dat$trange
-    knots_tax0 <- dat$knots_tax
-    knots_dif0 <- dat$knots_dif
-    if (is.null(trange)) trange <- trange0
-    if (is.null(grid)) grid <- grid0
-    if (is.null(cov)) cov <- cov0
-    if (is.null(knots_tax)) knots_tax <- knots_tax0
-    if (is.null(knots_dif)) knots_dif <- knots_dif0
-  }
+  ## 'x' takes any admove object and is routed to the argument it belongs to;
+  ## an argument given explicitly always wins, so that single pieces of a
+  ## fitted model can be replaced, e.g. sim_data(fit, grid = new_grid)
+  inp <- .resolve_sim_inputs(x, grid, cov, par, dat, conf, fit,
+                             trange, knots_tax, knots_dif)
+  grid <- inp$grid
+  cov <- inp$cov
+  par <- inp$par
+  dat <- inp$dat
+  conf <- inp$conf
+  fit <- inp$fit
+  trange <- inp$trange
+  knots_tax <- inp$knots_tax
+  knots_dif <- inp$knots_dif
+  par_in <- inp$par_in
+  conf_in <- inp$conf_in
+  knots_tax_in <- inp$knots_tax_in
+  knots_dif_in <- inp$knots_dif_in
 
   ## time
   if (is.null(trange)) trange <- c(0,1)
@@ -181,7 +208,8 @@ sim_data <- function(grid = NULL,
     trange_rec <- trange[2] - c(ifelse(trange[1] < (trange[2] - 0.1), 0.1, 0), 0)
   }
 
-  ## space
+  ## space: without a grid, it follows from the covariate fields
+  if (is.null(grid) && !is.null(cov)) grid <- .make_cov_list(cov)
   grid <- create_grid(grid)
   if (is.null(xrange_rel)) {
     xrange_rel <- grid$xrange + c(1,-1) * grid$cellsize[1]
@@ -195,17 +223,38 @@ sim_data <- function(grid = NULL,
   cov <- .make_cov_list(cov)
   if (!is.null(cov) && is.null(nt)) nt <- dim(cov[[1]])[3]
   if (is.null(nt)) nt <- 1
+  ncov_in <- length(cov)
   if (is.null(cov) || simulate_cov) {
 
-    cov <- sim_cov(grid, nt = nt,
-                   simple = simple,
-                   rho_t = rho_t, sd = sd, h = h, nu = nu,
-                   rho_s = rho_s, delta = delta,
-                   zrange = zrange,
-                   matern = matern,
-                   sim_buffer = sim_buffer,
-                   tref = list(origin = as.Date("2025-01-01"),
-                               units = "year"))
+    if (verbose && !is.null(dat) && is.null(par_in) && !is.null(par)) {
+      message("Covariate fields are re-simulated, so the parameters of the supplied model do not apply and are replaced by default simulation parameters. Use 'par' to control them, or 'simulate_cov = FALSE' to keep the original fields.")
+    }
+
+    ## one field per covariate, so that re-simulating keeps the covariate
+    ## structure of the data or model that was supplied
+    cov_names <- names(cov)
+    cov <- lapply(seq_len(max(1L, ncov_in)), function(i) {
+      sim_cov(grid, nt = nt,
+              simple = simple,
+              rho_t = rho_t, sd = sd, h = h, nu = nu,
+              rho_s = rho_s, delta = delta,
+              zrange = zrange,
+              matern = matern,
+              sim_buffer = sim_buffer,
+              tref = list(origin = as.Date("2025-01-01"),
+                          units = "year"))
+    })
+    if (length(cov_names) == length(cov)) names(cov) <- cov_names
+    cov <- .make_cov_list(cov)
+
+    ## the fields the tags are simulated from have changed, so a data object
+    ## inherited from 'fit' or 'dat' no longer applies: rebuild it below and
+    ## drop the knots, parameters and configuration that came with it, or the
+    ## tags would be simulated from other fields than the ones returned
+    dat <- NULL
+    knots_tax <- knots_tax_in
+    knots_dif <- knots_dif_in
+    par <- par_in
 
   }
 
@@ -220,8 +269,31 @@ sim_data <- function(grid = NULL,
 
   }
 
+  ## a configuration and a parameter list taken from a fitted model describe
+  ## the covariate and seasonal structure they belong to, so they are dropped
+  ## when the simulated data no longer has that structure
+  if (!is.null(conf) && is.null(conf_in) &&
+        !.conf_fits_ncov(conf, max(1L, length(dat$cov)))) {
+    if (verbose) {
+      message("The configuration of the supplied model does not match the ",
+              max(1L, length(dat$cov)),
+              " covariate(s) of the simulated data and is replaced by default settings. Use 'conf' to control it.")
+    }
+    conf <- NULL
+  }
+
+  if (is.null(conf)) conf <- default_conf(dat, verbose = FALSE)
+
+  if (!is.null(par) && is.null(par_in) && !.par_fits_dat(par, dat, conf)) {
+    if (verbose) {
+      message("The parameters of the supplied model do not match the covariate structure of the simulated data and are replaced by default simulation parameters. Use 'par' to control them.")
+    }
+    par <- NULL
+  }
+
   ## par
   par <- default_sim_par(par, dat,
+                         conf = conf,
                          target_dif_frac = target_dif_frac,
                          target_tax_frac =  target_tax_frac,
                          target_sdO_frac = target_sdO_frac)
@@ -247,6 +319,7 @@ sim_data <- function(grid = NULL,
                            grid = grid,
                            par = par,
                            dat = dat,
+                           conf = conf,
                            n_tags = n_ctags,
                            trange = trange,
                            trange_rel = trange_rel,
@@ -254,6 +327,9 @@ sim_data <- function(grid = NULL,
                            xrange_rel = xrange_rel,
                            yrange_rel = yrange_rel,
                            release_events = release_events,
+                           dt_tags = dt,
+                           use_reject = use_reject,
+                           n_reject = n_reject,
                            sim_engine = sim_engine,
                            target_dif_frac = target_dif_frac,
                            target_tax_frac = target_tax_frac,
@@ -276,6 +352,7 @@ sim_data <- function(grid = NULL,
                            grid = grid,
                            par = par,
                            dat = dat,
+                           conf = conf,
                            n_tags = n_dtags,
                            trange = trange,
                            trange_rel = trange_rel,
@@ -283,6 +360,9 @@ sim_data <- function(grid = NULL,
                            xrange_rel = xrange_rel,
                            yrange_rel = yrange_rel,
                            release_events = release_events,
+                           dt_tags = dt,
+                           use_reject = use_reject,
+                           n_reject = n_reject,
                            sim_engine = sim_engine,
                            target_dif_frac = target_dif_frac,
                            target_tax_frac = target_tax_frac,
@@ -304,6 +384,7 @@ sim_data <- function(grid = NULL,
                            grid = grid,
                            par = par,
                            dat = dat,
+                           conf = conf,
                            n_tags = n_stags,
                            trange = trange,
                            trange_rel = trange_rel,
@@ -312,6 +393,9 @@ sim_data <- function(grid = NULL,
                            yrange_rel = yrange_rel,
                            release_events = release_events,
                            n_resightings = n_resightings,
+                           dt_tags = dt,
+                           use_reject = use_reject,
+                           n_reject = n_reject,
                            sim_engine = sim_engine,
                            target_dif_frac = target_dif_frac,
                            target_tax_frac = target_tax_frac,
@@ -327,8 +411,9 @@ sim_data <- function(grid = NULL,
 
   }
 
-  ## combine tags
-  tags <- as.data.frame(c(dtags, stags, ctags))
+  ## combine tags. combine_tags() keeps the admove_tags class, which
+  ## as.data.frame() would strip
+  tags <- combine_tags(dtags, stags, ctags)
   sref(tags) <- sref(grid)
   tref(tags) <- tref(cov)
 
@@ -346,8 +431,14 @@ sim_data <- function(grid = NULL,
   res$tags <- tags
   res$dat <- dat
 
-  res$conf <- default_conf(dat)
-  res$par <- default_par(dat, res$conf)
+  ## keep the configuration that generated the data, but reconcile the tag
+  ## type switches with what was actually simulated
+  res$conf <- conf
+  res$conf$use_ctags <- !is.null(ctags)
+  res$conf$use_dtags <- !is.null(dtags)
+  res$conf$use_stags <- !is.null(stags)
+  res$conf <- check_conf(res$conf, dat, verbose = FALSE)
+  res$par <- default_par(dat, res$conf, verbose = FALSE)
   ## copy kappa as it is fixed
   res$par$logKappa <- res$par_sim$logKappa
   res$map <- default_map(dat, res$conf, res$par)
@@ -581,16 +672,34 @@ sim_cov <- function(grid = NULL,
 ##'   Supported values are \code{"d"} or \code{"dtags"} for data-storage tags,
 ##'   \code{"s"} or \code{"stags"} for mark-resight tags, and \code{"c"} or
 ##'   \code{"ctags"} for conventional mark-recapture tags.
+##' @param x Any admove object to simulate from. It is recognised by its class
+##'   and used as the argument it describes: a fitted model (\code{admove}) or
+##'   simulation (\code{admove_sim}) as \code{fit}, a data object
+##'   (\code{admove_data}) as \code{dat}, covariate fields
+##'   (\code{admove_cov}, \code{admove_cov_list}, or a list of covariates) as
+##'   \code{cov}, and anything else as \code{grid}. Arguments given explicitly
+##'   always take precedence, so single pieces of a fitted model can be
+##'   replaced, for instance \code{sim_tags("c", fit, grid = new_grid)}. May be
+##'   \code{NULL}, in which case the individual arguments are used.
 ##' @param grid Optional spatial grid used for simulation. If not already of
-##'   class \code{"admove_grid"}, it is converted using [create_grid()].
+##'   class \code{"admove_grid"}, it is converted using [create_grid()]. If no
+##'   grid is given, it is taken from \code{dat} or \code{fit}, or derived from
+##'   the covariate fields.
 ##' @param cov Optional covariate fields used to define spatially and temporally
-##'   varying movement rates.
-##' @param par Optional named list of simulation parameters. Missing parameters
-##'   are filled using [default_sim_par()].
-##' @param dat Optional \code{admove_data} object. If \code{NULL}, a default data
-##'   object is constructed internally from the supplied inputs.
-##' @param conf Optional configuration list controlling the movement model. If
-##'   \code{NULL}, [default_conf()] is used.
+##'   varying movement rates, overriding those of \code{dat} or \code{fit}.
+##' @param par Optional named list of simulation parameters, overriding the
+##'   estimates of \code{fit}. Missing parameters are filled using
+##'   [default_sim_par()].
+##' @param dat Optional \code{admove_data} object, overriding the data of
+##'   \code{fit}. If \code{NULL}, a default data object is constructed
+##'   internally from the supplied inputs.
+##' @param conf Optional configuration list controlling the movement model,
+##'   overriding the configuration of \code{fit}. If \code{NULL},
+##'   [default_conf()] is used.
+##' @param fit Optional fitted \code{admove} model, or an \code{admove_sim}
+##'   object, to simulate from. Its data object, estimated parameters and
+##'   configuration are used unless \code{dat}, \code{par} or \code{conf} are
+##'   given explicitly.
 ##' @param n_tags Number of tags to simulate.
 ##' @param n_resightings Integer vector giving the minimum and maximum number of
 ##'   resightings for mark-resight tags.
@@ -644,6 +753,13 @@ sim_cov <- function(grid = NULL,
 ##' model configuration required for simulation. If no data object is supplied,
 ##' one is created internally from the provided inputs.
 ##'
+##' Inputs are merged as in [sim_data()]: what is given explicitly is used
+##' first, anything still missing is taken from \code{dat}, then from
+##' \code{fit}. Replacing a component of a fitted model rebuilds its data
+##' object around the new grid, covariates, knots or time range, and its
+##' estimated parameters and configuration are only carried over while they
+##' still describe the covariate and seasonal structure of the simulated data.
+##'
 ##' Tag trajectories are then simulated from generated or user-supplied release
 ##' events. The full simulated trajectories are retained for data-storage tags.
 ##' For mark-resight tags, only the release and a subset of subsequent
@@ -665,11 +781,13 @@ sim_cov <- function(grid = NULL,
 ##'
 ##' @export
 sim_tags <- function(tag_type,
-                     grid = NULL,
+                     x = NULL,
                      cov = NULL,
                      par = NULL,
                      dat = NULL,
                      conf = NULL,
+                     fit = NULL,
+                     grid = NULL,
                      n_tags = 1,
                      n_resightings = c(1,5),
                      trange = NULL,
@@ -712,6 +830,22 @@ sim_tags <- function(tag_type,
     n_resightings <- rep(n_resightings, 2)
   }
 
+  ## 'x' takes any admove object and is routed to the argument it belongs to;
+  ## an argument given explicitly always wins, so that single pieces of a
+  ## fitted model can be replaced, e.g. sim_tags("c", fit, grid = new_grid)
+  inp <- .resolve_sim_inputs(x, grid, cov, par, dat, conf, fit,
+                             trange, knots_tax, knots_dif)
+  grid <- inp$grid
+  cov <- inp$cov
+  par <- inp$par
+  dat <- inp$dat
+  conf <- inp$conf
+  trange <- inp$trange
+  knots_tax <- inp$knots_tax
+  knots_dif <- inp$knots_dif
+  par_in <- inp$par_in
+  conf_in <- inp$conf_in
+
   cov <- .make_cov_list(cov)
 
   ## Dimensions
@@ -740,6 +874,8 @@ sim_tags <- function(tag_type,
   }
   if (length(trange_rec) == 1) trange_rec <- rep(trange_rec, 2)
 
+  ## without a grid, it follows from the covariate fields
+  if (is.null(grid) && !is.null(cov)) grid <- cov
   grid <- create_grid(grid)
 
   xrange <- grid$xrange
@@ -763,6 +899,8 @@ sim_tags <- function(tag_type,
 
   if (is.null(sref)) {
     sref_target <- sref(grid)
+  } else if (inherits(sref, "admove_sref")) {
+    sref_target <- sref
   } else {
     sref_target <- create_sref(sref$crs,
                                  sref$units,
@@ -771,6 +909,8 @@ sim_tags <- function(tag_type,
 
   if (is.null(tref)) {
     tref_target <- tref(cov)
+  } else if (inherits(tref, "admove_tref")) {
+    tref_target <- tref
   } else {
     tref_target <- create_tref(tref$origin,
                                tref$units,
@@ -792,8 +932,21 @@ sim_tags <- function(tag_type,
   }
 
 
+  ## a configuration and a parameter list taken from a fitted model describe
+  ## the covariate and seasonal structure they belong to, so they are dropped
+  ## when the simulated data no longer has that structure
+  if (!is.null(conf) && is.null(conf_in) &&
+        !.conf_fits_ncov(conf, max(1L, length(dat$cov)))) {
+    if (verbose) {
+      message("The configuration of the supplied model does not match the ",
+              max(1L, length(dat$cov)),
+              " covariate(s) of the simulated data and is replaced by default settings. Use 'conf' to control it.")
+    }
+    conf <- NULL
+  }
+
   if (is.null(conf)) {
-    conf <- default_conf(dat)
+    conf <- default_conf(dat, verbose = FALSE)
   }
 
   if (is.null(dat$cov)) {
@@ -801,8 +954,16 @@ sim_tags <- function(tag_type,
     conf$use_advection <- FALSE
   }
 
+  if (!is.null(par) && is.null(par_in) && !.par_fits_dat(par, dat, conf)) {
+    if (verbose) {
+      message("The parameters of the supplied model do not match the covariate structure of the simulated data and are replaced by default simulation parameters. Use 'par' to control them.")
+    }
+    par <- NULL
+  }
+
   ## Parameters
   par <- default_sim_par(par, dat,
+                         conf = conf,
                          target_dif_frac = target_dif_frac,
                          target_tax_frac =  target_tax_frac,
                          target_sdO_frac = target_sdO_frac)
@@ -906,8 +1067,8 @@ sim_tags <- function(tag_type,
   res$tags <- tags
   res$dat <- dat
 
-  res$conf <- default_conf(dat)
-  res$par <- default_par(dat, res$conf)
+  res$conf <- conf
+  res$par <- default_par(dat, res$conf, verbose = FALSE)
   res$map <- default_map(dat, res$conf, res$par)
 
   res <- .add_class(res, "admove_sim")
@@ -923,9 +1084,9 @@ sim_tags <- function(tag_type,
 ##'
 ##' @description
 ##' Produces a set of summary plots for an object of class \code{"admove_sim"}.
-##' Depending on the contents of the simulation object, the plots may include a
-##' covariate field, habitat preference function, taxis, diffusion, and the
-##' simulated tag tracks.
+##' Depending on the contents of the simulation object, the plots may include
+##' one covariate field and one habitat preference function per covariate,
+##' taxis, diffusion, and the simulated tag tracks.
 ##'
 ##' @param x An object of class \code{"admove_sim"}, as returned by
 ##'   [sim_data()].
@@ -968,26 +1129,31 @@ plot_sim <- function(x,
 
   .check_class(x, "admove_sim")
 
+  ## one covariate field and one preference function per covariate
+  ncov <- if (inherits(x$cov, "list")) length(x$cov) else 1L
+
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
-    n <- 4 + length(unique(x$tags$tag_type))
+    n <- 2 + 2 * ncov + length(unique(x$tags$tag_type))
     par(mfrow = n2mfrow(n, asp = asp),
         mar = c(4,4,1,1), oma = c(1,1,1,1))
   }
 
   i = 1
-  if(inherits(x$cov, "list")) {
-    tmp <- x$cov[[1]][,,1, drop=FALSE]
-  } else {
-    tmp <- x$cov[,,1, drop=FALSE]
+  for (k in seq_len(ncov)) {
+    if(inherits(x$cov, "list")) {
+      tmp <- x$cov[[k]][,,1, drop=FALSE]
+    } else {
+      tmp <- x$cov[,,1, drop=FALSE]
+    }
+    plot_cov(tmp, auto_layout = FALSE, main = "", plot_land = plot_land, ...)
+    add_lab(LETTERS[i])
+    i = i + 1
   }
-  plot_cov(tmp, auto_layout = FALSE, main = "", plot_land = plot_land, ...)
-  add_lab(LETTERS[i])
-  i = i + 1
-  plot_pref_func(x, auto_layout = FALSE, main = "", ...)
-  add_lab(LETTERS[i])
-  i = i + 1
+  plot_pref_func(x, auto_layout = FALSE, main = "",
+                 panel_lab = LETTERS[i:(i + ncov - 1)], ...)
+  i = i + ncov
   ## plot_pref_grid(x, auto_layout = TRUE, main = "")
   plot_taxis(x, auto_layout = FALSE, main = "", cor = cor_taxis,
              plot_land = plot_land, ...)
@@ -1040,6 +1206,10 @@ plot_sim <- function(x,
 ##'   and available covariates.
 ##' @param time_unit Optional time unit label attached to the returned parameter
 ##'   object when \code{dat} is not provided.
+##' @param conf Optional configuration list. Only its seasonal settings are
+##'   used, to size the third dimension of \code{alpha}, \code{beta} and
+##'   \code{gamma} exactly as [default_par()] does. If \code{NULL} and
+##'   \code{dat} is supplied, [default_conf()] is used.
 ##' @param alpha_template Numeric vector giving the template spline coefficients
 ##'   used to construct default taxis parameters.
 ##' @param target_tax_per_time Optional target taxis speed in distance units per
@@ -1068,6 +1238,15 @@ plot_sim <- function(x,
 ##' (\code{logKappa}), and observation error (\code{logSdO}). User-supplied
 ##' values in \code{par} overwrite the corresponding defaults.
 ##'
+##' The spline coefficients are arrays of knots by covariates by seasons, with
+##' the same dimensions as those returned by [default_par()] for the same data
+##' and configuration. With several covariates the target taxis and diffusion
+##' rates are split equally between them, because the habitat preference
+##' functions sum the contributions of all covariates. The taxis template in
+##' \code{alpha_template} is resampled when the data use a different number of
+##' taxis knots. Supplied \code{alpha}, \code{beta} and \code{gamma} values
+##' must match these dimensions.
+##'
 ##' @return
 ##' A named list of simulation parameter values. The returned object also
 ##' carries a \code{"units"} attribute containing the distance and time units,
@@ -1077,6 +1256,7 @@ plot_sim <- function(x,
 default_sim_par <- function(par = NULL,
                             dat = NULL,
                             time_unit = NULL,
+                            conf = NULL,
                             alpha_template = c(0, 5, 4),  ## c(0, 4, 3),
                             target_tax_per_time = NULL,
                             target_tax_frac =  1/10,
@@ -1084,10 +1264,9 @@ default_sim_par <- function(par = NULL,
                             target_dif_frac =  1/300,
                             target_sdO_frac = 1/30) {
 
-  D_default <- 0.05 * alpha_template
+  D_default <- 0.05
   alpha_default <- c(0,5,1)
   kappa_default <- 1
-
 
   if (!is.null(dat)) {
     Lx <- diff(dat$grid$xrange)
@@ -1103,6 +1282,14 @@ default_sim_par <- function(par = NULL,
     time_unit <- NULL
   }
 
+  ## Parameter dimensions, sized from the data as in default_par(): one column
+  ## per covariate and one slice per season, so that the simulation parameters
+  ## can be handed to the same preference functions as the estimated ones
+  par_dims <- .sim_par_dims(dat, conf, length(alpha_template))
+  n_tax <- par_dims$alpha[1]
+  ncov_tax <- par_dims$alpha[2]
+  ncov_dif <- par_dims$beta[2]
+
   ## diffusion target (e.g. km^2 / day)
   if (is.null(target_dif_per_time)) {
     D_target <- target_dif_frac * dist_diff^2 / time_diff
@@ -1110,32 +1297,24 @@ default_sim_par <- function(par = NULL,
     D_target <- target_dif_per_time
   }
 
-  if (is.na(D_target) || is.null(D_target) ||
-        !is.numeric(D_target)) {
+  if (is.null(D_target) || !is.numeric(D_target) || is.na(D_target[1])) {
     D_target <- D_default
   }
 
   ## scaling of dH/dx
   kappa_target <- 1 * dist_diff^2 / time_diff
 
+  ## the habitat objects sum the contributions of all covariates, so each
+  ## covariate carries an equal share of the target movement rates
+  alpha <- array(0, dim = par_dims$alpha)
+
   if (!is.null(dat$cov)) {
 
-    field <- dat$cov[[1]][,,1]
+    ## the template describes the shape of the preference function across the
+    ## knots, so resample it whenever the data use a different number of knots
+    template <- .resample_knot_values(alpha_template, n_tax)
+
     xyr <- .get_cov_xyrange(dat$cov)
-    xr <- xyr$xr[1,]
-    yr <- xyr$yr[1,]
-
-    onedx <- (xr[2] - xr[1]) / (nrow(field) - 1)
-    onedy <- (yr[2] - yr[1]) / (ncol(field) - 1)
-
-    dx <- (field[3:nrow(field), ] - field[1:(nrow(field)-2), ]) / (2 * onedx)
-    dy <- (field[, 3:ncol(field)] - field[, 1:(ncol(field)-2)]) / (2 * onedy)
-
-    gradC_mag <- sqrt(dx[, 2:(ncol(field)-1)]^2 +
-                        dy[2:(nrow(field)-1), ]^2)
-
-    field_sub <- field[2:(nrow(field)-1), 2:(ncol(field)-1)]
-    field_vec <- as.numeric(field_sub)
 
     ## target taxis speed (distance / time)
     if (is.null(target_tax_per_time)) {
@@ -1143,46 +1322,87 @@ default_sim_par <- function(par = NULL,
     } else {
       tax_target <- target_tax_per_time
     }
-
-    ## derivative for template at scale 1
-    dS1 <- .poly_fun(as.numeric(dat$knots_tax[,1]),
-                    alpha_template,
-                    deriv = TRUE)
-
-    ## typical |∇h| magnitude for scale 1
-    gh1 <- abs(dS1(field_vec)) * gradC_mag
-    gh1 <- gh1[is.finite(gh1)]
+    tax_target <- tax_target / ncov_tax
 
     eps <- 1e-12
-    m <- if (length(gh1)) median(gh1) else 0
-    if (!is.finite(m) || m < eps) {
-      x_scale <- 0
-    } else {
-      ## solve for x so that kappa * typical(|∇h|) matches tax_target
+
+    for (i in seq_len(min(ncov_tax, length(dat$cov)))) {
+
+      field <- dat$cov[[i]][,,1]
+      if (nrow(field) < 3 || ncol(field) < 3) next()
+
+      xr <- xyr$xr[i,]
+      yr <- xyr$yr[i,]
+
+      onedx <- (xr[2] - xr[1]) / (nrow(field) - 1)
+      onedy <- (yr[2] - yr[1]) / (ncol(field) - 1)
+
+      dx <- (field[3:nrow(field), ] - field[1:(nrow(field)-2), ]) / (2 * onedx)
+      dy <- (field[, 3:ncol(field)] - field[, 1:(ncol(field)-2)]) / (2 * onedy)
+
+      gradC_mag <- sqrt(dx[, 2:(ncol(field)-1)]^2 +
+                          dy[2:(nrow(field)-1), ]^2)
+
+      field_sub <- field[2:(nrow(field)-1), 2:(ncol(field)-1)]
+      field_vec <- as.numeric(field_sub)
+
+      ## derivative for template at scale 1
+      dS1 <- .poly_fun(as.numeric(dat$knots_tax[,i]),
+                      template,
+                      deriv = TRUE)
+
+      ## degenerate knots (.poly_fun returns NULL) leave this covariate flat
+      if (is.null(dS1)) next()
+
+      ## typical |grad(h)| magnitude for scale 1
+      gh1 <- abs(dS1(field_vec)) * gradC_mag
+      gh1 <- gh1[is.finite(gh1)]
+
+      m <- if (length(gh1)) median(gh1) else 0
+      if (!is.finite(m) || m < eps) next()
+
+      ## solve for x so that kappa * typical(|grad(h)|) matches tax_target
       x_scale <- tax_target / (kappa_target * m)
       ## optional clamp to avoid crazy values
       x_scale <- max(min(x_scale, 1e4), -1e4)
-    }
 
-    alpha <- x_scale * alpha_template
+      alpha[,i,] <- x_scale * template
+
+    }
 
   } else {
 
-    alpha <- alpha_default
+    alpha[,1,] <- .resample_knot_values(alpha_default, n_tax)
 
   }
 
   sdO <- dist_diff * target_sdO_frac
 
-  par_out <- list(alpha = array(alpha, dim = c(3,1,1)),         ## dimensionless
-                  beta = array(log(D_target), dim = c(1,1,1)),  ## distance^2 / time
-                  gamma = array(0, dim = c(2,1,1)),             ## dimensionless
+  par_out <- list(alpha = alpha,                                ## dimensionless
+                  beta = array(log(D_target) / ncov_dif,        ## distance^2 / time
+                               dim = par_dims$beta),
+                  gamma = array(0,                              ## dimensionless
+                                dim = par_dims$gamma),
                   logKappa = log(kappa_target),                 ## distance^2 / time
                   logSdO = matrix(log(sdO),2,3))                ## distance
 
-  if(!is.null(par)){
-    for(i in 1:length(par)){
-      par_out[names(par)[i]] <- par[names(par)[i]]
+  if (!is.null(par)) {
+    for (nm in names(par)) {
+      if (!is.null(dat) && nm %in% c("alpha", "beta", "gamma")) {
+        dim_exp <- dim(par_out[[nm]])
+        dim_new <- dim(par[[nm]])
+        if (length(dim_new) != 3L || !all(dim_new == dim_exp)) {
+          stop(sprintf(paste0("par$%s has dimension %s, but the data imply %s ",
+                              "(knots x covariates x seasons). Please check ",
+                              "'par', 'conf' and the covariates in 'dat'."),
+                       nm,
+                       paste(if (is.null(dim_new)) length(par[[nm]]) else dim_new,
+                             collapse = " x "),
+                       paste(dim_exp, collapse = " x ")),
+               call. = FALSE)
+        }
+      }
+      par_out[[nm]] <- par[[nm]]
     }
   }
 
@@ -1327,6 +1547,277 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 
 
 ## Internal functions --------------------------------------------------------------
+
+##' Resample knot values
+##'
+##' @description
+##' Resamples a vector of knot values onto a different number of knots, keeping
+##' the shape of the described function. Used to adapt the default simulation
+##' templates to the number of knots implied by the data.
+##'
+##' @param x Numeric vector of knot values.
+##' @param n Number of knots required.
+##'
+##' @return
+##' A numeric vector of length \code{n}. A single knot describes a constant
+##' function, which cannot generate taxis, and therefore returns \code{0}.
+##'
+##' @keywords internal
+.resample_knot_values <- function(x, n) {
+  if (length(x) == n) return(x)
+  if (n <= 1) return(0)
+  approx(seq(0, 1, length.out = length(x)), x,
+         xout = seq(0, 1, length.out = n))$y
+}
+
+
+##' Resolve the objects a simulation is built from
+##'
+##' @description
+##' Routes the object given as \code{x} to the argument it describes, and fills
+##' in whatever is still missing from a fitted model and its data object. This
+##' is shared by [sim_data()] and [sim_tags()] so that both merge their inputs
+##' by the same rules.
+##'
+##' @param x Any admove object, or \code{NULL}. See [.admove_slot()].
+##' @param grid,cov,par,dat,conf,fit,trange,knots_tax,knots_dif The arguments of
+##'   the calling function, as supplied by the user.
+##'
+##' @details
+##' Arguments given explicitly always win: values are taken from \code{fit}
+##' and \code{dat} only where the caller left them empty. A data object
+##' describes its own grid, covariates, knots and time range, so it is dropped
+##' (and rebuilt by the caller) as soon as one of those is replaced. The knots
+##' hold one column of covariate values per covariate and therefore only
+##' survive a change of the covariate fields if the user supplied them.
+##'
+##' @return
+##' A named list with the resolved \code{grid}, \code{cov}, \code{par},
+##' \code{dat}, \code{conf}, \code{fit}, \code{trange}, \code{knots_tax} and
+##' \code{knots_dif}, plus the values the user supplied explicitly
+##' (\code{par_in}, \code{conf_in}, \code{knots_tax_in},
+##' \code{knots_dif_in}), which the caller needs when it re-simulates
+##' covariate fields.
+##'
+##' @keywords internal
+.resolve_sim_inputs <- function(x = NULL,
+                                grid = NULL,
+                                cov = NULL,
+                                par = NULL,
+                                dat = NULL,
+                                conf = NULL,
+                                fit = NULL,
+                                trange = NULL,
+                                knots_tax = NULL,
+                                knots_dif = NULL) {
+
+  ## 'x' takes any admove object and is routed to the argument it belongs to
+  if (!is.null(x)) {
+    slot <- .admove_slot(x)
+    already <- switch(slot,
+                      fit = !is.null(fit),
+                      dat = !is.null(dat),
+                      cov = !is.null(cov),
+                      grid = !is.null(grid))
+    if (already) {
+      warning("'x' was recognised as '", slot, "', but '", slot,
+              "' was also supplied. Ignoring 'x'.", call. = FALSE)
+    } else if (slot == "fit") {
+      fit <- x
+    } else if (slot == "dat") {
+      dat <- x
+    } else if (slot == "cov") {
+      cov <- x
+    } else {
+      grid <- x
+    }
+  }
+
+  ## What the user asked for explicitly ('x' included). Values inherited from
+  ## 'fit' or 'dat' below must never override these
+  grid_in <- grid
+  cov_in <- cov
+  trange_in <- trange
+  knots_tax_in <- knots_tax
+  knots_dif_in <- knots_dif
+  par_in <- par
+  conf_in <- conf
+
+  if (!is.null(fit)) {
+    if (inherits(fit, "admove")) {
+      par0 <- get_par_est(fit$par, fit$map, fit$opt)
+    } else if (inherits(fit, "admove_sim")) {
+      par0 <- fit$par_sim
+    } else {
+      stop("The object provided as 'fit' does not inherit class admove or admove_sim. Please check your code.")
+    }
+    ## simulate from what was estimated, not from generic defaults
+    if (is.null(dat)) dat <- fit$dat
+    if (is.null(par)) par <- par0
+    if (is.null(conf)) conf <- fit$conf
+  }
+
+  if (!is.null(dat)) {
+    .check_class(dat, "admove_data")
+    if (is.null(trange)) trange <- dat$trange
+    if (is.null(grid)) grid <- dat$grid
+    if (is.null(cov)) cov <- dat$cov
+    if (is.null(knots_tax)) knots_tax <- dat$knots_tax
+    if (is.null(knots_dif)) knots_dif <- dat$knots_dif
+
+    ## a data object describes its own grid, covariates, knots and time range,
+    ## so it no longer applies once one of them is replaced: the caller rebuilds
+    ## it from the effective pieces. Compared by value, so that passing on what
+    ## the data object already holds is not treated as a replacement
+    replaced <- function(new, old) {
+      !is.null(new) && !isTRUE(all.equal(new, old))
+    }
+    if (replaced(grid_in, dat$grid) || replaced(cov_in, dat$cov) ||
+          replaced(trange_in, dat$trange) ||
+          replaced(knots_tax_in, dat$knots_tax) ||
+          replaced(knots_dif_in, dat$knots_dif)) {
+      ## knots hold one column of covariate values per covariate, so they only
+      ## survive a change of the covariate fields if the user supplied them
+      if (replaced(cov_in, dat$cov)) {
+        knots_tax <- knots_tax_in
+        knots_dif <- knots_dif_in
+      }
+      dat <- NULL
+    }
+  }
+
+  list(grid = grid,
+       cov = cov,
+       par = par,
+       dat = dat,
+       conf = conf,
+       fit = fit,
+       trange = trange,
+       knots_tax = knots_tax,
+       knots_dif = knots_dif,
+       par_in = par_in,
+       conf_in = conf_in,
+       knots_tax_in = knots_tax_in,
+       knots_dif_in = knots_dif_in)
+}
+
+
+##' Identify the argument an admove object belongs to
+##'
+##' @description
+##' Maps an object to the \code{sim_data()} argument it describes, so that any
+##' admove object can be passed as the first argument \code{x}.
+##'
+##' @param x Any object.
+##'
+##' @return
+##' One of \code{"fit"} (a fitted model or a simulation), \code{"dat"} (a data
+##' object), \code{"cov"} (covariate fields), or \code{"grid"} for the objects
+##' [create_grid()] can build a grid from. Anything else is an error, because
+##' [create_grid()] would silently fall back to its default grid.
+##'
+##' @keywords internal
+.admove_slot <- function(x) {
+  if (inherits(x, "admove") || inherits(x, "admove_sim")) return("fit")
+  if (inherits(x, "admove_data")) return("dat")
+  if (inherits(x, "admove_cov") || inherits(x, "admove_cov_list")) return("cov")
+  if (is.list(x) && length(x) > 0 &&
+        all(vapply(x, inherits, logical(1), "admove_cov"))) return("cov")
+  ## everything create_grid() can build a grid from
+  if (inherits(x, "admove_grid") || inherits(x, "admove_tags") ||
+        inherits(x, "sf") || inherits(x, "sfc") ||
+        inherits(x, "RasterLayer") || is.matrix(x)) return("grid")
+  ## create_grid() would silently fall back to its default grid, so stop here
+  stop("'x' is of class ", paste(class(x), collapse = "/"),
+       ", which admove cannot interpret. Supply a fitted model, a simulation, ",
+       "a data object, covariate fields, a grid, tags, an sf object, a raster ",
+       "or a matrix, or use the individual arguments.",
+       call. = FALSE)
+}
+
+
+##' Dimensions of the simulation parameters implied by the data
+##'
+##' @description
+##' Returns the dimensions of the spline coefficient arrays for a data object
+##' and configuration, following the same rules as [default_par()]: knots by
+##' covariates by seasons.
+##'
+##' @param dat An \code{admove_data} object, or \code{NULL}.
+##' @param conf Optional configuration list. If \code{NULL} and \code{dat} is
+##'   supplied, [default_conf()] is used.
+##' @param n_tax_default Number of taxis knots assumed when \code{dat} carries
+##'   no knots.
+##'
+##' @return
+##' A named list with the dimensions of \code{alpha}, \code{beta} and
+##' \code{gamma}.
+##'
+##' @keywords internal
+.sim_par_dims <- function(dat, conf = NULL, n_tax_default = 3L) {
+
+  if (is.null(dat)) {
+    return(list(alpha = as.integer(c(n_tax_default, 1, 1)),
+                beta = as.integer(c(1, 1, 1)),
+                gamma = as.integer(c(2, 1, 1))))
+  }
+
+  if (is.null(conf)) conf <- default_conf(dat, verbose = FALSE)
+
+  n_tax <- if (!is.null(dat$knots_tax)) nrow(dat$knots_tax) else n_tax_default
+  n_dif <- if (!is.null(dat$knots_dif)) nrow(dat$knots_dif) else 1L
+  ncov_tax <- if (!is.null(dat$knots_tax)) ncol(dat$knots_tax) else 1L
+  ncov_dif <- if (!is.null(dat$knots_dif)) ncol(dat$knots_dif) else 1L
+  ncov_adv <- if (!is.null(dat$cov)) length(dat$cov) else 1L
+  nsea <- max(.get_nsea(.resolve_seasons(dat, conf)$dat))
+
+  list(alpha = as.integer(c(n_tax, ncov_tax, nsea)),
+       beta = as.integer(c(n_dif, ncov_dif, nsea)),
+       gamma = as.integer(c(2, ncov_adv, nsea)))
+}
+
+
+##' Check whether parameters and configuration match a data object
+##'
+##' @description
+##' \code{.par_fits_dat()} checks the spline coefficient dimensions of a
+##' parameter list against those implied by a data object, and
+##' \code{.conf_fits_ncov()} checks the per-covariate settings of a
+##' configuration against a number of covariates. Both are used to decide
+##' whether values taken from a fitted model still apply to simulated data.
+##'
+##' @param par A parameter list, or \code{NULL}.
+##' @param dat An \code{admove_data} object, or \code{NULL}.
+##' @param conf A configuration list, or \code{NULL}.
+##' @param ncov Number of covariates.
+##'
+##' @return
+##' A single logical value.
+##'
+##' @keywords internal
+.par_fits_dat <- function(par, dat, conf = NULL) {
+  if (is.null(par)) return(TRUE)
+  dims <- .sim_par_dims(dat, conf)
+  for (nm in names(dims)) {
+    if (is.null(par[[nm]])) next
+    if (!identical(as.integer(dim(par[[nm]])), dims[[nm]])) return(FALSE)
+  }
+  TRUE
+}
+
+
+##' @rdname dot-par_fits_dat
+##' @keywords internal
+.conf_fits_ncov <- function(conf, ncov) {
+  if (is.null(conf)) return(TRUE)
+  for (nm in c("n_seasons", "seasonal_spline", "seasonal_cov")) {
+    v <- conf[[nm]]
+    if (is.null(v) || length(v) <= 1L) next
+    if (length(v) != ncov) return(FALSE)
+  }
+  TRUE
+}
+
 
 ##' Rescale covariate fields
 ##'

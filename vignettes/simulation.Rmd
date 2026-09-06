@@ -266,8 +266,18 @@ New datasets can also be simulated from an existing fitted model, such as
 new_data <- sim_data(skjepo$fit, simulate_cov = FALSE)
 ```
 
-Setting `simulate_cov = FALSE` reuses the original covariate fields, while
-`TRUE` generates new ones.
+The first argument of `sim_data()` takes any admove object and uses it as what
+it is: a fitted model or simulation as `fit`, a data object as `dat`, covariate
+fields as `cov`, and a grid, tags, an `sf` object or a raster as `grid`.
+Arguments given by name always win, so single pieces of the fitted model can be
+replaced -- `sim_data(skjepo$fit, grid = new_grid)` simulates the same movement
+model on a different grid, and the data object is rebuilt around it.
+
+The tags are simulated with the estimated parameters and the configuration of
+the fitted model, on its grid, covariates and time range. Setting
+`simulate_cov = FALSE` reuses the original covariate fields, while `TRUE`
+generates new ones -- in that case the preference functions no longer apply to
+the new fields, so default simulation parameters are used unless `par` is given.
 
 ```{r}
 plot(new_data)

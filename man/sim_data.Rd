@@ -5,12 +5,13 @@
 \title{Simulate a complete admove data set}
 \usage{
 sim_data(
-  grid = NULL,
+  x = NULL,
   cov = NULL,
   par = NULL,
   dat = NULL,
   conf = NULL,
   fit = NULL,
+  grid = NULL,
   trange = NULL,
   dt = NULL,
   simulate_cov = FALSE,
@@ -51,30 +52,49 @@ sim_data(
 )
 }
 \arguments{
-\item{grid}{Optional spatial grid used for simulation. If not already an
-\code{admove_grid}, it is converted using \code{\link[=create_grid]{create_grid()}}.}
+\item{x}{Any admove object to simulate from. It is recognised by its class
+and used as the argument it describes: a fitted model (\code{admove}) or
+simulation (\code{admove_sim}) as \code{fit}, a data object
+(\code{admove_data}) as \code{dat}, covariate fields
+(\code{admove_cov}, \code{admove_cov_list}, or a list of covariates) as
+\code{cov}, and anything else as \code{grid}. Arguments given explicitly
+always take precedence, so single pieces of a fitted model can be
+replaced, for instance \code{sim_data(fit, grid = new_grid)}. May be
+\code{NULL}, in which case the individual arguments are used.}
 
-\item{cov}{Optional covariate fields. If \code{NULL}, or if
-\code{simulate_cov = TRUE}, covariates are simulated internally using
-\code{\link[=sim_cov]{sim_cov()}}.}
+\item{cov}{Optional covariate fields, overriding those of \code{dat} or
+\code{fit}. If \code{NULL}, or if \code{simulate_cov = TRUE},
+covariates are simulated internally using \code{\link[=sim_cov]{sim_cov()}}, one field per
+covariate.}
 
-\item{par}{Optional named list of simulation parameters. Missing parameters
-are filled using \code{\link[=default_sim_par]{default_sim_par()}}.}
+\item{par}{Optional named list of simulation parameters, overriding the
+estimates of \code{fit}. Missing parameters are filled using
+\code{\link[=default_sim_par]{default_sim_par()}}.}
 
 \item{dat}{Optional \code{admove_data} object used as a template for the
-simulation. If supplied, missing inputs such as grid, covariates, time
-range, and spline knots are extracted from it.}
+simulation, overriding the data of \code{fit}. If supplied, missing
+inputs such as grid, covariates, time range, and spline knots are
+extracted from it.}
 
-\item{conf}{Optional configuration list for the movement model.}
+\item{conf}{Optional configuration list for the movement model. It is used
+for the simulation and returned with the simulated data. If \code{NULL},
+the configuration of \code{fit} is used, or \code{\link[=default_conf]{default_conf()}}.}
 
-\item{fit}{Optional fitted \code{admove} model. If supplied, the simulation
-can reuse information from the fitted model, such as the original data
-object.}
+\item{fit}{Optional fitted \code{admove} model, or an \code{admove_sim}
+object. If supplied, the simulation reuses the data object, the estimated
+parameters, and the configuration of the fitted model, unless \code{dat},
+\code{par}, or \code{conf} are given explicitly.}
+
+\item{grid}{Optional spatial grid used for simulation. If not already an
+\code{admove_grid}, it is converted using \code{\link[=create_grid]{create_grid()}}. If no grid is
+given, it is taken from \code{dat} or \code{fit}, or derived from the
+covariate fields.}
 
 \item{trange}{Numeric vector of length 2 giving the simulation time range.
 If \code{NULL}, a default range is used or extracted from \code{dat}.}
 
-\item{dt}{Optional model time-step size.}
+\item{dt}{Optional simulation time step for the tag trajectories, passed to
+\code{\link[=sim_tags]{sim_tags()}} as \code{dt_tags}.}
 
 \item{simulate_cov}{Logical; if \code{TRUE}, covariate fields are simulated
 even when covariates are already available from \code{dat} or \code{fit}.}
@@ -183,6 +203,15 @@ The function provides a convenient way to generate a complete simulation
 setup for \code{admove}. Depending on the supplied inputs, it can reuse an
 existing grid, covariates, or fitted model, or simulate these components
 from scratch.
+
+Inputs are merged from the outside in: what is given explicitly is used
+first, anything still missing is taken from \code{dat}, then from
+\code{fit}, and whatever remains is simulated or defaulted. Replacing a
+component of a fitted model therefore works as expected: the data object of
+the model is rebuilt around the new grid, covariates, knots or time range,
+and its estimated parameters and configuration are only carried over while
+they still describe the covariate and seasonal structure of the simulated
+data.
 
 Covariates are simulated with \code{\link[=sim_cov]{sim_cov()}} if needed. Tag release events are
 either provided directly or generated with \code{\link[=sim_release_events]{sim_release_events()}}. Tag data

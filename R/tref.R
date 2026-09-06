@@ -72,7 +72,9 @@ create_tref <- function(origin = NA, units = NA_character_, period = NULL,
     origin <- .origin_2_posix(origin, tz = tz)
   }
 
-  ## validate / infer period
+  ## validate / infer period. NA means "not specified", so that an existing
+  ## reference (which stores NA when the units are unknown) can be rebuilt
+  if (!is.null(period) && length(period) == 1 && is.na(period)) period <- NULL
   if (!is.null(period)) {
     period <- as.numeric(period)
     if (length(period) != 1 || !is.finite(period) || period <= 0) {

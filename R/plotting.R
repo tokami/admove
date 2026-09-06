@@ -2365,13 +2365,10 @@ plot_pref_func <- function(x,
 
   } else if(inherits(x, "admove_sim")) {
 
-    i = 1
-
     grid <- x$grid
     cov <- x$cov
     par <- x$par_sim
     dat <- x$dat
-    funcs <- NULL
 
     if(is.null(par)) stop("No parameters provided! Use par = list() to specify parameters for taxis.")
 
@@ -2382,67 +2379,107 @@ plot_pref_func <- function(x,
     if(diff(trange) == 0) trange[2] <- trange[1] + 1
 
     dat <- setup_data(cov = cov,
-                       grid = grid,
-                             trange = trange,
-                             ## trange = c(0,
-                             ##            max(sapply(cov,
-                             ##                       function(x) dim(x)[3]))),
-                             knots_tax = dat$knots_tax,
-                       knots_dif = dat$knots_dif,
-                       verbose = FALSE)
-    conf <- default_conf(dat)
-    funcs <- default_sim_funcs(dat, conf, par, funcs)
+                      grid = grid,
+                      trange = trange,
+                      knots_tax = dat$knots_tax,
+                      knots_dif = dat$knots_dif,
+                      verbose = FALSE)
+    conf <- default_conf(dat, verbose = FALSE)
 
     cov_pred <- dat$pred$cov
 
-    if (is.null(xlim)) xlim <- apply(dat$pred$cov, 2, range)
-
     if (type == "taxis") {
-      knots <- dat$knots_tax[,i]
-      par <- par$alpha[,i,]
-    } else if(type == "diffusion") {
-      knots <- dat$knots_dif[,i]
-      par <- par$beta[,i]
+      par_sim <- par$alpha
+      knots <- dat$knots_tax
+    } else if (type == "diffusion") {
+      par_sim <- par$beta
+      knots <- dat$knots_dif
+    } else stop("only taxis and diffusion implemented yet.")
+
+    ## one panel per covariate and one line per season, as for fitted objects
+    if (is.null(select)) select <- 1:dim(par_sim)[2]
+    nsea <- dim(par_sim)[3]
+
+    pref <- array(NA_real_, dim = c(nrow(cov_pred), length(select), nsea))
+    for (i in seq_along(select)) {
+      for (j in 1:nsea) {
+        pref_fun <- .poly_fun(as.numeric(knots[,select[i]]),
+                              as.numeric(par_sim[,select[i],j]),
+                              method = conf$smooth_method)
+        if (!is.null(pref_fun)) pref[,i,j] <- pref_fun(cov_pred[,select[i]])
+      }
     }
 
-    get_true.pref <- .poly_fun(as.numeric(knots),
-                                       as.numeric(par),
-                                       method = conf$smooth_method)
+    cov_pred <- cov_pred[, select, drop = FALSE]
 
-    pref <- get_true.pref(dat$pred$cov[,i])
+    if (is.null(xlim)) xlim <- apply(cov_pred, 2, range)
+    if (!inherits(xlim, "matrix")) {
+      xlim <- matrix(rep(as.numeric(xlim), length(select)), nrow = 2L)
+    }
 
-    if(is.null(ylim)) ylim <- range(pref, par)
+    if (is.null(ylim)) {
+      ylim <- sapply(seq_along(select), function(i) {
+        rng <- suppressWarnings(range(c(pref[,i,], par_sim[,select[i],]),
+                                      na.rm = TRUE))
+        if (!all(is.finite(rng))) rng <- c(-1, 1)
+        rng
+      })
+    }
+    if (!inherits(ylim, "matrix")) {
+      ylim <- matrix(rep(as.numeric(ylim), length(select)), nrow = 2L)
+    }
 
     if(return_limits) return(list(xlim = xlim, ylim = ylim))
 
-    alpha <- 0.3
-
-
-    sim_cov_nm <- names(dat$cov)[i]
-    if (is.null(main0)) main <- ""
-    xlab_i <- if (is.null(xlab)) {
-      if (!is.null(sim_cov_nm) && nzchar(sim_cov_nm)) sim_cov_nm else "Covariate"
-    } else xlab
-
-    if (!add) {
-      if(!is.null(bg)){
-        graphics::par(bg = bg)
-      }
-      plot(NA, ty = 'n',
-           xlim = xlim,
-           ylim = ylim,
-           xlab = xlab_i,
-           ylab = ylab,
-           main = main,
-           ...)
+    if(auto_layout && !return_limits){
+      par(mfrow = n2mfrow(length(select), asp))
     }
-    lines(cov_pred[,i], pref,
-          col = cols[i],
-          lwd = lwd)
-    points(knots, par,
-           ## col = col,
-           pch = 16, cex = 1.5)
-    if(!add) box(lwd = 1.5)
+
+    if(is.null(cols)) cols <- .admove_cols(length(select))
+    cols <- rep_len(cols, length(select))
+
+    cov_nms <- names(dat$cov)
+
+    for (i in seq_along(select)) {
+
+      if (is.null(main0)) {
+        main <- ""
+      } else if(length(main0) > 1) {
+        main <- main0[i]
+      }
+
+      xlab_i <- if (is.null(xlab)) {
+        nm <- cov_nms[select[i]]
+        if (!is.null(nm) && nzchar(nm)) nm else "Covariate"
+      } else xlab
+
+      if (!add) {
+        if(!is.null(bg)){
+          graphics::par(bg = bg)
+        }
+        plot(NA, ty = 'n',
+             xlim = xlim[,i],
+             ylim = ylim[,i],
+             xlab = xlab_i,
+             ylab = ylab,
+             main = main,
+             ...)
+        if (!is.null(panel_lab) && length(panel_lab) >= i) add_lab(panel_lab[i])
+      }
+
+      for (j in 1:nsea) {
+        lines(cov_pred[,i], pref[,i,j],
+              col = cols[i],
+              lwd = lwd,
+              lty = j)
+        points(knots[,select[i]], par_sim[,select[i],j],
+               pch = 15 + j, cex = 1.5)
+      }
+
+      if(!add) box(lwd = 1.5)
+
+    }
+
   } else message("This function is only implemented for objects of class 'admove' or 'admove_sim'. Did you provide the correct object? Consider running 'sim_admove()' or 'admove()'.")
 }
 

@@ -6,11 +6,13 @@
 \usage{
 sim_tags(
   tag_type,
-  grid = NULL,
+  x = NULL,
   cov = NULL,
   par = NULL,
   dat = NULL,
   conf = NULL,
+  fit = NULL,
+  grid = NULL,
   n_tags = 1,
   n_resightings = c(1, 5),
   trange = NULL,
@@ -45,20 +47,40 @@ Supported values are \code{"d"} or \code{"dtags"} for data-storage tags,
 \code{"s"} or \code{"stags"} for mark-resight tags, and \code{"c"} or
 \code{"ctags"} for conventional mark-recapture tags.}
 
-\item{grid}{Optional spatial grid used for simulation. If not already of
-class \code{"admove_grid"}, it is converted using \code{\link[=create_grid]{create_grid()}}.}
+\item{x}{Any admove object to simulate from. It is recognised by its class
+and used as the argument it describes: a fitted model (\code{admove}) or
+simulation (\code{admove_sim}) as \code{fit}, a data object
+(\code{admove_data}) as \code{dat}, covariate fields
+(\code{admove_cov}, \code{admove_cov_list}, or a list of covariates) as
+\code{cov}, and anything else as \code{grid}. Arguments given explicitly
+always take precedence, so single pieces of a fitted model can be
+replaced, for instance \code{sim_tags("c", fit, grid = new_grid)}. May be
+\code{NULL}, in which case the individual arguments are used.}
 
 \item{cov}{Optional covariate fields used to define spatially and temporally
-varying movement rates.}
+varying movement rates, overriding those of \code{dat} or \code{fit}.}
 
-\item{par}{Optional named list of simulation parameters. Missing parameters
-are filled using \code{\link[=default_sim_par]{default_sim_par()}}.}
+\item{par}{Optional named list of simulation parameters, overriding the
+estimates of \code{fit}. Missing parameters are filled using
+\code{\link[=default_sim_par]{default_sim_par()}}.}
 
-\item{dat}{Optional \code{admove_data} object. If \code{NULL}, a default data
-object is constructed internally from the supplied inputs.}
+\item{dat}{Optional \code{admove_data} object, overriding the data of
+\code{fit}. If \code{NULL}, a default data object is constructed
+internally from the supplied inputs.}
 
-\item{conf}{Optional configuration list controlling the movement model. If
-\code{NULL}, \code{\link[=default_conf]{default_conf()}} is used.}
+\item{conf}{Optional configuration list controlling the movement model,
+overriding the configuration of \code{fit}. If \code{NULL},
+\code{\link[=default_conf]{default_conf()}} is used.}
+
+\item{fit}{Optional fitted \code{admove} model, or an \code{admove_sim}
+object, to simulate from. Its data object, estimated parameters and
+configuration are used unless \code{dat}, \code{par} or \code{conf} are
+given explicitly.}
+
+\item{grid}{Optional spatial grid used for simulation. If not already of
+class \code{"admove_grid"}, it is converted using \code{\link[=create_grid]{create_grid()}}. If no
+grid is given, it is taken from \code{dat} or \code{fit}, or derived from
+the covariate fields.}
 
 \item{n_tags}{Number of tags to simulate.}
 
@@ -147,6 +169,13 @@ mark-recapture tags.
 The function first sets up the spatial grid, time range, covariates, and
 model configuration required for simulation. If no data object is supplied,
 one is created internally from the provided inputs.
+
+Inputs are merged as in \code{\link[=sim_data]{sim_data()}}: what is given explicitly is used
+first, anything still missing is taken from \code{dat}, then from
+\code{fit}. Replacing a component of a fitted model rebuilds its data
+object around the new grid, covariates, knots or time range, and its
+estimated parameters and configuration are only carried over while they
+still describe the covariate and seasonal structure of the simulated data.
 
 Tag trajectories are then simulated from generated or user-supplied release
 events. The full simulated trajectories are retained for data-storage tags.

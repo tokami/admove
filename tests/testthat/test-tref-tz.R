@@ -93,3 +93,18 @@ test_that("origins denoting the same instant compare equal across classes", {
   expect_false(admove:::.same_origin(as.Date("2003-01-01"),
                                      as.Date("2003-01-02")))
 })
+
+
+test_that("an existing time reference can be rebuilt with create_tref", {
+
+  ## a tref without units stores period = NA, which create_tref must accept so
+  ## that round-tripping a reference (as sim_tags() does) does not fail
+  tref <- create_tref()
+
+  expect_true(is.na(tref$period))
+  expect_equal(create_tref(tref$origin, tref$units, tref$period), tref)
+
+  tref2 <- create_tref(origin = as.Date("2020-01-01"), units = "month")
+
+  expect_equal(create_tref(tref2$origin, tref2$units, tref2$period), tref2)
+})

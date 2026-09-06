@@ -1,7 +1,7 @@
 
 ##' @importFrom grDevices adjustcolor col2rgb grey hcl.colors n2mfrow rgb terrain.colors
 ##' @importFrom graphics abline arrows axis box contour identify image layout legend lines mtext par plot.new points polygon segments text
-##' @importFrom stats dist median qnorm quantile rnorm runif setNames
+##' @importFrom stats approx dist median qnorm quantile rnorm runif setNames
 ##' @importFrom utils capture.output head packageDescription tail
 ##' @importFrom RTMB ADoverload REPORT ADREPORT
 ##' @importFrom lubridate interval time_length floor_date
