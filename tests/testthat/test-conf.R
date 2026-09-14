@@ -76,7 +76,7 @@ test_that("default_conf sets natural spline as default smooth", {
 
   conf <- default_conf(dat, verbose = FALSE)
 
-  expect_equal(conf$smooth_method, "natural")
+  expect_equal(conf$smooth_method, "rtmb")
 })
 
 
@@ -87,10 +87,12 @@ test_that("check_conf accepts valid smooth_method and rejects invalid", {
     cov = array(1:3, dim = c(3))
   )
 
-  expect_equal(
-    check_conf(list(smooth_method = "poly"), dat, verbose = FALSE)$smooth_method,
-    "poly"
-  )
+  for (m in c("rtmb", "natural", "poly")) {
+    expect_equal(
+      check_conf(list(smooth_method = m), dat, verbose = FALSE)$smooth_method,
+      m
+    )
+  }
 
   expect_error(
     check_conf(list(smooth_method = "bspline"), dat, verbose = FALSE),

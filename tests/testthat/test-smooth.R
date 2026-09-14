@@ -133,3 +133,117 @@ test_that("natural spline composes with interpol2Dfun inside a tape", {
   g <- obj$gr(obj$par)
   expect_true(all(is.finite(g)))
 })
+
+
+test_that("\"rtmb\" is the default smooth and matches \"natural\"", {
+
+  skip_if_not_installed("RTMB")
+
+  expect_equal(default_conf(skjepo$sim$dat)$smooth_method, "rtmb")
+
+  xp <- c(0, 1, 2, 3, 4)
+  yp <- c(0, 1, 0, -1, 2)
+  xx <- seq(-2, 6, length.out = 50)
+
+  for (d in c(FALSE, TRUE)) {
+    a <- as.numeric(poly_fun(xp, yp, method = "rtmb", deriv = d)(xx))
+    b <- as.numeric(poly_fun(xp, yp, method = "natural", deriv = d)(xx))
+    expect_equal(a, b, tolerance = 1e-8)
+    expect_equal(a, as.numeric(stats::splinefun(xp, yp, method = "natural")(
+                                 xx, deriv = as.integer(d))),
+                 tolerance = 1e-8)
+  }
+
+  ## degenerate knots are rejected the same way whatever the method
+  expect_null(poly_fun(c(2, 2, 2), c(1, 2, 3), method = "rtmb"))
+})
+
+
+test_that("\"rtmb\" smooth composes with interpol2Dfun inside a tape", {
+
+  ## The composition that used to abort with "'*this' is not a valid 'advector'":
+  ## the spline derivative evaluated at the output of another RTMB atomic. The
+  ## cached derivative tape keeps the evaluation point a bare tape variable.
+  skip_if_not_installed("RTMB")
+
+  kn <- c(21.9, 24.6, 26.5)
+  set.seed(1)
+  field <- matrix(runif(100, 21, 27), 10, 10)
+  liv <- RTMB::interpol2Dfun(field, xlim = c(0, 1), ylim = c(0, 1))
+
+  f <- function(p) {
+    val <- poly_fun(kn, p$a, method = "rtmb")
+    dval <- poly_fun(kn, p$a, method = "rtmb", deriv = TRUE)
+    cov <- liv(p$x, p$y)
+    val(cov)^2 + dval(cov)^2
+  }
+
+  obj <- RTMB::MakeADFun(
+    f, list(a = c(0, 5, 1), x = 0.5, y = 0.5),
+    map = list(a = factor(c(NA, 1, 2))), silent = TRUE
+  )
+  g <- obj$gr(obj$par)
+  expect_true(all(is.finite(g)))
+  expect_true(any(g != 0))
+})
+
+
+test_that("\"rtmb\" derivative is correct and its tape cache tracks length(x)", {
+
+  skip_if_not_installed("RTMB")
+
+  xp <- c(0, 1, 2, 3, 4)
+  yv <- c(0, 1, 0, -1, 2)
+
+  ## gradient wrt an AD evaluation point, vs finite differences
+  f <- function(p) {
+    dfn <- poly_fun(xp, yv, method = "rtmb", deriv = TRUE)
+    ## scalar calls then a vector call: the cached tape must be rebuilt for the
+    ## new length rather than reused at the wrong size
+    sum(dfn(p$loc)^2) + sum(dfn(c(0.5, 1.5, 3.2) * p$loc)^2) + sum(dfn(p$loc)^2)
+  }
+  obj <- RTMB::MakeADFun(f, list(loc = 1.7), silent = TRUE)
+  g <- as.numeric(obj$gr(obj$par))
+  h <- 1e-5
+  fd <- (obj$fn(1.7 + h) - obj$fn(1.7 - h)) / (2 * h)
+  expect_equal(g, fd, tolerance = 1e-4)
+
+  ## gradient wrt the knot values (the estimated parameters)
+  f2 <- function(p) {
+    dfn <- poly_fun(xp, p$y, method = "rtmb", deriv = TRUE)
+    sum(dfn(c(0.5, 1.5, 3.2))^2)
+  }
+  obj2 <- RTMB::MakeADFun(f2, list(y = yv), silent = TRUE)
+  g2 <- as.numeric(obj2$gr(obj2$par))
+  fd2 <- sapply(seq_along(yv), function(i) {
+    yu <- yl <- yv; yu[i] <- yu[i] + h; yl[i] <- yl[i] - h
+    (obj2$fn(yu) - obj2$fn(yl)) / (2 * h)
+  })
+  expect_equal(g2, fd2, tolerance = 1e-4)
+})
+
+
+test_that("\"rtmb\" smooth propagates NA off-tape like \"natural\"", {
+
+  ## Regression guard: off the tape the "rtmb" derivative falls back to
+  ## stats::splinefun, whose method = "natural" branch errors on NA. The
+  ## covariate interpolant returns NaN outside the field and sim_tags() relies
+  ## on those gaps coming back as missing rather than as an error.
+  skip_if_not_installed("RTMB")
+
+  xp <- c(0, 1, 2, 3, 4)
+  yp <- c(0, 1, 0, -1, 2)
+  xx <- c(0.5, NA, 2.5, NaN)
+
+  for (d in c(FALSE, TRUE)) {
+    a <- poly_fun(xp, yp, method = "rtmb", deriv = d)(xx)
+    b <- poly_fun(xp, yp, method = "natural", deriv = d)(xx)
+    expect_equal(is.na(a), is.na(b))
+    expect_equal(as.numeric(a)[!is.na(a)], as.numeric(b)[!is.na(b)],
+                 tolerance = 1e-8)
+  }
+
+  ## all-missing input must not error either
+  expect_true(all(is.na(poly_fun(xp, yp, method = "rtmb",
+                                 deriv = TRUE)(c(NA_real_, NA_real_)))))
+})

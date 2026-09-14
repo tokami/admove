@@ -76,12 +76,18 @@ only two observations if \code{do_update} is \code{FALSE} for that type, since n
 is conditioned on in between.
 
 The smooth used for the habitat preference functions is selected by
-\code{conf$smooth_method}:
+\code{conf$smooth_method}. All options interpolate the knot values exactly; the
+first two are the same natural cubic spline — piecewise cubic, twice
+continuously differentiable, with local support and \strong{linear extrapolation}
+beyond the outer knots (robust in the covariate tails) — and agree to
+machine precision.
 \itemize{
-\item \code{"natural"} (default) — a natural cubic spline through the knot values:
-piecewise cubic, twice continuously differentiable, with local support and
-\strong{linear extrapolation} beyond the outer knots (robust in the covariate
-tails).
+\item \code{"rtmb"} (default) — the spline evaluated by \code{RTMB::splinefun()}. Its cost
+does not grow with the number of knots, so it is the faster choice for
+models with many knots.
+\item \code{"natural"} — the same spline written out in a truncated-power basis in
+plain R, using no automatic-differentiation atomic. Marginally faster for
+very few knots, and useful as a cross-check.
 \item \code{"poly"} — the legacy single global interpolating polynomial of degree
 \code{nknots - 1}; retained for reproducibility of older fits, but prone to
 oscillation and unbounded extrapolation.

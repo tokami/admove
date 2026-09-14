@@ -64,11 +64,17 @@
 ##' is conditioned on in between.
 ##'
 ##' The smooth used for the habitat preference functions is selected by
-##' `conf$smooth_method`:
-##' * `"natural"` (default) — a natural cubic spline through the knot values:
-##'   piecewise cubic, twice continuously differentiable, with local support and
-##'   **linear extrapolation** beyond the outer knots (robust in the covariate
-##'   tails).
+##' `conf$smooth_method`. All options interpolate the knot values exactly; the
+##' first two are the same natural cubic spline — piecewise cubic, twice
+##' continuously differentiable, with local support and **linear extrapolation**
+##' beyond the outer knots (robust in the covariate tails) — and agree to
+##' machine precision.
+##' * `"rtmb"` (default) — the spline evaluated by `RTMB::splinefun()`. Its cost
+##'   does not grow with the number of knots, so it is the faster choice for
+##'   models with many knots.
+##' * `"natural"` — the same spline written out in a truncated-power basis in
+##'   plain R, using no automatic-differentiation atomic. Marginally faster for
+##'   very few knots, and useful as a cross-check.
 ##' * `"poly"` — the legacy single global interpolating polynomial of degree
 ##'   `nknots - 1`; retained for reproducibility of older fits, but prone to
 ##'   oscillation and unbounded extrapolation.
@@ -160,11 +166,12 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   conf$seasonal_dif <- FALSE
 
   ## Smooth used for the habitat preference functions
-  ## "natural" = natural cubic spline (default): piecewise cubic, C2, local support,
-  ##             linear extrapolation beyond the outer knots.
+  ## "rtmb"    = natural cubic spline via RTMB::splinefun (default).
+  ## "natural" = the same spline written out in plain R (.natural_spline_fun);
+  ##             agrees with "rtmb" to machine precision.
   ## "poly"    = legacy single global interpolating polynomial (retained for
   ##             reproducibility of older fits).
-  conf$smooth_method <- "natural"
+  conf$smooth_method <- "rtmb"
 
   conf
 }
@@ -257,8 +264,8 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
 
   ## Validate the preference smooth method
   if (!is.character(conf$smooth_method) || length(conf$smooth_method) != 1L ||
-        !conf$smooth_method %in% c("natural", "poly")) {
-    stop("'conf$smooth_method' must be one of \"natural\" or \"poly\".",
+        !conf$smooth_method %in% c("rtmb", "natural", "poly")) {
+    stop("'conf$smooth_method' must be one of \"rtmb\", \"natural\" or \"poly\".",
          call. = FALSE)
   }
 
