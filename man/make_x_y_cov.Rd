@@ -4,12 +4,10 @@
 \alias{make_x_y_cov}
 \title{Create x- and y-coordinate covariate fields}
 \usage{
-make_x_y_cov(x, tref = NULL)
+make_x_y_cov(grid, tref = NULL)
 }
 \arguments{
-\item{x}{An object providing spatial dimensions and cell centres, typically
-an \code{admove_grid} or another object for which \code{\link[=x_centers]{x_centers()}}, \code{\link[=y_centers]{y_centers()}},
-and \code{\link[=sref]{sref()}} are defined.}
+\item{grid}{A grid of class \code{admove_grid}, as returned by \code{\link[=create_grid]{create_grid()}}.}
 
 \item{tref}{Optional time reference information to attach to the returned
 covariates. Default: \code{NULL}.}
@@ -26,14 +24,17 @@ simple spatial trend covariates or for testing and demonstration purposes.
 
 The first covariate varies along the x dimension and the second varies along
 the y dimension. Both covariates are created on the spatial domain and cell
-centres of the supplied object.
+centres of the supplied grid.
 }
 \details{
 Both covariates are created as single-time-slice fields with \code{times = 0}.
-Spatial reference information is copied from \code{x}, and optional temporal
-reference information can be attached via \code{tref}.
+The spatial reference is always taken from \code{grid}, so that the covariates
+match the grid in \code{\link[=setup_data]{setup_data()}}; if the grid has no spatial reference, add
+one with \code{\link[=add_sref]{add_sref()}} first. A grid carries no time reference, so it can be
+attached via \code{tref}.
 }
 \examples{
-## xy_cov <- make_x_y_cov(grid)
+grid <- create_grid(verbose = FALSE)
+xy_cov <- make_x_y_cov(grid)
 
 }

@@ -1012,11 +1012,9 @@ make_mstar_template <- function(nextTo, ad = FALSE) {
 ##'
 ##' The first covariate varies along the x dimension and the second varies along
 ##' the y dimension. Both covariates are created on the spatial domain and cell
-##' centres of the supplied object.
+##' centres of the supplied grid.
 ##'
-##' @param x An object providing spatial dimensions and cell centres, typically
-##'   an `admove_grid` or another object for which [x_centers()], [y_centers()],
-##'   and [sref()] are defined.
+##' @param grid A grid of class `admove_grid`, as returned by [create_grid()].
 ##' @param tref Optional time reference information to attach to the returned
 ##'   covariates. Default: `NULL`.
 ##'
@@ -1026,35 +1024,43 @@ make_mstar_template <- function(nextTo, ad = FALSE) {
 ##'
 ##' @details
 ##' Both covariates are created as single-time-slice fields with `times = 0`.
-##' Spatial reference information is copied from `x`, and optional temporal
-##' reference information can be attached via `tref`.
+##' The spatial reference is always taken from `grid`, so that the covariates
+##' match the grid in [setup_data()]; if the grid has no spatial reference, add
+##' one with [add_sref()] first. A grid carries no time reference, so it can be
+##' attached via `tref`.
 ##'
 ##' @examples
-##' ## xy_cov <- make_x_y_cov(grid)
+##' grid <- create_grid(verbose = FALSE)
+##' xy_cov <- make_x_y_cov(grid)
 ##'
 ##' @export
-make_x_y_cov <- function(x, tref = NULL) {
+make_x_y_cov <- function(grid, tref = NULL) {
 
-  nx <- dim(x)[1]
-  ny <- dim(x)[2]
+  if (!inherits(grid, "admove_grid")) {
+    stop("'grid' must be an 'admove_grid' (see create_grid()), not an object of class '",
+         paste(class(grid), collapse = "/"), "'.")
+  }
+
+  nx <- dim(grid)[1]
+  ny <- dim(grid)[2]
 
   cov1 <- prep_cov(matrix(1:nx, nx, ny),
                    ## matrix(seq(0.5,nx,1) - nx/2, nx, ny), ## not working
-                   x_centers = x_centers(x),
-                   y_centers = y_centers(x),
+                   x_centers = x_centers(grid),
+                   y_centers = y_centers(grid),
                    times = 0,
-                   sref = sref(x),
+                   sref = sref(grid),
                    tref = tref)
   cov2 <- prep_cov(matrix(1:ny, nx, ny, byrow = TRUE),
                    ## matrix(seq(0.5,ny,1) - ny/2, nx, ny, byrow = TRUE),
-                   x_centers = x_centers(x),
-                   y_centers = y_centers(x),
+                   x_centers = x_centers(grid),
+                   y_centers = y_centers(grid),
                    times = 0,
-                   sref = sref(x),
+                   sref = sref(grid),
                    tref = tref)
   cov <- list(cov1, cov2)
   cov <- .add_class(cov, "admove_cov")
-  cov <- add_sref(cov, sref(x))
+  cov <- add_sref(cov, sref(grid))
   cov <- add_tref(cov, tref)
 
   cov
