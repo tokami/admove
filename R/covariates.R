@@ -423,8 +423,8 @@ prep_cov <- function(x,
 ##' object or in a higher-level \emph{admove} object that contains covariate
 ##' data.
 ##'
-##' Each time slice is plotted as a separate panel, optionally with contour
-##' lines and land added to the plot.
+##' Each time slice is plotted as a separate panel, optionally with a colour
+##' bar, contour lines, and land added to the plot.
 ##'
 ##' @param x An object of class `admove_cov`, or an object containing covariate
 ##'   data such as `admove_data`, `admove_sim`, or `admove`.
@@ -448,6 +448,23 @@ prep_cov <- function(x,
 ##'   `TRUE`.
 ##' @param xlim xlim
 ##' @param ylim ylim
+##' @param col Colour palette for the covariate values. Default:
+##'   `hcl.colors(100, "viridis")`.
+##' @param zlim Optional numeric range of values mapped onto `col`. Default:
+##'   `NULL`, in which case the range over all plotted time steps of a covariate
+##'   is used, so that time steps of the same covariate share one colour scale.
+##'   With several covariates (`i` a vector), each covariate gets its own scale.
+##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
+##'   panel. Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and
+##'   `FALSE` otherwise (when the caller controls the margins, there may be no
+##'   room for the bar).
+##' @param titles Optional character vector of panel titles, one per panel.
+##'   Default: `NULL`, in which case covariate names (or `"Covariate i"`) are
+##'   used for several covariates and `"Time step j"` for several time steps; a
+##'   single panel gets no title.
+##' @param land_col Fill colour for land. Default: `grey(0.85)` (opaque, so
+##'   covariate colours do not show through).
+##' @param land_border Border colour for land. Default: `grey(0.5)`.
 ##' @param ... Additional graphical arguments passed to [plot()].
 ##'
 ##' @return
@@ -477,10 +494,17 @@ plot_cov <- function(x,
                      plot_contour = TRUE,
                      xlim = NULL,
                      ylim = NULL,
+                     col = hcl.colors(100, "viridis"),
+                     zlim = NULL,
+                     legend = NULL,
+                     titles = NULL,
+                     land_col = grey(0.85),
+                     land_border = grey(0.5),
                      ...) {
 
   xlim0 <- xlim
   ylim0 <- ylim
+  if (is.null(legend)) legend <- isTRUE(auto_layout)
 
   if (inherits(x, "admove_sim")) {
     cov <- x$cov
@@ -492,27 +516,41 @@ plot_cov <- function(x,
     cov <- x
   }
 
+  ## right margin wide enough for the colour bar and its labels
+  mar_right <- if (legend) 4.5 else 1.5
+
   if (inherits(cov, "admove_cov_list") && length(i) > 1) {
     sel <- cov[i]
     n <- length(sel)
     nms <- names(sel)
     t_sel <- if (is.null(select)) 1L else select[1L]
+    if (!is.null(titles) && length(titles) != n) {
+      stop("'titles' must have one entry per covariate (", n, ").")
+    }
     if (auto_layout) {
       opar <- par(no.readonly = TRUE)
       on.exit(par(opar))
       par(mfrow = n2mfrow(n, asp = 2),
-          mar = c(1.5, 1.5, 1.5, 1.5),
+          mar = c(1.5, 1.5, 2, mar_right),
           oma = c(3, 3, ifelse(main == "", 0, 1.5), 0))
     }
     for (j in seq_along(sel)) {
+      panel_lbl <- if (!is.null(titles)) {
+        titles[j]
+      } else if (!is.null(nms) && nzchar(nms[j])) {
+        nms[j]
+      } else {
+        paste0("Covariate ", i[j])
+      }
       plot_cov(sel[[j]], select = t_sel, main = "",
                plot_land = plot_land, auto_layout = FALSE,
                xlab = xlab, ylab = ylab, bg = bg,
                plot_contour = plot_contour,
                xlim = xlim, ylim = ylim,
+               col = col, zlim = zlim, legend = legend,
+               titles = panel_lbl,
+               land_col = land_col, land_border = land_border,
                ...)
-      panel_lbl <- if (!is.null(nms) && nzchar(nms[j])) nms[j] else paste0("Layer ", i[j])
-      legend("topleft", legend = panel_lbl, bg = "white", pch = NA)
     }
     if (auto_layout) {
       mtext(main, 3, 0, outer = TRUE)
@@ -536,6 +574,21 @@ plot_cov <- function(x,
 
   nt <- dim(cov)[3]
 
+  if (is.null(titles)) {
+    titles <- if (nt > 1) paste0("Time step ", if (is.null(select)) seq_len(nt) else select) else ""
+  } else if (length(titles) != nt) {
+    stop("'titles' must have one entry per plotted time step (", nt, ").")
+  }
+
+  ## one colour scale for all time steps of this covariate
+  if (is.null(zlim)) {
+    zlim <- suppressWarnings(range(unclass(cov), na.rm = TRUE, finite = TRUE))
+  }
+  zlim_ok <- all(is.finite(zlim))
+  if (zlim_ok && zlim[1] == zlim[2]) {
+    zlim <- zlim + c(-0.5, 0.5) * max(abs(zlim[1]), 1)
+  }
+
   if (is.null(xlim0)) {
     if(any(names(attributes(cov)) == "dimnames")){
       xlims <- range(as.numeric(attributes(cov)$dimnames[[1]]))
@@ -550,7 +603,7 @@ plot_cov <- function(x,
     if(any(names(attributes(cov)) == "dimnames")){
       ylims <- range(as.numeric(attributes(cov)$dimnames[[2]]))
     }else{
-      xlims <- c(0,1)
+      ylims <- c(0,1)
     }
   } else {
     ylims <- ylim0
@@ -560,7 +613,7 @@ plot_cov <- function(x,
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
     par(mfrow = n2mfrow(nt, asp = 2),
-        mar = c(1.5,1.5,1.5,1.5),
+        mar = c(1.5, 1.5, ifelse(nt > 1, 2, 1.5), mar_right),
         oma = c(3,3,ifelse(main == "", 0, 1.5),0))
   }
   for(i in 1:nt){
@@ -577,20 +630,24 @@ plot_cov <- function(x,
          ylab = "",
          asp = 1,
          ...)
-    ## if(!is.null(bg)){
-    ##     usr <- par("usr")
-    ##     rect(usr[1], usr[3], usr[2], usr[4], col = bg, border = NA)
-    ## }
-    image(x, y, cov[,,i, drop = TRUE],
-          col = terrain.colors(100),
-          add = TRUE)
-    if (plot_land) {
-      plot_land(sref)
+    z <- cov[,,i, drop = TRUE]
+    if (zlim_ok) {
+      ## clamp to zlim so values outside a user-supplied range are not left blank
+      z <- pmin(pmax(z, zlim[1]), zlim[2])
+      image(x, y, z, col = col, zlim = zlim, add = TRUE)
     }
-    if(plot_contour) contour(x, y, cov[,,i], add = TRUE)
-    if(nt > 1) legend("topleft", legend = paste0("Field ", i),
-                      bg = "white", pch = NA)
+    if (plot_land) {
+      plot_land(sref, col = land_col, border = land_border)
+    }
+    if(plot_contour && zlim_ok) {
+      contour(x, y, cov[,,i], add = TRUE, col = grey(0.2, 0.6),
+              labcex = 0.6)
+    }
+    if (nzchar(titles[i])) {
+      title(main = titles[i], line = 0.4, font.main = 1, cex.main = 1)
+    }
     box(lwd = 1.5)
+    if (legend && zlim_ok) .color_bar(col, zlim)
   }
   if(auto_layout){
     mtext(main, 3, 0, outer = TRUE)
@@ -600,6 +657,34 @@ plot_cov <- function(x,
 
 
   return(invisible(NULL))
+}
+
+
+## Vertical colour bar just right of the current plot region, in the figure
+## margin (needs a right margin of about 4 lines).
+.color_bar <- function(col, zlim, width = 0.03, gap = 0.015, cex = 0.7) {
+
+  plt <- par("plt")
+  x0 <- grconvertX(plt[2] + gap, from = "nfc", to = "user")
+  x1 <- grconvertX(plt[2] + gap + width, from = "nfc", to = "user")
+  y0 <- grconvertY(plt[3], from = "nfc", to = "user")
+  y1 <- grconvertY(plt[4], from = "nfc", to = "user")
+
+  n <- length(col)
+  yb <- seq(y0, y1, length.out = n + 1)
+  op <- par(xpd = NA)
+  on.exit(par(op))
+  rect(x0, yb[-(n + 1)], x1, yb[-1], col = col, border = NA)
+  rect(x0, y0, x1, y1, border = grey(0.3))
+
+  at <- pretty(zlim)
+  at <- at[at >= zlim[1] & at <= zlim[2]]
+  yat <- y0 + (at - zlim[1]) / diff(zlim) * (y1 - y0)
+  xt <- grconvertX(plt[2] + gap + width + 0.01, from = "nfc", to = "user")
+  segments(x1, yat, x1 + 0.3 * (x1 - x0), yat, col = grey(0.3))
+  text(xt, yat, labels = format(at), adj = c(0, 0.5), cex = cex)
+
+  invisible(NULL)
 }
 
 

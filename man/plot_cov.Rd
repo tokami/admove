@@ -20,6 +20,12 @@ plot_cov(
   plot_contour = TRUE,
   xlim = NULL,
   ylim = NULL,
+  col = hcl.colors(100, "viridis"),
+  zlim = NULL,
+  legend = NULL,
+  titles = NULL,
+  land_col = grey(0.85),
+  land_border = grey(0.5),
   ...
 )
 
@@ -63,6 +69,29 @@ automatically and restored afterwards. Default: \code{TRUE}.}
 
 \item{ylim}{ylim}
 
+\item{col}{Colour palette for the covariate values. Default:
+\code{hcl.colors(100, "viridis")}.}
+
+\item{zlim}{Optional numeric range of values mapped onto \code{col}. Default:
+\code{NULL}, in which case the range over all plotted time steps of a covariate
+is used, so that time steps of the same covariate share one colour scale.
+With several covariates (\code{i} a vector), each covariate gets its own scale.}
+
+\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn to the right of each
+panel. Default: \code{NULL}, which means \code{TRUE} when \code{auto_layout = TRUE} and
+\code{FALSE} otherwise (when the caller controls the margins, there may be no
+room for the bar).}
+
+\item{titles}{Optional character vector of panel titles, one per panel.
+Default: \code{NULL}, in which case covariate names (or \code{"Covariate i"}) are
+used for several covariates and \code{"Time step j"} for several time steps; a
+single panel gets no title.}
+
+\item{land_col}{Fill colour for land. Default: \code{grey(0.85)} (opaque, so
+covariate colours do not show through).}
+
+\item{land_border}{Border colour for land. Default: \code{grey(0.5)}.}
+
 \item{...}{Additional graphical arguments passed to \code{\link[=plot]{plot()}}.}
 }
 \value{
@@ -73,8 +102,8 @@ Invisibly returns \code{NULL}.
 object or in a higher-level \emph{admove} object that contains covariate
 data.
 
-Each time slice is plotted as a separate panel, optionally with contour
-lines and land added to the plot.
+Each time slice is plotted as a separate panel, optionally with a colour
+bar, contour lines, and land added to the plot.
 }
 \details{
 The function uses the x and y dimension names, if present, as plotting

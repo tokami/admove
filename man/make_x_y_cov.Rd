@@ -13,8 +13,8 @@ make_x_y_cov(grid, tref = NULL)
 covariates. Default: \code{NULL}.}
 }
 \value{
-A list-like object of class \code{admove_cov} containing two covariate fields:
-one for the x coordinate and one for the y coordinate.
+An object of class \code{admove_cov_list} with two covariate fields, \code{x} (varies
+along the x dimension) and \code{y} (varies along the y dimension).
 }
 \description{
 \code{make_x_y_cov()} creates two simple covariate fields representing the spatial

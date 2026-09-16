@@ -582,10 +582,15 @@ plot_data <- function(x,
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
-    n <- sum(!sapply(x[c("grid","cov","tags")], is.null))
+    ## one panel for the grid, one per covariate, and one per tag type
+    n <- as.integer(!is.null(x$grid))
     if (!is.null(x$cov)) {
-      n <- n + length(x$cov) - 1
+      n <- n + length(.make_cov_list(x$cov))
     }
+    if (!is.null(x$tags)) {
+      n <- n + sum(c("d", "s", "c") %in% x$tags$tag_type)
+    }
+    n <- max(n, 1L)
     par(mfrow = n2mfrow(n, asp = 2), mar = c(4,4,1,1), oma = c(1,1,1,1))
   }
 

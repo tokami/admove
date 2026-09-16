@@ -1,6 +1,6 @@
 
 ##' @importFrom grDevices adjustcolor col2rgb grey hcl.colors n2mfrow rgb terrain.colors
-##' @importFrom graphics abline arrows axis box contour identify image layout legend lines mtext par plot.new points polygon segments text
+##' @importFrom graphics abline arrows axis box contour identify image layout legend lines mtext par plot.new points polygon rect segments text title grconvertX grconvertY
 ##' @importFrom stats approx dist median qnorm quantile rnorm runif setNames
 ##' @importFrom utils capture.output head packageDescription tail
 ##' @importFrom RTMB ADoverload REPORT ADREPORT
@@ -1019,8 +1019,8 @@ make_mstar_template <- function(nextTo, ad = FALSE) {
 ##'   covariates. Default: `NULL`.
 ##'
 ##' @return
-##' A list-like object of class `admove_cov` containing two covariate fields:
-##' one for the x coordinate and one for the y coordinate.
+##' An object of class `admove_cov_list` with two covariate fields, `x` (varies
+##' along the x dimension) and `y` (varies along the y dimension).
 ##'
 ##' @details
 ##' Both covariates are created as single-time-slice fields with `times = 0`.
@@ -1058,8 +1058,8 @@ make_x_y_cov <- function(grid, tref = NULL) {
                    times = 0,
                    sref = sref(grid),
                    tref = tref)
-  cov <- list(cov1, cov2)
-  cov <- .add_class(cov, "admove_cov")
+  cov <- list(x = cov1, y = cov2)
+  cov <- .add_class(cov, "admove_cov_list")
   cov <- add_sref(cov, sref(grid))
   cov <- add_tref(cov, tref)
 

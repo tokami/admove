@@ -1207,7 +1207,16 @@ plot_sim <- function(x,
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
-    n <- 2 + 2 * ncov + length(unique(x$tags$tag_type))
+    ## taxis + diffusion, a field and a preference function per covariate, and
+    ## the tag panels (one per tag type, or a single one)
+    n_tag <- if (is.null(x$tags) || nrow(x$tags) == 0) {
+      0L
+    } else if (by_tag_type) {
+      length(unique(x$tags$tag_type))
+    } else {
+      1L
+    }
+    n <- 2 + 2 * ncov + n_tag
     par(mfrow = n2mfrow(n, asp = asp),
         mar = c(4,4,1,1), oma = c(1,1,1,1))
   }

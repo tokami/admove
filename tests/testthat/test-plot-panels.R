@@ -163,3 +163,51 @@ test_that("plot_tag_dist reports an empty tag_dist instead of failing on mfrow",
                                                    y = c(0, 1))))
   expect_error(plot_tag_dist(fit, n_tags = 0), "No tags left to plot")
 })
+
+
+test_that("plot_data reserves one panel per covariate and per tag type", {
+
+  dat <- skjepo$sim$dat
+  dat$cov <- suppressMessages(make_x_y_cov(dat$grid))
+  expect_setequal(unique(dat$tags$tag_type), c("d", "c"))
+
+  ## grid + 2 covariates + d + c tags = 5 panels; too few panels spill onto a
+  ## second page
+  dir <- withr::local_tempdir()
+  grDevices::png(file.path(dir, "p%03d.png"))
+  plot(dat)
+  grDevices::dev.off()
+  expect_length(list.files(dir, pattern = "\\.png$"), 1L)
+})
+
+
+test_that("plot_sim reserves exactly as many panels as it draws", {
+
+  sim <- skjepo$sim
+  n_types <- length(unique(sim$tags$tag_type))
+  ncov <- if (inherits(sim$cov, "list")) length(sim$cov) else 1L
+
+  n_seen <- NULL
+  local_mocked_bindings(
+    n2mfrow = function(nr.plots, ...) {
+      ## the first call is plot_sim's own layout; lower-level plots may call it too
+      if (is.null(n_seen)) n_seen <<- nr.plots
+      grDevices::n2mfrow(nr.plots, ...)
+    },
+    .package = "admove"
+  )
+
+  .count <- function(...) {
+    n_seen <<- NULL
+    grDevices::pdf(NULL)
+    on.exit(grDevices::dev.off())
+    plot(sim, ...)
+    n_seen
+  }
+
+  expect_equal(.count(by_tag_type = TRUE), 2 + 2 * ncov + n_types)
+  expect_equal(.count(by_tag_type = FALSE), 2 + 2 * ncov + 1)
+
+  sim$tags <- NULL
+  expect_equal(.count(), 2 + 2 * ncov)
+})
