@@ -28,6 +28,12 @@
 ##'   integer value, cells can be selected interactively. If a numeric vector of
 ##'   length greater than 1 is supplied, it is interpreted as cell indices to
 ##'   retain; if all supplied indices are negative, those cells are removed.
+##' @param mask Optional land/water mask applied after all other cell
+##'   selection. \code{NULL} (default) keeps all cells, \code{"water"} drops
+##'   cells whose centre lies on land, and \code{"land"} drops cells whose centre
+##'   lies in water. Uses the bundled Natural Earth 1:110m land polygons and
+##'   requires a CRS in the spatial reference of the grid (see
+##'   \code{\link{add_sref}}) and the \pkg{sf} package.
 ##' @param crs Optional coordinate reference system for the grid.
 ##' @param units Optional spatial units for the grid, for example
 ##'   \code{"degree"}, \code{"m"}, or \code{"km"}.
@@ -71,6 +77,7 @@ create_grid <- function(x = NULL,
                         xrange = NULL,
                         yrange = NULL,
                         select = FALSE,
+                        mask = NULL,
                         crs = NULL,
                         units = NULL,
                         crs_scale = NULL,
@@ -482,6 +489,23 @@ create_grid <- function(x = NULL,
         igrid <- igrid[idx,]
       }
     }
+  }
+
+  if (!is.null(mask)) {
+    keep <- .mask_cells(xygrid, sref, mask)
+    if (!any(keep)) stop("No grid cells left after applying mask = '", mask, "'.")
+    if (inherits(x, "admove_tags") && isTRUE(verbose)) {
+      itag_x <- findInterval(x[,"x"], xgr, rightmost.closed = TRUE)
+      itag_y <- findInterval(x[,"y"], ygr, rightmost.closed = TRUE)
+      removed <- paste(igrid$idx[!keep], igrid$idy[!keep])
+      n_out <- sum(paste(itag_x, itag_y) %in% removed)
+      if (n_out > 0) {
+        message(n_out, " tag position(s) fall into cells removed by mask = '", mask,
+                "'. The 1:110m coastline is coarse; consider a smaller cellsize or mask = NULL.")
+      }
+    }
+    xygrid <- xygrid[keep, , drop = FALSE]
+    igrid <- igrid[keep, , drop = FALSE]
   }
 
   celltable[cbind(igrid$idx, igrid$idy)] <- 1:nrow(igrid)
@@ -1001,4 +1025,47 @@ print.admove_grid <- function(x, ...) {
 ##' @export
 plot.admove_grid <- function(x, ...) {
   plot_grid(x, ...)
+}
+
+
+## Logical vector: which cell centres in 'xygrid' to keep for the land/water mask.
+## The centres are transformed to lon/lat (rather than projecting the land polygons
+## into the grid CRS), which avoids the antimeridian artefacts described in
+## plot_land().
+.mask_cells <- function(xygrid, sref, mask = c("water", "land")) {
+
+  mask <- match.arg(mask)
+
+  if (!requireNamespace("sf", quietly = TRUE)) {
+    stop("Package 'sf' is required for 'mask'. Please install it.")
+  }
+
+  crs <- sref$crs
+  if (is.null(crs) || all(is.na(crs))) {
+    stop("'mask' requires a CRS. Add one with add_sref(), e.g. add_sref(x, list(crs = 4326)).")
+  }
+  crs <- sf::st_crs(crs)
+  if (is.na(crs)) stop("Invalid CRS in sref; cannot apply 'mask'.")
+
+  crs_scale <- sref$crs_scale
+  if (is.null(crs_scale) || is.na(crs_scale)) crs_scale <- 1
+
+  s2_old <- suppressMessages(sf::sf_use_s2(FALSE))
+  on.exit(suppressMessages(sf::sf_use_s2(s2_old)), add = TRUE)
+
+  xy <- data.frame(x = xygrid$x / crs_scale, y = xygrid$y / crs_scale)
+  pts <- sf::st_as_sf(xy, coords = c("x", "y"), crs = crs)
+  if (!isTRUE(sf::st_is_longlat(crs))) {
+    pts <- sf::st_transform(pts, 4326)
+  }
+  ll <- sf::st_coordinates(pts)
+  ll[, 1] <- ((ll[, 1] + 180) %% 360) - 180
+  pts <- sf::st_as_sf(data.frame(x = ll[, 1], y = ll[, 2]),
+                      coords = c("x", "y"), crs = 4326)
+
+  land <- sf::st_geometry(.get_land())
+  land <- suppressMessages(sf::st_union(sf::st_make_valid(sf::st_transform(land, 4326))))
+  on_land <- suppressMessages(lengths(sf::st_intersects(pts, land)) > 0)
+
+  if (mask == "water") !on_land else on_land
 }

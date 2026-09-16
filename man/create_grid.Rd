@@ -10,6 +10,7 @@ create_grid(
   xrange = NULL,
   yrange = NULL,
   select = FALSE,
+  mask = NULL,
   crs = NULL,
   units = NULL,
   crs_scale = NULL,
@@ -44,6 +45,13 @@ dimension of the spatial domain. Ignored if extracted from \code{x}.}
 integer value, cells can be selected interactively. If a numeric vector of
 length greater than 1 is supplied, it is interpreted as cell indices to
 retain; if all supplied indices are negative, those cells are removed.}
+
+\item{mask}{Optional land/water mask applied after all other cell
+selection. \code{NULL} (default) keeps all cells, \code{"water"} drops
+cells whose centre lies on land, and \code{"land"} drops cells whose centre
+lies in water. Uses the bundled Natural Earth 1:110m land polygons and
+requires a CRS in the spatial reference of the grid (see
+\code{\link{add_sref}}) and the \pkg{sf} package.}
 
 \item{crs}{Optional coordinate reference system for the grid.}
 
