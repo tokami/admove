@@ -15,6 +15,8 @@ sim_tags(
   grid = NULL,
   n_tags = 1,
   n_resightings = c(1, 5),
+  n_candidates = 1,
+  candidate_sd = NULL,
   trange = NULL,
   dt_tags = NULL,
   trange_rel = NULL,
@@ -86,6 +88,14 @@ the covariate fields.}
 
 \item{n_resightings}{Integer vector giving the minimum and maximum number of
 resightings for mark-resight tags.}
+
+\item{n_candidates}{Integer; number of candidate positions to give the final
+recapture of each mark-recapture tag. The default \code{1} simulates an exactly
+known recapture. Values above 1 keep the true position and add decoys,
+producing \code{event} and \code{prob} columns (see \code{\link[=prep_tags]{prep_tags()}}).}
+
+\item{candidate_sd}{Numeric; spread of the simulated decoy positions around
+the true recapture. Defaults to a fraction of the displacement travelled.}
 
 \item{trange}{Numeric vector of length 2 giving the simulation time range.
 If \code{NULL}, it is derived from the covariate time dimension when

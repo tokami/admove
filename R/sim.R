@@ -82,6 +82,11 @@
 ##' @param n_dtags Number of data-storage tags to simulate.
 ##' @param n_stags Number of mark-resight tags to simulate.
 ##' @param n_ctags Number of conventional mark-recapture tags to simulate.
+##' @param n_candidates Integer; number of candidate positions to give the final
+##'   recapture of each simulated mark-recapture tag (default `1`, an exactly
+##'   known recapture). See [sim_tags()].
+##' @param candidate_sd Numeric; spread of the simulated candidate positions
+##'   around the true recapture. See [sim_tags()].
 ##' @param n_resightings Integer vector giving the minimum and maximum number of
 ##'   resightings for mark-resight tags.
 ##' @param sim_engine Integer specifying the simulation engine: \code{1} for
@@ -170,6 +175,8 @@ sim_data <- function(x = NULL,
                      n_stags = 0,
                      n_ctags = 100,
                      n_resightings = c(1,5),
+                     n_candidates = 1,
+                     candidate_sd = NULL,
                      ## other
                      sim_engine = 1,
                      use_reject = FALSE,
@@ -321,6 +328,8 @@ sim_data <- function(x = NULL,
                            dat = dat,
                            conf = conf,
                            n_tags = n_ctags,
+                           n_candidates = n_candidates,
+                           candidate_sd = candidate_sd,
                            trange = trange,
                            trange_rel = trange_rel,
                            trange_rec = trange_rec,
@@ -661,6 +670,57 @@ sim_cov <- function(grid = NULL,
 }
 
 
+## Turn a simulated recapture into an ambiguous one.
+##
+## Keeps the true recapture and adds n - 1 decoys around it, then draws
+## probabilities that sum to 1. The weights are random, so the true position is
+## deliberately NOT always the most likely candidate -- otherwise a fit that
+## simply took the highest-probability candidate would be indistinguishable
+## from one that used the mixture. Decoy times are scattered around the true
+## recapture, which is what a vessel's other sets look like.
+.add_sim_candidates <- function(rec, n, sd = NULL, grid = NULL) {
+
+  n <- max(1L, as.integer(n))
+  if (n < 2L) return(rec)
+
+  rel <- rec[1, , drop = FALSE]
+  tru <- rec[2, , drop = FALSE]
+
+  if (is.null(sd) || !is.finite(sd)) {
+    ## default spread: a fraction of the displacement actually travelled
+    sd <- max(1e-8, 0.5 * sqrt((tru$x - rel$x)^2 + (tru$y - rel$y)^2) / 3)
+  }
+
+  cand <- tru[rep(1L, n), , drop = FALSE]
+  cand$x[-1] <- tru$x + stats::rnorm(n - 1L, 0, sd)
+  cand$y[-1] <- tru$y + stats::rnorm(n - 1L, 0, sd)
+
+  ## decoy times: scattered around the true recapture, but always strictly
+  ## after the release so the event stays well ordered (see check_tags())
+  span <- tru$t - rel$t
+  cand$t[-1] <- pmin(pmax(tru$t + stats::runif(n - 1L, -0.25, 0.25) * span,
+                          rel$t + 0.05 * span), tru$t + 0.25 * span)
+
+  if (!is.null(grid)) {
+    inside <- cand$x >= grid$xrange[1] & cand$x <= grid$xrange[2] &
+      cand$y >= grid$yrange[1] & cand$y <= grid$yrange[2]
+    inside[1] <- TRUE
+    cand <- cand[inside, , drop = FALSE]
+  }
+
+  w <- stats::runif(nrow(cand), 0.2, 1)
+  cand$prob <- w / sum(w)
+
+  rel$prob <- 1
+  rel$event <- 1L
+  cand$event <- 2L
+
+  out <- rbind(rel, cand)
+  rownames(out) <- NULL
+  out
+}
+
+
 ##' Simulate tagging data
 ##'
 ##' @description
@@ -668,6 +728,12 @@ sim_cov <- function(grid = NULL,
 ##' supported tag types: data-storage tags, mark-resight tags, or conventional
 ##' mark-recapture tags.
 ##'
+##' @param n_candidates Integer; number of candidate positions to give the final
+##'   recapture of each mark-recapture tag. The default `1` simulates an exactly
+##'   known recapture. Values above 1 keep the true position and add decoys,
+##'   producing `event` and `prob` columns (see [prep_tags()]).
+##' @param candidate_sd Numeric; spread of the simulated decoy positions around
+##'   the true recapture. Defaults to a fraction of the displacement travelled.
 ##' @param tag_type Character string specifying the tag type to simulate.
 ##'   Supported values are \code{"d"} or \code{"dtags"} for data-storage tags,
 ##'   \code{"s"} or \code{"stags"} for mark-resight tags, and \code{"c"} or
@@ -790,6 +856,8 @@ sim_tags <- function(tag_type,
                      grid = NULL,
                      n_tags = 1,
                      n_resightings = c(1,5),
+                     n_candidates = 1,
+                     candidate_sd = NULL,
                      trange = NULL,
                      dt_tags = NULL,
                      trange_rel = NULL,
@@ -1046,7 +1114,11 @@ sim_tags <- function(tag_type,
         res_list[[count]] <- tmp[c(1,ind),]
       } else if (tag_type == "c") {
         if (nrow(tmp) == 1) next()
-        res_list[[count]] <- tmp[c(1,nrow(tmp)),]
+        rec <- tmp[c(1,nrow(tmp)),]
+        if (n_candidates > 1) {
+          rec <- .add_sim_candidates(rec, n_candidates, candidate_sd, dat$grid)
+        }
+        res_list[[count]] <- rec
       }
       count <- count + 1
     }

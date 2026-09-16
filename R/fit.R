@@ -964,7 +964,10 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
     xrel <- if (!is.null(xrel0)) xrel0 else tag[1, 2]
     yrel <- if (!is.null(yrel0)) yrel0 else tag[1, 3]
     trel <- tag[1, 1]
-    trec <- tag[nrow(tag), 1]
+    ## max(), not the last row: when the final observation is ambiguous its
+    ## candidate positions may be listed in any order and at different times,
+    ## so the distribution must be propagated to the latest of them.
+    trec <- max(tag[, 1], na.rm = TRUE)
 
     if (engine == 2L) {
 

@@ -60,6 +60,16 @@ the release time, and
 \item optional removal of tags with fewer than two observations.
 }
 
+It also canonicalises the optional \code{event} and \code{prob} columns that express an
+ambiguous final position (see \code{\link[=prep_tags]{prep_tags()}}), creating them when absent
+(one event per row, probability 1). Candidate positions of one event are
+allowed to share a time -- they are alternatives, never successive steps --
+so the time checks above compare \emph{events} rather than rows. An
+ambiguous release, an ambiguous observation that is not the last one, or
+probabilities that do not sum to 1 within an event are errors. When the
+checks remove some candidates of an event, the probabilities of the
+survivors are rescaled to sum to 1 again.
+
 The time checks matter because the likelihood builds its time axis from the
 sorted observation times while reading the positions in the order they are
 stored, so unsorted times would pair times with the wrong positions. Tags

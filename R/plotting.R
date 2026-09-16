@@ -1894,6 +1894,19 @@ plot_tag_dist <- function(x,
          "  Run add_tag_dist() first, e.g.:\n",
          "    fit <- add_tag_dist(fit, i = 1)")
 
+  ## An empty (rather than absent) store means add_tag_dist() ran but skipped
+  ## every tag it was given -- it warns and moves on, for instance when a tag is
+  ## recaptured inside the first time step. Without this guard the emptiness
+  ## only surfaces further down as max(integer(0)) = -Inf, and the user sees an
+  ## opaque "invalid value specified for graphical parameter \"mfrow\"".
+  if (length(x$tag_dist) == 0L)
+    stop("The tag distributions in this object are empty: add_tag_dist() ran ",
+         "but skipped every tag it was given.\n",
+         "  It skips a tag when the prediction cannot be built, e.g. when the ",
+         "tag is recaptured within the first time step (it warns when it does).\n",
+         "  Try a finer time step, e.g.:\n",
+         "    fit <- add_tag_dist(fit, i = 1, dt = 0.05)")
+
   td_store <- x$tag_dist
 
   ## handle old single-entry format (list with $engine at top level)
@@ -1915,6 +1928,10 @@ plot_tag_dist <- function(x,
            .format_ids(available), ".")
   }
   if (!is.null(n_tags)) sel_keys <- head(sel_keys, n_tags)
+
+  if (length(sel_keys) == 0L)
+    stop("No tags left to plot after applying 'select' / 'n_tags'. ",
+         "Available: ", .format_ids(available), ".")
 
   n_row <- length(sel_keys)
   ## columns are capped at the most observations any selected tag has, so
@@ -1974,6 +1991,22 @@ plot_tag_dist <- function(x,
 
     points(tag$x[ind.tag], tag$y[ind.tag],
            type = "b", col = adjustcolor("grey20", 0.2))
+
+    ## When the final observation is ambiguous, every candidate position is a
+    ## possible recovery. Draw them all, sized by probability, so the panel does
+    ## not imply the tag was recovered at whichever candidate happens to be
+    ## stored in this row.
+    ev_tag <- .tag_events(tag)
+    sib <- which(ev_tag == ev_tag[j])
+    if (length(sib) > 1L) {
+      pr <- .na_zero(tag[["prob"]][sib])
+      if (max(pr) <= 0) pr <- rep(1, length(sib))
+      pr <- pr / max(pr)
+      points(tag$x[sib], tag$y[sib],
+             col = adjustcolor("dodgerblue3", 0.5), pch = 1,
+             cex = 0.6 + 1.0 * pr)
+    }
+
     points(tag$x[j], tag$y[j],
            col = "dodgerblue3", pch = 16, cex = 1.2)
 

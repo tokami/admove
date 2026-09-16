@@ -1,3 +1,80 @@
+# admove 0.1.5
+
+## New features
+
+* Tags may now carry an **ambiguous final position**: a set of candidate
+  locations, exactly one of which is the true one, with known probabilities.
+  The usual case is a mark-recapture tag whose recapturing vessel is known but
+  whose individual set is not, so that any of that vessel's fishing sets could
+  be the recapture location, weighted by effort. Two optional columns express
+  this — `event` (rows sharing an event are mutually exclusive alternatives)
+  and `prob` (their probabilities, which must sum to 1 within an event).
+  Candidates may differ in time as well as position.
+
+  The likelihood contribution becomes the finite mixture
+  `log sum_k prob_k * f(x_k, t_k | release)`, which is **exact in both
+  engines**: because only the final observation may be ambiguous, no Kalman or
+  CTMC update has to be propagated through the mixture, so there is no
+  Gaussian-mixture posterior to approximate. The sum is accumulated with
+  `RTMB::logspace_add()` so that a distant candidate cannot underflow the
+  objective or its gradient.
+
+  Omitting the columns means "no ambiguity" and reproduces the previous
+  behaviour exactly.
+
+* `prep_tags()` / `prep_ctags()` gain a `candidates` argument and accept `names`
+  as a list, for reading the repeated-column layout that recapture-uncertainty
+  tables come in (`date1`, `lat1`, `lon1`, `per1`, `date2`, ...):
+
+  ```r
+  prep_ctags(unc,
+             names = c(id = "fish_id", t0 = "release_date",
+                       x0 = "release_lon", y0 = "release_lat",
+                       t1 = "date", x1 = "lon", y1 = "lat", p1 = "per"),
+             candidates = 1:9, date_origin = "1899-12-30")
+  ```
+
+* New `add_candidates()` attaches candidate positions that arrive as a separate
+  long table (one row per fishing set, keyed by tag) to tags that already have a
+  single recapture.
+
+* `sim_tags()` and `sim_data()` gain `n_candidates` and `candidate_sd` for
+  simulating ambiguous recaptures.
+
+* `summarise_tags()` reports how many tags have an ambiguous final position and
+  the average number of candidates.
+
+* `plot_tags()` draws the alternative recapture positions as a fan from the
+  release, shaded and weighted by probability.
+
+## Bug fixes
+
+* `plot_tags()` indexed the start positions of the release→recovery segments
+  without the mark-recapture subset, which drew the wrong segments whenever a
+  panel mixed tag types (masked by the `by_tag_type = TRUE` default).
+
+* `build_time()` could leave a zero-length time step in the integration grid
+  when two observations shared a time.
+
+* `plot_tag_dist()` failed with an opaque `invalid value specified for graphical
+  parameter "mfrow"` when `fit$tag_dist` was an empty list rather than `NULL` —
+  which is what `add_tag_dist()` leaves behind when it skips every tag it was
+  given (for example when a tag is recaptured within the first time step). It
+  now says so and suggests a finer `dt`. Selecting no tags via `select` /
+  `n_tags` is reported too.
+
+## Behaviour changes
+
+* `conf$obs_var_type = 1` ("all but the last observation") and the duplicated-id
+  warning for mark-recapture tags now count observation **events** rather than
+  rows, so candidate positions of one ambiguous observation are treated as the
+  single observation they represent.
+
+* Starting values derived from tag displacements (`logKappa`, diffusion) skip
+  the alternatives within an event, which would otherwise contribute
+  zero-length time steps and displacements between candidates.
+
+
 # admove 0.1.3
 
 ## New features

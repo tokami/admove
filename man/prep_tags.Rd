@@ -11,6 +11,7 @@ prep_tags(
   x,
   tag_type = NULL,
   names = NULL,
+  candidates = NULL,
   date_decimal = FALSE,
   date_format = NULL,
   date_origin = NULL,
@@ -54,6 +55,7 @@ prep_stags(
 prep_ctags(
   x,
   names = NULL,
+  candidates = NULL,
   date_decimal = FALSE,
   date_format = NULL,
   date_origin = NULL,
@@ -74,10 +76,21 @@ prep_ctags(
 \code{"s"} for mark-resight tags, and
 \code{"c"} for mark-recapture tags.}
 
-\item{names}{Named character vector giving the column names in \code{x}.
-For long format, provide at least \code{c(t = "...", x = "...", y = "...", id = "...")}. For wide format, provide
-\code{c(t0 = "...", t1 = "...", x0 = "...", y0 = "...", x1 = "...", y1 = "...")}.
-The order does not matter, but the vector must be named.}
+\item{names}{Named character vector (or list) giving the column names in
+\code{x}. For long format, provide at least \code{c(t = "...", x = "...", y = "...", id = "...")}, optionally with \code{event} and \code{prob} (see
+\emph{Ambiguous positions} below). For wide format, provide
+\code{c(t0 = "...", t1 = "...", x0 = "...", y0 = "...", x1 = "...", y1 = "...")},
+optionally with \code{p1}. The order does not matter, but the vector must be
+named. Given as a list, the wide entries \code{t1}, \code{x1}, \code{y1} and \code{p1} may
+each hold several column names -- one per candidate recapture location.}
+
+\item{candidates}{Optional integer or character vector of candidate indices.
+When supplied, the wide entries \code{t1}, \code{x1}, \code{y1} and \code{p1} of \code{names} are
+read as column \emph{stems} and these indices are appended, so
+\code{names = c(t1 = "date", x1 = "lon", y1 = "lat", p1 = "per")} together with
+\code{candidates = 1:9} maps \code{date1}, \code{lon1}, \code{lat1}, \code{per1}, \code{date2}, ... That
+is the layout recapture-uncertainty tables usually come in. Default:
+\code{NULL}, which leaves the entries as literal column names.}
 
 \item{date_decimal}{Logical; if \code{TRUE}, interpret the time variable as a
 decimal year and convert it to model time. Default: \code{FALSE}.}
@@ -137,6 +150,41 @@ spatial and temporal reference information.
 If no tag identifier is supplied for list input, the list order is used to
 create an \code{id} column automatically.
 }
+\section{Ambiguous positions}{
+
+
+The final position of a tag is sometimes known only up to a set of
+candidates. The usual case is a mark-recapture tag whose recapturing vessel
+is known but whose individual set is not: any of that vessel's fishing sets
+could be the recapture location, each with a probability derived from its
+effort. Two optional columns express this:
+
+\itemize{
+\item \code{event} -- rows of one tag that share an \code{event} are mutually
+exclusive \strong{alternatives} for a single observation, not successive
+observations.
+\item \code{prob} -- the probability of each alternative. These must already be
+probabilities and sum to 1 within an event; convert an effort measure
+first, e.g. \code{prob = hours / sum(hours)}.
+}
+
+Candidates may sit at different times as well as different positions. Only
+the \strong{final} observation of a tag may be ambiguous, and the release
+never can: that restriction is what keeps the likelihood an exact mixture
+\eqn{\log \sum_k p_k \, f(x_k, t_k \mid \mathrm{release})} in both the
+Kalman-filter and the CTMC engine, with no Gaussian-mixture posterior to
+approximate. Both rules are enforced by \code{\link[=check_tags]{check_tags()}}.
+
+No state update is performed at an ambiguous observation, so
+\code{conf$do_update} has no effect there. Nothing is propagated past the final
+observation, which is why skipping the update costs nothing and every
+candidate is evaluated against the same release-conditioned prediction.
+
+Omitting the columns means "no ambiguity" and reproduces the behaviour of
+earlier versions exactly. See \code{\link[=add_candidates]{add_candidates()}} for attaching candidates
+that arrive as a separate table.
+}
+
 \examples{
 ## prepare data-storage tags
 dtags <- prep_tags(
@@ -145,6 +193,15 @@ dtags <- prep_tags(
   names = c(t = "time", x = "mptlon", y = "mptlat"),
   date_origin = "1899-12-30"
 )
+
+## mark-recapture tags whose recapture position is ambiguous, given as
+## repeated columns date1, lon1, lat1, per1, date2, ... in a wide table
+## ctags <- prep_ctags(
+##   unc,
+##   names = c(id = "fish_id", t0 = "release_date",
+##             x0 = "release_lon", y0 = "release_lat",
+##             t1 = "date", x1 = "lon", y1 = "lat", p1 = "per"),
+##   candidates = 1:9, date_origin = "1899-12-30")
 
 ## prepare mark-recapture tags
 ctags <- prep_tags(

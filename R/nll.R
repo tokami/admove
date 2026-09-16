@@ -105,12 +105,22 @@ nll <- function(par, dat) {
     for (i in seq_len(ntags)) {
 
       tag <- dat$tags[[i]]
-      nobs <- nrow(tag)
       last_xy <- as.matrix(tag[1,2:3,drop = FALSE])
 
       ind_tag_type <- as.integer(tag$tag_type)
 
-      dt_min <- min(dat$min_dt, median(diff(sort(tag$t)), na.rm = TRUE), na.rm = TRUE)
+      ## Ambiguous final observation: several candidate positions, exactly one
+      ## of which is the true one, with known probabilities. Their log-densities
+      ## are collected here and combined into a single mixture term after the
+      ## time loop.
+      ev <- .tag_events(tag)
+      last_ev <- max(ev)
+      amb <- sum(ev == last_ev) > 1L
+      amb_lw <- NULL
+
+      ## unique(): candidate positions may share a time, and a repeated time
+      ## would make the median step 0 and silently skip the whole tag below
+      dt_min <- min(dat$min_dt, median(diff(sort(unique(tag$t))), na.rm = TRUE), na.rm = TRUE)
       if (time_mode == "fill_gaps" && (!is.finite(dt_min) || dt_min <= 0)) next()
 
       out <- build_time(tag$t,
@@ -173,11 +183,13 @@ nll <- function(par, dat) {
 
             ## obs uncertainty
             ## obs_var_type 1 means "all but the last observation", so the
-            ## comparison is against the last row of this tag -- not against
-            ## nts, which counts the integration time points and is larger than
-            ## nrow(tag) whenever gaps are filled (the default). Comparing to
-            ## nts made type 1 behave like type 2.
-            if ((dat$obs_var_type[ind_tt] == 1 && ind_obs_j != nobs) ||
+            ## comparison is against the last observation EVENT of this tag --
+            ## not against nts, which counts the integration time points and is
+            ## larger than nrow(tag) whenever gaps are filled (the default);
+            ## comparing to nts made type 1 behave like type 2. Comparing
+            ## events rather than rows keeps every candidate position of an
+            ## ambiguous final observation on the same footing.
+            if ((dat$obs_var_type[ind_tt] == 1 && ev[ind_obs_j] != last_ev) ||
                   dat$obs_var_type[ind_tt] == 2 ||
                   dat$obs_var_type[ind_tt] == 3) {
               if (dat$obs_var_type[ind_tt] == 3) {
@@ -194,17 +206,38 @@ nll <- function(par, dat) {
             this_xy <- c(tag$x[ind_obs_j], tag$y[ind_obs_j])
             w <- this_xy - pred_xy
 
-            ## likelihood
-            loglik_tags[i] <- loglik_tags[i] + RTMB::dnorm(w[1], 0, sqrt(F[1]), TRUE)
-            loglik_tags[i] <- loglik_tags[i] + RTMB::dnorm(w[2], 0, sqrt(F[2]), TRUE)
+            ld <- RTMB::dnorm(w[1], 0, sqrt(F[1]), TRUE) +
+              RTMB::dnorm(w[2], 0, sqrt(F[2]), TRUE)
 
-            ## update
-            if (isTRUE(dat$do_update[ind_tt])) {
-              last_xy <- pred_xy + PP / F * w
-              P <- PP - PP / F * PP
-            } else {
+            if (amb && ev[ind_obs_j] == last_ev) {
+
+              ## One of the candidates is the true position, so their densities
+              ## are summed (weighted), not multiplied. The state is deliberately
+              ## NOT updated: the ambiguous event is the last one, so nothing is
+              ## propagated past it and every candidate is evaluated against the
+              ## same release-conditioned prediction. That keeps the mixture
+              ## exact -- there is no Gaussian-mixture posterior to collapse.
+              ##
+              ## RTMB's c() coerces every argument with advector(), which
+              ## rejects NULL, so the first term has to seed the vector.
+              term <- log(tag$prob[ind_obs_j]) + ld
+              amb_lw <- if (is.null(amb_lw)) term else c(amb_lw, term)
               last_xy <- pred_xy
               P <- PP
+
+            } else {
+
+              ## likelihood
+              loglik_tags[i] <- loglik_tags[i] + ld
+
+              ## update
+              if (isTRUE(dat$do_update[ind_tt])) {
+                last_xy <- pred_xy + PP / F * w
+                P <- PP - PP / F * PP
+              } else {
+                last_xy <- pred_xy
+                P <- PP
+              }
             }
 
           }
@@ -212,6 +245,11 @@ nll <- function(par, dat) {
           last_xy <- pred_xy
           P <- PP
         }
+      }
+
+      ## log sum_k prob_k * density_k, accumulated stably (see .logsumexp_ad)
+      if (amb && !is.null(amb_lw)) {
+        loglik_tags[i] <- loglik_tags[i] + .logsumexp_ad(amb_lw)
       }
     }
 
@@ -230,9 +268,15 @@ nll <- function(par, dat) {
     for (i in seq_len(ntags)) {
 
       tag <- dat$tags[[i]]
-      nobs <- nrow(tag)
 
-      dt_min <- min(dat$min_dt, median(diff(sort(tag$t))))
+      ## ambiguous final observation -- see the KF branch above
+      ev <- .tag_events(tag)
+      last_ev <- max(ev)
+      amb <- sum(ev == last_ev) > 1L
+      amb_lw <- NULL
+
+      ## unique(): candidate positions may share a time
+      dt_min <- min(dat$min_dt, median(diff(sort(unique(tag$t)))))
       if (time_mode == "fill_gaps" && (!is.finite(dt_min) || dt_min <= 0)) next()
 
       out <- build_time(tag$t,
@@ -337,9 +381,9 @@ nll <- function(par, dat) {
 
             ## obs uncertainty
             ## see the note in the KF branch: "all but the last observation" is
-            ## a comparison against nrow(tag), not against the number of
-            ## integration time points
-            if ((dat$obs_var_type[ind_tt] == 1 && ind_obs_j != nobs) ||
+            ## a comparison against the last observation event, not against the
+            ## number of integration time points
+            if ((dat$obs_var_type[ind_tt] == 1 && ev[ind_obs_j] != last_ev) ||
                   dat$obs_var_type[ind_tt] == 2 ||
                   dat$obs_var_type[ind_tt] == 3) {
 
@@ -369,20 +413,37 @@ nll <- function(par, dat) {
               }
             }
 
-            ## likelihood
             update_dist <- pred_dist * this_dist
-            loglik_tags[i] <- loglik_tags[i] + log(sum(update_dist))
 
-            ## update
-            if (isTRUE(dat$do_update[ind_tt])) {
-              last_dist <- update_dist / sum(update_dist)
-            } else {
+            if (amb && ev[ind_obs_j] == last_ev) {
+
+              ## mixture over the candidate positions; no update, exactly as in
+              ## the KF branch (the ambiguous event is the last one)
+              term <- log(tag$prob[ind_obs_j]) + log(sum(update_dist))
+              amb_lw <- if (is.null(amb_lw)) term else c(amb_lw, term)
               last_dist <- pred_dist
+
+            } else {
+
+              ## likelihood
+              loglik_tags[i] <- loglik_tags[i] + log(sum(update_dist))
+
+              ## update
+              if (isTRUE(dat$do_update[ind_tt])) {
+                last_dist <- update_dist / sum(update_dist)
+              } else {
+                last_dist <- pred_dist
+              }
             }
           }
         } else {
           last_dist <- pred_dist
         }
+      }
+
+      ## log sum_k prob_k * density_k, accumulated stably (see .logsumexp_ad)
+      if (amb && !is.null(amb_lw)) {
+        loglik_tags[i] <- loglik_tags[i] + .logsumexp_ad(amb_lw)
       }
     }
 

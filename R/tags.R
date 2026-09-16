@@ -19,11 +19,21 @@
 ##'   `"d"` for data-storage (archival) tags,
 ##'   `"s"` for mark-resight tags, and
 ##'   `"c"` for mark-recapture tags.
-##' @param names Named character vector giving the column names in `x`.
-##'   For long format, provide at least `c(t = "...", x = "...", y = "...",
-##'   id = "...")`. For wide format, provide
-##'   `c(t0 = "...", t1 = "...", x0 = "...", y0 = "...", x1 = "...", y1 = "...")`.
-##'   The order does not matter, but the vector must be named.
+##' @param names Named character vector (or list) giving the column names in
+##'   `x`. For long format, provide at least `c(t = "...", x = "...", y = "...",
+##'   id = "...")`, optionally with `event` and `prob` (see
+##'   \emph{Ambiguous positions} below). For wide format, provide
+##'   `c(t0 = "...", t1 = "...", x0 = "...", y0 = "...", x1 = "...", y1 = "...")`,
+##'   optionally with `p1`. The order does not matter, but the vector must be
+##'   named. Given as a list, the wide entries `t1`, `x1`, `y1` and `p1` may
+##'   each hold several column names -- one per candidate recapture location.
+##' @param candidates Optional integer or character vector of candidate indices.
+##'   When supplied, the wide entries `t1`, `x1`, `y1` and `p1` of `names` are
+##'   read as column \emph{stems} and these indices are appended, so
+##'   `names = c(t1 = "date", x1 = "lon", y1 = "lat", p1 = "per")` together with
+##'   `candidates = 1:9` maps `date1`, `lon1`, `lat1`, `per1`, `date2`, ... That
+##'   is the layout recapture-uncertainty tables usually come in. Default:
+##'   `NULL`, which leaves the entries as literal column names.
 ##' @param date_decimal Logical; if `TRUE`, interpret the time variable as a
 ##'   decimal year and convert it to model time. Default: `FALSE`.
 ##' @param date_format Optional character string passed to [as.Date()] to parse
@@ -63,6 +73,39 @@
 ##' If no tag identifier is supplied for list input, the list order is used to
 ##' create an `id` column automatically.
 ##'
+##' @section Ambiguous positions:
+##'
+##' The final position of a tag is sometimes known only up to a set of
+##' candidates. The usual case is a mark-recapture tag whose recapturing vessel
+##' is known but whose individual set is not: any of that vessel's fishing sets
+##' could be the recapture location, each with a probability derived from its
+##' effort. Two optional columns express this:
+##'
+##' \itemize{
+##'   \item `event` -- rows of one tag that share an `event` are mutually
+##'     exclusive \strong{alternatives} for a single observation, not successive
+##'     observations.
+##'   \item `prob` -- the probability of each alternative. These must already be
+##'     probabilities and sum to 1 within an event; convert an effort measure
+##'     first, e.g. `prob = hours / sum(hours)`.
+##' }
+##'
+##' Candidates may sit at different times as well as different positions. Only
+##' the \strong{final} observation of a tag may be ambiguous, and the release
+##' never can: that restriction is what keeps the likelihood an exact mixture
+##' \eqn{\log \sum_k p_k \, f(x_k, t_k \mid \mathrm{release})} in both the
+##' Kalman-filter and the CTMC engine, with no Gaussian-mixture posterior to
+##' approximate. Both rules are enforced by [check_tags()].
+##'
+##' No state update is performed at an ambiguous observation, so
+##' `conf$do_update` has no effect there. Nothing is propagated past the final
+##' observation, which is why skipping the update costs nothing and every
+##' candidate is evaluated against the same release-conditioned prediction.
+##'
+##' Omitting the columns means "no ambiguity" and reproduces the behaviour of
+##' earlier versions exactly. See [add_candidates()] for attaching candidates
+##' that arrive as a separate table.
+##'
 ##' @examples
 ##' ## prepare data-storage tags
 ##' dtags <- prep_tags(
@@ -71,6 +114,15 @@
 ##'   names = c(t = "time", x = "mptlon", y = "mptlat"),
 ##'   date_origin = "1899-12-30"
 ##' )
+##'
+##' ## mark-recapture tags whose recapture position is ambiguous, given as
+##' ## repeated columns date1, lon1, lat1, per1, date2, ... in a wide table
+##' ## ctags <- prep_ctags(
+##' ##   unc,
+##' ##   names = c(id = "fish_id", t0 = "release_date",
+##' ##             x0 = "release_lon", y0 = "release_lat",
+##' ##             t1 = "date", x1 = "lon", y1 = "lat", p1 = "per"),
+##' ##   candidates = 1:9, date_origin = "1899-12-30")
 ##'
 ##' ## prepare mark-recapture tags
 ##' ctags <- prep_tags(
@@ -89,6 +141,7 @@
 prep_tags <- function(x,
                       tag_type = NULL,
                       names = NULL,
+                      candidates = NULL,
                       date_decimal = FALSE,
                       date_format = NULL,
                       date_origin = NULL,
@@ -104,6 +157,26 @@ prep_tags <- function(x,
   req_wide <- c("t0","t1","x0","y0","x1","y1")
   req_long <- c("t","x","y","id")
   colis <- colnames(x)
+
+  ## 'names' is a named list internally so that the wide-format entries t1, x1,
+  ## y1 and p1 can each carry several column names -- one per candidate
+  ## recapture location. A named character vector (the classic input) is just
+  ## the case where every entry has length one.
+  if (!is.null(names) && !is.list(names)) names <- as.list(names)
+
+  ## 'candidates' is sugar for the common stem+index layout of uncertainty
+  ## tables (date1, lat1, lon1, per1, date2, ...): the t1/x1/y1/p1 entries are
+  ## read as stems and the indices are appended. With candidates = NULL they
+  ## stay literal column names, which is the previous behaviour.
+  if (!is.null(candidates)) {
+    if (is.null(names)) stop("'candidates' given but 'names' is missing. Provide the column stems, e.g. names = c(t1 = 'date', x1 = 'lon', y1 = 'lat', p1 = 'per') together with candidates = 1:9. See ?prep_tags.")
+    for (nm in c("t1","x1","y1","p1")) {
+      if (!is.null(names[[nm]])) {
+        if (length(names[[nm]]) != 1) stop("With 'candidates' the '", nm, "' entry of 'names' must be a single column stem, not ", length(names[[nm]]), " names. Either drop 'candidates' and list the columns explicitly, or give one stem.")
+        names[[nm]] <- paste0(names[[nm]], candidates)
+      }
+    }
+  }
 
   if (inherits(x, "admove_tags")) {
     cols <- colnames(x)
@@ -150,18 +223,44 @@ prep_tags <- function(x,
   }
   colnames(x) <- col_names
 
-  x_in <- x
-  x <- x[,names[req]]
-  col_names <- req
+  ## Optional canonical entries. For the wide format 'p1' carries the
+  ## probability of each candidate recapture location; for the long format the
+  ## same information is given directly as 'event' (which rows are alternatives
+  ## for one another) and 'prob'.
+  opt <- if (flag_wide) "p1" else c("event", "prob")
+  opt <- opt[opt %in% base::names(names)]
 
-  idx <- which(!(colnames(x_in) %in% names[req]))
+  ## Rename the requested columns to their canonical names. An entry of 'names'
+  ## may hold several column names (t1/x1/y1/p1 in the wide format, one per
+  ## candidate recapture location); those become t1.1, t1.2, ... so that
+  ## ctags_wide_2_long() can pick the candidates up by position.
+  x_in <- x
+  sel <- character(0)
+  col_names <- character(0)
+  for (nm in c(req, opt)) {
+    cols_nm <- as.character(unlist(names[[nm]]))
+    if (length(cols_nm) == 0) next()
+    sel <- c(sel, cols_nm)
+    col_names <- c(col_names,
+                   if (length(cols_nm) == 1) nm else paste0(nm, ".", seq_along(cols_nm)))
+  }
+
+  dups <- unique(sel[duplicated(sel)])
+  if (length(dups) > 0) stop("The same input column is mapped more than once in 'names': ", paste(dups, collapse = ", "), ".")
+
+  miss <- setdiff(sel, colnames(x_in))
+  if (length(miss) > 0) stop("Column(s) named in 'names' but not found in the input data: ", paste(miss, collapse = ", "), ".")
+
+  x <- x_in[, sel, drop = FALSE]
+
+  idx <- which(!(colnames(x_in) %in% sel))
   if (length(idx) > 0) {
-    x <- cbind(x, x_in[,idx])
+    x <- cbind(x, x_in[, idx, drop = FALSE])
     col_names <- c(col_names, colnames(x_in)[idx])
   }
   colnames(x) <- col_names
 
-  if (flag_id) colnames(x)[colnames(x) == names["id"]] <- "id"
+  if (flag_id) colnames(x)[colnames(x) == as.character(names[["id"]])] <- "id"
 
   if (flag_wide) {
     x <- ctags_wide_2_long(x)
@@ -267,6 +366,16 @@ prep_tags <- function(x,
 ##'   \item optional removal of tags with fewer than two observations.
 ##' }
 ##'
+##' It also canonicalises the optional `event` and `prob` columns that express an
+##' ambiguous final position (see [prep_tags()]), creating them when absent
+##' (one event per row, probability 1). Candidate positions of one event are
+##' allowed to share a time -- they are alternatives, never successive steps --
+##' so the time checks above compare \emph{events} rather than rows. An
+##' ambiguous release, an ambiguous observation that is not the last one, or
+##' probabilities that do not sum to 1 within an event are errors. When the
+##' checks remove some candidates of an event, the probabilities of the
+##' survivors are rescaled to sum to 1 again.
+##'
 ##' The time checks matter because the likelihood builds its time axis from the
 ##' sorted observation times while reading the positions in the order they are
 ##' stored, so unsorted times would pair times with the wrong positions. Tags
@@ -362,8 +471,12 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
   ## mark-recapture tags. Make such ids unique per tag type and say so.
   tags <- .disambiguate_ids(tags, verbose)
 
+  ## observation events: canonicalise / validate the optional event + prob
+  ## columns that express an ambiguous (multi-candidate) final position
+  tags <- .check_events(tags, verbose)
+
   ## duplicate ids within the mark-recapture tags (the one within-type case that
-  ## is detectable: a "c" tag must have exactly two observations)
+  ## is detectable: a "c" tag must have exactly two observation events)
   .check_ctag_rows(tags, verbose)
 
 
@@ -435,6 +548,12 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
   ## the rows (positions) keep their original order, so unsorted times silently
   ## mismatch times and positions. Non-positive time steps additionally make
   ## dt_min <= 0, which errors in build_time().
+  ## Comparisons are between EVENTS, not rows: the candidate positions of one
+  ## ambiguous observation share an event and may tie in time or run in any
+  ## order among themselves, which is legitimate rather than unsorted input.
+  ## .check_events() keys the events by order of appearance, so with no
+  ## ambiguity every event holds exactly one row and the checks below reduce to
+  ## the per-row ones they replace.
   row_list <- split(seq_len(nrow(tags)), tags$id)
   ord <- seq_len(nrow(tags))
   bad_ids <- NULL
@@ -443,20 +562,34 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
     rows <- row_list[[nm]]
     if (length(rows) < 2) next
     ti <- tags$t[rows]
+    ei <- tags$event[rows]
+    ue <- unique(ei)
+    t_start <- as.numeric(tapply(ti, ei, min))[match(ue, sort(unique(ei)))]
+    t_end <- as.numeric(tapply(ti, ei, max))[match(ue, sort(unique(ei)))]
     if (tags$tag_type[rows][1] == "c") {
       ## for mark-recapture tags the row order is meaningful (release first,
       ## recapture second), so a recapture time at or before the release time is
       ## a data error rather than unsorted input
-      if (any(diff(ti) <= 0)) bad_ids <- c(bad_ids, nm)
-    } else if (is.unsorted(ti)) {
-      ord[rows] <- rows[order(ti)]
-      resorted_ids <- c(resorted_ids, nm)
+      if (length(ue) < 2 || any(t_start[-1] <= t_end[-length(t_end)])) {
+        bad_ids <- c(bad_ids, nm)
+      }
+    } else {
+      ## sort by event time, keeping the candidate rows of one event together.
+      ## With no ambiguity every event is a single row and this is order(ti).
+      oo <- order(t_start[match(ei, ue)], ti)
+      if (!identical(oo, seq_along(rows))) {
+        ord[rows] <- rows[oo]
+        resorted_ids <- c(resorted_ids, nm)
+      }
     }
   }
 
   if (!is.null(resorted_ids)) {
     tags <- tags[ord, , drop = FALSE]
     rownames(tags) <- NULL
+    ## rows moved, so re-key the events by their new order of appearance
+    tags$event <- stats::ave(tags$event, tags$id,
+                             FUN = function(z) match(z, unique(z)))
     if (verbose) message(length(resorted_ids), " tag", if (length(resorted_ids) == 1) "" else "s",
                          " reordered because the observations were not in chronological order (id",
                          if (length(resorted_ids) == 1) "" else "s", ": ",
@@ -464,11 +597,16 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
   }
 
   ## duplicated times (dt = 0) within a tag; positions are contiguous per id
+  ## Only duplicates ACROSS events are a zero time step. Two candidate positions
+  ## of the same ambiguous observation are allowed to share a time -- they are
+  ## alternatives, never consecutive steps.
   drop_rows <- integer(0)
   for (nm in names(row_list)) {
     rows <- row_list[[nm]]
     if (length(rows) < 2 || nm %in% bad_ids) next
-    dup <- which(diff(tags$t[rows]) == 0)
+    ti <- tags$t[rows]
+    ei <- tags$event[rows]
+    dup <- which(diff(ti) == 0 & diff(ei) != 0)
     if (length(dup) > 0) drop_rows <- c(drop_rows, rows[dup + 1])
   }
   if (length(drop_rows) > 0) {
@@ -486,6 +624,10 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
     tags <- tags[-unique(drop_rows), , drop = FALSE]
     if (nrow(tags) == 0) stop("No tags passed the checks!")
   }
+
+  ## the filters above may have removed candidate positions of an ambiguous
+  ## recapture, which breaks the probability normalisation
+  tags <- .renormalise_events(tags, verbose)
 
   ## keep only recovered tags
   tags_list <- split(tags, tags$id)
@@ -599,17 +741,238 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
 }
 
 
+## Canonicalise and validate the observation-event structure.
+##
+## Rows of one tag that share an 'event' are mutually exclusive ALTERNATIVES for
+## a single observation, not successive observations: the tag was recovered at
+## exactly one of them, and 'prob' says how likely each is. That is how an
+## ambiguous recapture is expressed -- the recapturing vessel is known and the
+## tag could have been taken at any of its fishing sets, weighted by effort.
+##
+## Absent columns mean "no ambiguity": every row becomes its own event with
+## probability 1, which reproduces the previous behaviour exactly.
+##
+## Event ids are re-keyed to 1..n per tag in order of first appearance, so the
+## input row order is preserved. That matters because row order already carries
+## meaning for mark-recapture tags (release first, recovery second) -- keying by
+## time instead would quietly repair a reversed recapture that check_tags() is
+## supposed to flag. Archival and mark-resight tags are sorted by time further
+## down in check_tags(), which renumbers the events again afterwards.
+## Downstream code relies on the result: nll() treats max(event) as the final
+## observation, and the time-ordering checks compare events rather than rows.
+.check_events <- function(tags, verbose = TRUE) {
+
+  if (is.null(tags) || nrow(tags) == 0) return(tags)
+
+  if (!any(colnames(tags) == "event")) {
+    tags$event <- stats::ave(seq_len(nrow(tags)), tags$id, FUN = seq_along)
+  }
+  if (!any(colnames(tags) == "prob")) tags$prob <- 1
+
+  if (!is.numeric(tags$prob)) {
+    pr <- suppressWarnings(as.numeric(as.character(tags$prob)))
+    if (any(is.na(pr) & !is.na(tags$prob))) {
+      stop("The 'prob' column of the tags is not numeric and could not be converted. It must hold one probability per candidate position.", call. = FALSE)
+    }
+    tags$prob <- pr
+  }
+
+  if (any(is.na(tags$event))) {
+    stop("Missing values in the 'event' column of the tags. Every observation must belong to an event; leave the column out entirely if the tags carry no ambiguous positions.", call. = FALSE)
+  }
+
+  rows_by_id <- split(seq_len(nrow(tags)), tags$id)
+
+  bad_first <- bad_many <- bad_late <- bad_prob <- bad_neg <- dup_pos <- NULL
+  prob_sums <- NULL
+  ev_new <- integer(nrow(tags))
+
+  for (nm in names(rows_by_id)) {
+
+    rows <- rows_by_id[[nm]]
+    ev <- as.character(tags$event[rows])
+
+    ## key the events by order of first appearance
+    ev_int <- match(ev, unique(ev))
+    ev_new[rows] <- ev_int
+
+    n_ev <- max(ev_int)
+    sizes <- tabulate(ev_int, nbins = n_ev)
+    amb <- which(sizes > 1)
+
+    if (length(amb) == 0) next()
+
+    ## an ambiguous RELEASE has no anchor to propagate from
+    if (1L %in% amb) bad_first <- c(bad_first, nm)
+    if (length(amb) > 1) bad_many <- c(bad_many, nm)
+    if (!all(amb %in% n_ev)) bad_late <- c(bad_late, nm)
+
+    pr <- tags$prob[rows][ev_int %in% amb]
+    if (any(is.na(pr)) || any(pr < 0)) {
+      bad_neg <- c(bad_neg, nm)
+    } else {
+      for (k in amb) {
+        sk <- sum(tags$prob[rows][ev_int == k])
+        if (abs(sk - 1) > 1e-6) {
+          bad_prob <- c(bad_prob, nm)
+          prob_sums <- c(prob_sums, sk)
+        }
+      }
+    }
+
+    ## a repeated position within one candidate set usually means the candidate
+    ## list was mis-paired upstream; worth a look but not an error
+    for (k in amb) {
+      kk <- rows[ev_int == k]
+      if (anyDuplicated(paste(tags$x[kk], tags$y[kk]))) dup_pos <- c(dup_pos, nm)
+    }
+  }
+
+  tags$event <- ev_new
+
+  if (!is.null(bad_first)) {
+    stop(length(bad_first), " tag",
+         if (length(bad_first) == 1) " gives" else "s give",
+         " several alternatives for the FIRST observation (id",
+         if (length(bad_first) == 1) "" else "s", ": ", .format_ids(bad_first),
+         "). The release is the anchor the model propagates from and must be a ",
+         "single position; only the final observation may be ambiguous.",
+         call. = FALSE)
+  }
+  if (!is.null(bad_many)) {
+    stop(length(bad_many), " tag",
+         if (length(bad_many) == 1) " has" else "s have",
+         " more than one ambiguous observation (id",
+         if (length(bad_many) == 1) "" else "s", ": ", .format_ids(bad_many),
+         "). Only the last observation of a tag may have several candidate ",
+         "positions, so that the likelihood stays an exact mixture in both ",
+         "engines.", call. = FALSE)
+  }
+  if (!is.null(bad_late)) {
+    stop(length(bad_late), " tag",
+         if (length(bad_late) == 1) " has" else "s have",
+         " an ambiguous observation that is not the last one (id",
+         if (length(bad_late) == 1) "" else "s", ": ", .format_ids(bad_late),
+         "). Only the final observation of a tag may have several candidate ",
+         "positions.", call. = FALSE)
+  }
+  if (!is.null(bad_neg)) {
+    stop(length(bad_neg), " tag",
+         if (length(bad_neg) == 1) " has" else "s have",
+         " missing or negative candidate probabilities in 'prob' (id",
+         if (length(bad_neg) == 1) "" else "s", ": ", .format_ids(bad_neg), ").",
+         call. = FALSE)
+  }
+  if (!is.null(bad_prob)) {
+    stop(length(bad_prob), " tag",
+         if (length(bad_prob) == 1) " has" else "s have",
+         " candidate probabilities that do not sum to 1 (id",
+         if (length(bad_prob) == 1) "" else "s", ": ", .format_ids(bad_prob),
+         "; observed sum",
+         if (length(unique(signif(prob_sums, 6))) == 1)
+           paste0(" ", signif(prob_sums[1], 6))
+         else
+           paste0("s from ", paste(signif(range(prob_sums), 6), collapse = " to ")),
+         "). 'prob' must be a probability per candidate position: convert an ",
+         "effort measure first, e.g. prob = hours / sum(hours) within each ",
+         "recapture event.", call. = FALSE)
+  }
+  if (!is.null(dup_pos) && verbose) {
+    warning(length(dup_pos), " tag",
+            if (length(dup_pos) == 1) " lists" else "s list",
+            " the same candidate position twice within one recapture event (id",
+            if (length(dup_pos) == 1) "" else "s", ": ", .format_ids(dup_pos),
+            "). That usually means positions and probabilities were paired up ",
+            "wrongly upstream. Please check the input data.", call. = FALSE)
+  }
+
+  tags
+}
+
+
+## Re-key events and restore the probability normalisation after rows have been
+## dropped.
+##
+## check_tags() and setup_data() both remove observations (outside the grid, on
+## an NA cell, outside the time range, on an NA covariate). Losing one candidate
+## of an ambiguous recapture leaves the remaining probabilities summing to less
+## than 1, which would silently down-weight that tag in the likelihood, so the
+## survivors are re-scaled. A tag that loses its anchor -- i.e. whose first
+## remaining event is the ambiguous one -- cannot be fitted and is dropped.
+.renormalise_events <- function(tags, verbose = TRUE) {
+
+  if (is.null(tags) || nrow(tags) == 0) return(tags)
+  if (!any(colnames(tags) == "event")) return(tags)
+
+  rows_by_id <- split(seq_len(nrow(tags)), tags$id)
+
+  ev_new <- integer(nrow(tags))
+  pr_new <- tags$prob
+  rescaled <- NULL
+  orphan <- NULL
+
+  for (nm in names(rows_by_id)) {
+    rows <- rows_by_id[[nm]]
+    ev <- tags$event[rows]
+    ev_int <- match(ev, unique(ev))
+    ev_new[rows] <- ev_int
+
+    sizes <- tabulate(ev_int, nbins = max(ev_int))
+    if (sizes[1] > 1) {
+      orphan <- c(orphan, nm)
+      next()
+    }
+    for (k in which(sizes > 1)) {
+      kk <- rows[ev_int == k]
+      sk <- sum(tags$prob[kk])
+      if (sk > 0 && abs(sk - 1) > 1e-9) {
+        pr_new[kk] <- tags$prob[kk] / sk
+        rescaled <- c(rescaled, nm)
+      }
+    }
+  }
+
+  tags$event <- ev_new
+  tags$prob <- pr_new
+
+  if (!is.null(rescaled)) {
+    rescaled <- unique(rescaled)
+    if (verbose) message(length(rescaled), " tag", if (length(rescaled) == 1) "" else "s",
+                         " had candidate recapture positions removed by the checks; the ",
+                         "probabilities of the remaining candidates were rescaled to sum to 1 (id",
+                         if (length(rescaled) == 1) "" else "s", ": ", .format_ids(rescaled), ").")
+  }
+  if (!is.null(orphan)) {
+    if (verbose) message(length(orphan), " tag", if (length(orphan) == 1) "" else "s",
+                         " removed because the release observation was dropped by the checks, ",
+                         "leaving only ambiguous candidate positions with nothing to propagate ",
+                         "from (id", if (length(orphan) == 1) "" else "s", ": ",
+                         .format_ids(orphan), ").")
+    tags <- tags[!(tags$id %in% orphan), , drop = FALSE]
+  }
+
+  tags
+}
+
+
 ## Mark-recapture tags carry exactly one release and one recovery, so a "c" tag
-## with more than two rows means two physical tags share an id. Unlike the
-## cross-type case this cannot be repaired automatically -- there is no way to
-## tell which row belongs to which tag -- so warn and leave the data alone
+## with more than two observation EVENTS means two physical tags share an id.
+## (Several rows within one event are the candidate positions of a single
+## ambiguous recovery and are counted once here -- see .check_events().) Unlike
+## the cross-type case this cannot be repaired automatically -- there is no way
+## to tell which row belongs to which tag -- so warn and leave the data alone
 ## rather than silently dropping observations.
 .check_ctag_rows <- function(tags, verbose = TRUE) {
 
   if (is.null(tags) || nrow(tags) == 0) return(invisible(NULL))
   if (!any(tags$tag_type %in% "c")) return(invisible(NULL))
 
-  n <- table(as.character(tags$id[tags$tag_type %in% "c"]))
+  ctg <- tags[tags$tag_type %in% "c", , drop = FALSE]
+  if (any(colnames(ctg) == "event")) {
+    n <- tapply(ctg$event, as.character(ctg$id), function(z) length(unique(z)))
+  } else {
+    n <- table(as.character(ctg$id))
+  }
   bad <- names(n)[n > 2]
 
   if (length(bad) > 0 && verbose) {
@@ -623,6 +986,155 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
   }
 
   invisible(NULL)
+}
+
+
+##' Attach candidate recapture locations to tags
+##'
+##' @description
+##' `add_candidates()` replaces the final observation of each tag with a set of
+##' candidate positions, turning a single assumed recapture into an ambiguous
+##' one. This is the situation where the recapturing vessel is known but the
+##' individual set is not: each of the vessel's fishing sets is a possible
+##' recapture location, with a probability derived from its effort.
+##'
+##' Use this when the candidates arrive as their own long table, one row per
+##' candidate, keyed by tag. When they arrive as repeated columns of a wide
+##' table instead (`date1`, `lat1`, `lon1`, `per1`, `date2`, ...), map them
+##' directly in [prep_tags()] via `candidates` and skip this function.
+##'
+##' @param x An object of class `admove_tags` (or one containing tags, such as
+##'   `admove_data`).
+##' @param candidates A data frame of candidate positions, one row per
+##'   candidate, with a column identifying the tag.
+##' @param by Named character scalar linking tags to candidates, given as
+##'   `c(<tags column> = "<candidates column>")`, e.g. `c(id = "REC_ID")`. A
+##'   single unnamed string is used for both sides.
+##' @param names Named character vector giving the candidate columns:
+##'   `c(t = "...", x = "...", y = "...", prob = "...")`. `prob` is optional; if
+##'   omitted the candidates of a tag are treated as equally likely.
+##' @param verbose Logical; if `TRUE`, report how many tags were matched.
+##'   Default: `TRUE`.
+##'
+##' @return
+##' An object of class `admove_tags` carrying `event` and `prob` columns. Tags
+##' with no entry in `candidates` are returned unchanged, with their single
+##' recapture at probability 1.
+##'
+##' @details
+##' Probabilities must already sum to 1 within each tag; convert an effort
+##' measure beforehand, for example `prob = hours / sum(hours)` per tag. The
+##' check itself happens in [check_tags()], together with the rule that only the
+##' final observation of a tag may be ambiguous.
+##'
+##' @seealso [prep_tags()], [check_tags()]
+##'
+##' @examples
+##' ## tags <- add_candidates(ctags, sets,
+##' ##                        by = c(id = "REC_ID"),
+##' ##                        names = c(t = "set_date", x = "set_lon",
+##' ##                                  y = "set_lat", prob = "set_prob"))
+##'
+##' @export
+add_candidates <- function(x, candidates, by = c(id = "id"),
+                           names = NULL, verbose = TRUE) {
+
+  if (inherits(x, "admove_data")) {
+    tags <- x$tags
+  } else {
+    tags <- x
+  }
+  if (is.null(tags) || nrow(tags) == 0) stop("No tags found!")
+  if (is.null(candidates) || nrow(candidates) == 0) stop("'candidates' is empty.")
+
+  if (is.null(names) || is.null(base::names(names))) {
+    stop("Please provide 'names' as a named vector giving the candidate columns, e.g. names = c(t = 'set_date', x = 'set_lon', y = 'set_lat', prob = 'set_prob').")
+  }
+  req <- c("t","x","y")
+  if (!all(req %in% base::names(names))) {
+    stop("'names' must contain at least t, x and y. See ?add_candidates.")
+  }
+
+  if (length(by) != 1) stop("'by' must link exactly one column, e.g. by = c(id = 'REC_ID').")
+  by_tags <- if (is.null(base::names(by))) as.character(by) else base::names(by)
+  by_cand <- as.character(by)
+
+  if (!any(colnames(tags) == by_tags)) stop("Column '", by_tags, "' not found in the tags.")
+  if (!any(colnames(candidates) == by_cand)) stop("Column '", by_cand, "' not found in 'candidates'.")
+
+  miss <- setdiff(as.character(names[intersect(c(req, "prob"), base::names(names))]),
+                  colnames(candidates))
+  if (length(miss) > 0) stop("Column(s) named in 'names' but not found in 'candidates': ", paste(miss, collapse = ", "), ".")
+
+  ## make sure the existing event structure is present and canonical
+  tags <- .check_events(tags, verbose = FALSE)
+
+  cand <- data.frame(.key = as.character(candidates[[by_cand]]),
+                     t = candidates[[names[["t"]]]],
+                     x = candidates[[names[["x"]]]],
+                     y = candidates[[names[["y"]]]],
+                     stringsAsFactors = FALSE)
+  cand$prob <- if (!is.null(names[["prob"]])) candidates[[names[["prob"]]]] else NA_real_
+
+  keys <- as.character(tags[[by_tags]])
+  matched <- unique(keys[keys %in% cand$.key])
+
+  if (length(matched) == 0) {
+    if (verbose) message("None of the tags appear in 'candidates'; nothing changed.")
+    return(x)
+  }
+
+  rows_by_id <- split(seq_len(nrow(tags)), keys)
+  out <- vector("list", length(rows_by_id))
+  nms <- base::names(rows_by_id)
+
+  for (j in seq_along(rows_by_id)) {
+
+    rows <- rows_by_id[[j]]
+    tg <- tags[rows, , drop = FALSE]
+
+    if (!(nms[j] %in% matched)) {
+      out[[j]] <- tg
+      next()
+    }
+
+    cj <- cand[cand$.key == nms[j], , drop = FALSE]
+
+    ## the last event is the one being replaced; keep everything before it
+    last_ev <- max(tg$event)
+    head_rows <- tg[tg$event != last_ev, , drop = FALSE]
+    template <- tg[tg$event == last_ev, , drop = FALSE][1, , drop = FALSE]
+
+    new <- template[rep(1L, nrow(cj)), , drop = FALSE]
+    new$t <- cj$t
+    new$x <- cj$x
+    new$y <- cj$y
+    new$event <- last_ev
+    new$prob <- if (all(is.na(cj$prob))) rep(1 / nrow(cj), nrow(cj)) else cj$prob
+
+    out[[j]] <- rbind(head_rows, new)
+  }
+
+  tags_out <- do.call(rbind, out)
+  rownames(tags_out) <- NULL
+
+  if (verbose) {
+    message(length(matched), " tag", if (length(matched) == 1) "" else "s",
+            " given candidate recapture positions (",
+            length(rows_by_id) - length(matched), " left with a single recapture); ",
+            "median ", stats::median(as.numeric(table(cand$.key[cand$.key %in% matched]))),
+            " candidates per tag.")
+  }
+
+  tags_out <- .add_class(tags_out, "admove_tags")
+  tags_out <- add_sref(tags_out, sref(tags))
+  tags_out <- add_tref(tags_out, tref(tags))
+
+  if (inherits(x, "admove_data")) {
+    x$tags <- tags_out
+    return(x)
+  }
+  tags_out
 }
 
 
@@ -792,31 +1304,90 @@ ctags_wide_2_long <- function(x) {
     x$id <- paste0(.get_random_id(3), "-", 1:nrow(x))
   }
 
-  other_cols <- which(!colnames(x) %in% c("t0","t1","x0","x1","y0","y1","id"))
+  cn <- colnames(x)
 
-  ## wide 2 long list
-  ntags <- nrow(x)
-  res_list <- vector("list", ntags)
-  for (i in seq_len(ntags)) {
-    tag <- data.frame(
-      t = c(x[i,"t0"],
-            x[i,"t1"]),
-      x = c(x[i,"x0"],
-            x[i,"x1"]),
-      y = c(x[i,"y0"],
-            x[i,"y1"]),
-      id = rep(x[i, "id"],2)
-    )
-    if (length(other_cols) > 0) {
-      tmp <- as.data.frame(x[rep(i,2), other_cols])
-      colnames(tmp) <- colnames(x)[other_cols]
-      tag <- cbind(tag, tmp)
-    }
-    res_list[[i]] <- tag
+  ## Candidate recapture slots. Either the plain t1/x1/y1 (and optionally p1) of
+  ## a single, known recapture, or the indexed t1.k/x1.k/y1.k/p1.k that
+  ## prep_tags() writes when several candidate recapture locations were mapped
+  ## -- the layout of uncertainty tables such as the IATTC
+  ## date1/lat1/lon1/per1, date2, ... blocks.
+  slot_cols <- function(stem) {
+    if (stem %in% cn) return(stem)
+    hit <- grep(paste0("^", stem, "\\.[0-9]+$"), cn, value = TRUE)
+    hit[order(as.integer(sub(paste0("^", stem, "\\."), "", hit)))]
+  }
+  t_cand <- slot_cols("t1")
+  x_cand <- slot_cols("x1")
+  y_cand <- slot_cols("y1")
+  p_cand <- slot_cols("p1")
+
+  nk <- length(t_cand)
+  if (length(x_cand) != nk || length(y_cand) != nk) {
+    stop("The wide format needs the same number of columns for t1, x1 and y1, but found ",
+         nk, ", ", length(x_cand), " and ", length(y_cand),
+         ". Check the 'names' argument of prep_tags().")
+  }
+  if (length(p_cand) > 0 && length(p_cand) != nk) {
+    stop("'p1' maps ", length(p_cand), " column(s) but t1/x1/y1 map ", nk,
+         ". Give one probability column per candidate recapture location.")
   }
 
-  ## long dataframe
-  res <- do.call(rbind, res_list)
+  ## Only carry the candidate machinery when it is actually used, so a classic
+  ## single-recapture input returns exactly the two-row frame it always did.
+  flag_cand <- nk > 1 || length(p_cand) > 0
+
+  used <- c("t0","x0","y0","id", t_cand, x_cand, y_cand, p_cand)
+  other_cols <- which(!cn %in% used)
+
+  ## Wide to long, assembled column-wise rather than row-wise. Building whole
+  ## columns keeps the class of t0/t1 intact (they are often Date, and
+  ## prep_tags() parses them further down), which a per-row c() or unlist()
+  ## would silently strip. It is also far faster on the ~10^4-10^5 row tag
+  ## tables these files come in.
+  ntags <- nrow(x)
+  blocks <- vector("list", nk + 1L)
+
+  mk <- function(tt, xx, yy, pp, slot) {
+    out <- data.frame(t = tt, x = xx, y = yy, id = x[["id"]])
+    if (flag_cand) {
+      out$event <- if (slot == 0L) 1L else 2L
+      out$prob <- pp
+    }
+    if (length(other_cols) > 0) {
+      tmp <- as.data.frame(x[, other_cols, drop = FALSE])
+      colnames(tmp) <- colnames(x)[other_cols]
+      out <- cbind(out, tmp)
+    }
+    out$.tag <- seq_len(ntags)
+    out$.slot <- slot
+    out
+  }
+
+  blocks[[1]] <- mk(x[["t0"]], x[["x0"]], x[["y0"]], rep(1, ntags), 0L)
+  for (k in seq_len(nk)) {
+    blocks[[k + 1L]] <- mk(x[[t_cand[k]]], x[[x_cand[k]]], x[[y_cand[k]]],
+                           if (length(p_cand) > 0) x[[p_cand[k]]] else rep(1, ntags),
+                           k)
+  }
+
+  res <- do.call(rbind, blocks)
+
+  ## An empty candidate slot means "this tag has fewer candidates than the table
+  ## is wide", which is how such tables pad to a fixed number of columns. Drop
+  ## those, but keep one (NA) recapture row for a tag that has none at all, so a
+  ## non-recovered tag is still removed downstream by check_tags() exactly as
+  ## before.
+  empty <- res$.slot > 0L & is.na(res$t) & is.na(res$x) & is.na(res$y)
+  if (any(empty)) {
+    n_left <- tapply(!empty & res$.slot > 0L, res$.tag, sum)
+    orphan <- as.integer(names(n_left)[n_left == 0])
+    keep <- !empty | (res$.slot == 1L & res$.tag %in% orphan)
+    res <- res[keep, , drop = FALSE]
+  }
+
+  res <- res[order(res$.tag, res$.slot), , drop = FALSE]
+  res$.tag <- NULL
+  res$.slot <- NULL
   rownames(res) <- NULL
   return(res)
 }
@@ -1006,6 +1577,23 @@ summarise_tags <- function(object, ...) {
   av_xdiff <- lapply(tags_split2, function(x) ifelse(length(x) == 0, NA, mean(unlist(sapply(x, function(x) diff(x[,"x"]))), na.rm = TRUE)))
   av_ydiff <- lapply(tags_split2, function(x) ifelse(length(x) == 0, NA, mean(unlist(sapply(x, function(x) diff(x[,"y"]))), na.rm = TRUE)))
 
+  ## tags whose final observation has several candidate positions
+  n_amb <- lapply(tags_split2, function(z) {
+    if (length(z) == 0) return(NA)
+    sum(sapply(z, function(w) {
+      ev <- .tag_events(w)
+      sum(ev == max(ev)) > 1L
+    }))
+  })
+  k_amb <- lapply(tags_split2, function(z) {
+    if (length(z) == 0) return(NA)
+    k <- sapply(z, function(w) {
+      ev <- .tag_events(w)
+      sum(ev == max(ev))
+    })
+    if (all(k < 2)) NA else mean(k[k > 1])
+  })
+
   spinfo <- sref(tags)
   tinfo <- tref(tags)
 
@@ -1026,6 +1614,12 @@ summarise_tags <- function(object, ...) {
                 sprintf("%.2f", av_nt[i])))
     cat(sprintf(paste0("  %-", labw, "s %s\n"), "duration:",
                 sprintf("%.2f", av_t[i])))
+    if (!is.na(n_amb[[i]]) && n_amb[[i]] > 0) {
+      cat(sprintf(paste0("  %-", labw, "s %s\n"), "ambiguous:",
+                  paste0(n_amb[[i]], " tag", if (n_amb[[i]] == 1) "" else "s",
+                         " with ", sprintf("%.1f", k_amb[[i]]),
+                         " candidate positions on average")))
+    }
     cat(sprintf(paste0("  %-", labw, "s %s\n"), "time step:",
                 sprintf("%.2f", av_tdiff[i])))
     cat(sprintf(paste0("  %-", labw, "s %s\n"), "x step:",
@@ -1223,6 +1817,16 @@ use_release_events <- function(x, grid, time_cont,
         tmp_comb <- rbind(tmp_rel, tmp)
         rownames(tmp_comb) <- NULL
         tmp_comb$id <- j
+        ## The merged tag holds the recoveries of SEVERAL physical tags that
+        ## happen to share a release, so they are successive observations of
+        ## the pooled tag -- not candidate positions for one of them. Renumber
+        ## the events accordingly; without this every recovery would inherit
+        ## event 2 from its original tag and the likelihood would read them as
+        ## mutually exclusive alternatives (see .check_events()).
+        if (!is.null(tmp_comb[["event"]])) {
+          tmp_comb$event <- seq_len(nrow(tmp_comb))
+          tmp_comb$prob <- 1
+        }
         tagi_new[[j]] <- tmp_comb
       }
 
@@ -1396,8 +2000,20 @@ plot_tags <- function(x,
     if (plot_land) {
       plot_land(sref)
     }
-    start_pos <- t(sapply(tags, function(x) x[1, c(2,3)]))
-    end_pos <- t(sapply(tags, function(x) x[nrow(x), c(2,3)]))
+    ## The final observation may be ambiguous: several candidate positions, one
+    ## of which is the true recovery. Represent the tag by its most likely
+    ## candidate and draw the alternatives as a fan below.
+    .last_rows <- function(z) {
+      ev <- .tag_events(z)
+      which(ev == max(ev))
+    }
+    .best_row <- function(z) {
+      k <- .last_rows(z)
+      if (length(k) == 1L) return(k)
+      k[which.max(.na_zero(z[["prob"]][k]))]
+    }
+    start_pos <- do.call(rbind, lapply(tags, function(x) as.numeric(x[1, c(2,3)])))
+    end_pos <- do.call(rbind, lapply(tags, function(x) as.numeric(x[.best_row(x), c(2,3)])))
     points(start_pos[,1], start_pos[,2],
            col = cols[2], pch = pch[1])
     points(end_pos[,1], end_pos[,2],
@@ -1423,9 +2039,28 @@ plot_tags <- function(x,
     }
 
     if (length(idx2)) {
-      segments(as.numeric(start_pos[,1]), as.numeric(start_pos[idx2,2]),
+      ## index start_pos by idx2 as well -- it is only harmless when every tag
+      ## in the panel happens to be a mark-recapture tag
+      segments(as.numeric(start_pos[idx2,1]), as.numeric(start_pos[idx2,2]),
                as.numeric(end_pos[idx2,1]), as.numeric(end_pos[idx2,2]),
                col = cols[1])
+    }
+
+    ## fan out the alternative recapture positions, shaded by probability
+    for (i in seq_along(tags)) {
+      k <- .last_rows(tags[[i]])
+      if (length(k) < 2L) next()
+      pr <- .na_zero(tags[[i]][["prob"]][k])
+      if (max(pr) <= 0) pr <- rep(1, length(k))
+      pr <- pr / max(pr)
+      for (m in seq_along(k)) {
+        segments(start_pos[i,1], start_pos[i,2],
+                 as.numeric(tags[[i]][k[m], 2]), as.numeric(tags[[i]][k[m], 3]),
+                 col = adjustcolor(cols[3], alpha.f = max(0.15, pr[m])),
+                 lty = 3, lwd = 0.5 + 1.5 * pr[m])
+      }
+      points(as.numeric(tags[[i]][k, 2]), as.numeric(tags[[i]][k, 3]),
+             col = cols[3], pch = pch[2], cex = cex * (0.5 + 0.8 * pr))
     }
 
   }
@@ -1600,6 +2235,7 @@ prep_stags <- function(x,
 ##' @export
 prep_ctags <- function(x,
                        names = NULL,
+                       candidates = NULL,
                        date_decimal = FALSE,
                        date_format = NULL,
                        date_origin = NULL,
@@ -1613,6 +2249,7 @@ prep_ctags <- function(x,
     x = x,
     tag_type = "c",
     names = names,
+    candidates = candidates,
     date_decimal = date_decimal,
     date_format = date_format,
     date_origin = date_origin,

@@ -41,6 +41,8 @@ sim_data(
   n_stags = 0,
   n_ctags = 100,
   n_resightings = c(1, 5),
+  n_candidates = 1,
+  candidate_sd = NULL,
   sim_engine = 1,
   use_reject = FALSE,
   n_reject = 100,
@@ -163,6 +165,13 @@ are simulated.}
 
 \item{n_resightings}{Integer vector giving the minimum and maximum number of
 resightings for mark-resight tags.}
+
+\item{n_candidates}{Integer; number of candidate positions to give the final
+recapture of each simulated mark-recapture tag (default \code{1}, an exactly
+known recapture). See \code{\link[=sim_tags]{sim_tags()}}.}
+
+\item{candidate_sd}{Numeric; spread of the simulated candidate positions
+around the true recapture. See \code{\link[=sim_tags]{sim_tags()}}.}
 
 \item{sim_engine}{Integer specifying the simulation engine: \code{1} for
 continuous-space simulation and \code{2} for CTMC-based grid simulation.}

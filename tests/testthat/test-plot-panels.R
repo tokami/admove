@@ -141,3 +141,25 @@ test_that("preference knots lie on the preference curve", {
     expect_true(any(abs(pe$beta) > 1e-6))
   }
 })
+
+
+test_that("plot_tag_dist reports an empty tag_dist instead of failing on mfrow", {
+
+  ## add_tag_dist() warns and skips a tag it cannot build a prediction for, so
+  ## fit$tag_dist can be an empty list rather than NULL. That used to reach
+  ## par(mfrow = c(0, -Inf)) via max(integer(0)) and die with an opaque
+  ## "invalid value specified for graphical parameter" message.
+  fit <- list(tag_dist = list())
+  class(fit) <- "admove"
+  expect_error(plot_tag_dist(fit), "skipped every tag")
+
+  ## an absent store keeps its own, different message
+  fit$tag_dist <- NULL
+  expect_error(plot_tag_dist(fit), "Run add_tag_dist\\(\\) first")
+
+  ## selecting nothing out of a populated store is also reported, not drawn
+  fit$tag_dist <- list("1" = list(engine = 1L, i = 1L,
+                                  tag = data.frame(t = c(0, 1), x = c(0, 1),
+                                                   y = c(0, 1))))
+  expect_error(plot_tag_dist(fit, n_tags = 0), "No tags left to plot")
+})

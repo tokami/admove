@@ -370,6 +370,9 @@ setup_data <- function(grid = NULL,
       ## matching the recovered-tags filter in check_tags().
       keep_id <- names(which(table(res$tags$id) > 1))
       res$tags <- res$tags[res$tags$id %in% keep_id, , drop = FALSE]
+      ## dropping rows here can also remove candidate positions of an ambiguous
+      ## recapture, so restore the probability normalisation (see check_tags())
+      res$tags <- .renormalise_events(res$tags, verbose)
       if (nrow(res$tags) == 0) {
         stop("No tags remain after removing positions on NA covariate cells.")
       }

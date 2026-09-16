@@ -669,18 +669,21 @@ build_time <- function(t_obs,
     observed <- idx
 
   } else { ## fill_gaps
-    ## start with all observed times; add interior points in big gaps only
-    ts <- t_obs
+    ## start with all observed times; add interior points in big gaps only.
+    ## unique(): candidate locations of one ambiguous observation may share a
+    ## time, and a repeated time would otherwise leave a dt = 0 step in ts.
+    ts <- sort(unique(t_obs))
 
   if (!is.finite(dt_min) || dt_min <= 0) stop("dt_min must be > 0.")
 
-    gaps <- diff(t_obs)
+    tu <- ts
+    gaps <- diff(tu)
     if (any(gaps > dt_min + eps)) {
       extra <- unlist(lapply(seq_along(gaps), function(i) {
         if (gaps[i] <= dt_min + eps) return(numeric(0))
-        ## insert points: t_obs[i] + dt_min, ..., strictly before t_obs[i+1]
-        if ((t_obs[i] + dt_min) < (t_obs[i + 1] - dt_min)) {
-          seq(t_obs[i] + dt_min, t_obs[i + 1] - dt_min, by = dt_min)
+        ## insert points: tu[i] + dt_min, ..., strictly before tu[i+1]
+        if ((tu[i] + dt_min) < (tu[i + 1] - dt_min)) {
+          seq(tu[i] + dt_min, tu[i + 1] - dt_min, by = dt_min)
         } else {
           return(numeric(0))
         }
@@ -1078,6 +1081,46 @@ make_x_y_cov <- function(x, tref = NULL) {
   }), use.names = TRUE)
 }
 
+
+
+## NA -> 0, for picking a representative candidate by probability
+.na_zero <- function(x) {
+  if (is.null(x)) return(0)
+  x[is.na(x)] <- 0
+  x
+}
+
+
+## Observation-event index of one tag, as used inside nll().
+##
+## Rows sharing an event are mutually exclusive candidate positions for a single
+## observation. Tags without the column (the common case, and any hand-built
+## test fixture) get one event per row, which is what the likelihood assumed
+## before ambiguous positions existed.
+.tag_events <- function(tag) {
+  ev <- tag[["event"]]
+  if (is.null(ev)) return(seq_len(nrow(tag)))
+  as.integer(match(ev, unique(ev)))
+}
+
+
+## Numerically stable log(sum(exp(x))) for a short AD vector.
+##
+## Used for the finite mixture over candidate observation locations (see nll()).
+## A plain log(sum(exp(x))) underflows to -Inf as soon as one candidate is far
+## enough away that its log-density is very negative, which would poison the
+## objective and every gradient. RTMB::logspace_add(a, b) = log(exp(a) + exp(b))
+## is both AD-differentiable and stable, so folding over it keeps the whole
+## accumulation on the tape. max()/which.max() are deliberately avoided: they are
+## non-smooth and would need the values off the tape.
+.logsumexp_ad <- function(x) {
+  n <- length(x)
+  if (n == 0L) return(NULL)
+  if (n == 1L) return(x[1])
+  out <- x[1]
+  for (k in 2:n) out <- RTMB::logspace_add(out, x[k])
+  out
+}
 
 
 ## Natural cubic spline through the knots (xp, yp), returning either the value

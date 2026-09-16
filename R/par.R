@@ -294,6 +294,22 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 
   grp <- paste0(as.character(tags$tag_type), "-", as.character(tags$id))
 
+  ## Rows sharing an event are candidate positions for one ambiguous
+  ## observation, not successive steps: differencing across them would invent
+  ## zero-length time steps and displacements between alternatives, corrupting
+  ## the diffusion and kappa starting values. Keep the most likely candidate of
+  ## each event and difference those.
+  if (!is.null(tags[["event"]])) {
+    keep <- unlist(lapply(split(seq_len(nrow(tags)),
+                                paste0(grp, "-", tags$event)),
+                          function(k) if (length(k) == 1L) k else
+                            k[which.max(.na_zero(tags[["prob"]][k]))]),
+                   use.names = FALSE)
+    keep <- sort(keep)
+    tags <- tags[keep, , drop = FALSE]
+    grp <- grp[keep]
+  }
+
   out <- lapply(split(tags, grp), function(tg) {
     if (nrow(tg) < 2) return(NULL)
     o <- order(tg$t)
