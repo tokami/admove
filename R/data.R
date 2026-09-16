@@ -17,7 +17,9 @@
 ##'   typically prepared with [prep_cov()]. If a single covariate is supplied,
 ##'   it is coerced internally to a list.
 ##' @param tags Optional tag data, typically as returned by one or more of
-##'   [prep_ctags()], [prep_dtags()], or [prep_stags()].
+##'   [prep_ctags()], [prep_dtags()], or [prep_stags()]. Several tag objects can
+##'   be supplied combined with `c(dtags, ctags)` or as a list,
+##'   `list(dtags, ctags)`; both are merged with [combine_tags()].
 ##' @param trange Optional numeric vector of length two giving the model time
 ##'   range. If `NULL`, the time range is inferred from available tags and
 ##'   covariates.
@@ -118,6 +120,16 @@ setup_data <- function(grid = NULL,
   res <- list()
 
   if (!is.null(cov)) cov <- .make_cov_list(cov)
+
+  ## accept a list of tag objects as well as c(dtags, ctags)
+  if (!is.null(tags) && !inherits(tags, "admove_tags")) {
+    if (is.list(tags) && !is.data.frame(tags)) {
+      tags <- combine_tags(tags)
+    } else {
+      stop("'tags' must be an 'admove_tags' object (see prep_tags()), ",
+           "or several combined with c() or list().")
+    }
+  }
 
   ## choose master sref
   if (!is.null(sref)) {

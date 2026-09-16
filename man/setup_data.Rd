@@ -28,7 +28,9 @@ typically prepared with \code{\link[=prep_cov]{prep_cov()}}. If a single covaria
 it is coerced internally to a list.}
 
 \item{tags}{Optional tag data, typically as returned by one or more of
-\code{\link[=prep_ctags]{prep_ctags()}}, \code{\link[=prep_dtags]{prep_dtags()}}, or \code{\link[=prep_stags]{prep_stags()}}.}
+\code{\link[=prep_ctags]{prep_ctags()}}, \code{\link[=prep_dtags]{prep_dtags()}}, or \code{\link[=prep_stags]{prep_stags()}}. Several tag objects can
+be supplied combined with \code{c(dtags, ctags)} or as a list,
+\code{list(dtags, ctags)}; both are merged with \code{\link[=combine_tags]{combine_tags()}}.}
 
 \item{trange}{Optional numeric vector of length two giving the model time
 range. If \code{NULL}, the time range is inferred from available tags and

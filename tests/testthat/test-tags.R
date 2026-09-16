@@ -86,3 +86,28 @@ test_that("check_tags keeps single-observation tags when asked to", {
 
   expect_true("d_single" %in% out$id)
 })
+
+
+test_that("setup_data accepts tags combined with list() as well as c()", {
+
+  ctags <- prep_tags(skjepo$ctags, tag_type = "c",
+                     names = c(t0 = "date_time", t1 = "date_caught",
+                               x0 = "rel_lon", x1 = "recap_lon",
+                               y0 = "rel_lat", y1 = "recap_lat"),
+                     date_origin = "1899-12-30", verbose = FALSE)
+  dtags <- prep_tags(skjepo$dtags, tag_type = "d",
+                     names = c(t = "time", x = "mptlon", y = "mptlat"),
+                     date_origin = "1899-12-30", verbose = FALSE)
+
+  .setup <- function(tags) {
+    suppressMessages(suppressWarnings(
+      setup_data(tags = tags, shift_tref = TRUE, verbose = FALSE)
+    ))
+  }
+
+  dat_c <- .setup(c(ctags = ctags, dtags = dtags))
+  dat_list <- .setup(list(ctags = ctags, dtags = dtags))
+
+  expect_identical(dat_list, dat_c)
+  expect_error(.setup(as.data.frame(dtags)), "must be an 'admove_tags' object")
+})
