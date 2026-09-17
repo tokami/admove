@@ -44,7 +44,6 @@ sim_data(
   n_candidates = 1,
   candidate_sd = NULL,
   sim_engine = 1,
-  use_reject = FALSE,
   n_reject = 100,
   target_dif_frac = 1/300,
   target_tax_frac = 1/10,
@@ -176,11 +175,9 @@ around the true recapture. See \code{\link[=sim_tags]{sim_tags()}}.}
 \item{sim_engine}{Integer specifying the simulation engine: \code{1} for
 continuous-space simulation and \code{2} for CTMC-based grid simulation.}
 
-\item{use_reject}{Logical; if \code{TRUE}, invalid simulated locations are
-rejected and redrawn where relevant.}
-
-\item{n_reject}{Maximum number of rejection attempts used in rejection-based
-simulation steps.}
+\item{n_reject}{Maximum number of attempts to redraw a movement step that
+leaves the valid grid cells. \code{0} turns rejection off. A step that is
+still invalid after all attempts is not taken. See \code{\link[=sim_tags]{sim_tags()}}.}
 
 \item{target_dif_frac}{Target diffusion strength as a fraction of the
 characteristic spatial scale squared per unit time, used by

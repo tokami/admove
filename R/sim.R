@@ -91,10 +91,9 @@
 ##'   resightings for mark-resight tags.
 ##' @param sim_engine Integer specifying the simulation engine: \code{1} for
 ##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
-##' @param use_reject Logical; if \code{TRUE}, invalid simulated locations are
-##'   rejected and redrawn where relevant.
-##' @param n_reject Maximum number of rejection attempts used in rejection-based
-##'   simulation steps.
+##' @param n_reject Maximum number of attempts to redraw a movement step that
+##'   leaves the valid grid cells. \code{0} turns rejection off. A step that is
+##'   still invalid after all attempts is not taken. See [sim_tags()].
 ##' @param target_dif_frac Target diffusion strength as a fraction of the
 ##'   characteristic spatial scale squared per unit time, used by
 ##'   [default_sim_par()].
@@ -179,7 +178,6 @@ sim_data <- function(x = NULL,
                      candidate_sd = NULL,
                      ## other
                      sim_engine = 1,
-                     use_reject = FALSE,
                      n_reject = 100,
                      target_dif_frac = 1/300,
                      target_tax_frac = 1/10,
@@ -313,9 +311,7 @@ sim_data <- function(x = NULL,
                                          trange_rel = trange_rel,
                                          xrange_rel = xrange_rel,
                                          yrange_rel = yrange_rel,
-                                         n_release_events = n_release_events,
-                                         use_reject = use_reject,
-                                         n_reject = n_reject)
+                                         n_release_events = n_release_events)
 
   }
 
@@ -337,7 +333,6 @@ sim_data <- function(x = NULL,
                            yrange_rel = yrange_rel,
                            release_events = release_events,
                            dt_tags = dt,
-                           use_reject = use_reject,
                            n_reject = n_reject,
                            sim_engine = sim_engine,
                            target_dif_frac = target_dif_frac,
@@ -370,7 +365,6 @@ sim_data <- function(x = NULL,
                            yrange_rel = yrange_rel,
                            release_events = release_events,
                            dt_tags = dt,
-                           use_reject = use_reject,
                            n_reject = n_reject,
                            sim_engine = sim_engine,
                            target_dif_frac = target_dif_frac,
@@ -403,7 +397,6 @@ sim_data <- function(x = NULL,
                            release_events = release_events,
                            n_resightings = n_resightings,
                            dt_tags = dt,
-                           use_reject = use_reject,
                            n_reject = n_reject,
                            sim_engine = sim_engine,
                            target_dif_frac = target_dif_frac,
@@ -482,15 +475,11 @@ sim_data <- function(x = NULL,
 ##'   within which release locations are generated. If \code{NULL}, the full
 ##'   y-range of \code{grid} is used.
 ##' @param n_release_events Number of release events to simulate.
-##' @param use_reject Logical; if \code{TRUE}, candidate release locations that
-##'   fall into invalid grid cells are rejected and redrawn.
-##' @param n_reject Maximum number of rejection attempts for each release event.
-##'
 ##' @details
-##' Release positions are drawn uniformly from the specified x- and y-ranges,
-##' and release times are drawn uniformly from \code{trange_rel}. If
-##' \code{use_reject = TRUE}, locations falling into \code{NA} cells of the grid
-##' are rejected and resampled.
+##' Release positions are drawn uniformly from the parts of the valid (non-
+##' \code{NA}) grid cells that lie within \code{xrange_rel} and
+##' \code{yrange_rel}, and release times are drawn uniformly from
+##' \code{trange_rel}.
 ##'
 ##' @return
 ##' A numeric matrix with columns \code{x0}, \code{y0}, and \code{t0}, giving
@@ -504,14 +493,10 @@ sim_release_events <- function(grid,
                                trange_rel = NULL,
                                xrange_rel = NULL,
                                yrange_rel = NULL,
-                               n_release_events = 10,
-                               use_reject = TRUE,
-                               n_reject = 100) {
+                               n_release_events = 10) {
 
   if (is.null(n_release_events) || is.na(n_release_events[1])) stop("Please provide a valid number of release events (n_release_events)!")
   n_release_events <- floor(n_release_events[1])
-
-  if (!use_reject) n_reject <- 1
 
   .check_class(grid, "admove_grid")
 
@@ -539,24 +524,31 @@ sim_release_events <- function(grid,
   release_events <- matrix(NA, n_release_events, 3)
   for (i in 1:n_release_events) {
     t0 <- runif(1, trange_rel[1], trange_rel[2])
-    x0 <- runif(1, xrange_rel[1], xrange_rel[2])
-    y0 <- runif(1, yrange_rel[1], yrange_rel[2])
-    cnt <- 0
-    is_invalid <- TRUE
-    while (cnt < n_reject && is_invalid) {
-      x0 <- runif(1, xrange_rel[1], xrange_rel[2])
-      y0 <- runif(1, yrange_rel[1], yrange_rel[2])
-      is_invalid <- is.na(grid$celltable[cbind(cut(x0, grid$xgr,
-                                                   include.lowest = TRUE),
-                                               cut(y0, grid$ygr,
-                                                   include.lowest = TRUE))])
-      cnt <- cnt + 1
-    }
-    release_events[i,] <- c(x0, y0, t0)
+    xy0 <- .sample_valid_location(grid, xrange_rel, yrange_rel)
+    release_events[i,] <- c(xy0, t0)
   }
   colnames(release_events) <- c("x0","y0","t0")
 
   return(release_events)
+}
+
+## Draw a location uniformly from the parts of the valid grid cells that lie
+## within xrange and yrange
+.sample_valid_location <- function(grid, xrange, yrange) {
+  ind <- which(!is.na(grid$celltable), arr.ind = TRUE)
+  xlo <- pmax(grid$xgr[ind[,1]], xrange[1])
+  xhi <- pmin(grid$xgr[ind[,1] + 1], xrange[2])
+  ylo <- pmax(grid$ygr[ind[,2]], yrange[1])
+  yhi <- pmin(grid$ygr[ind[,2] + 1], yrange[2])
+  keep <- xhi >= xlo & yhi >= ylo
+  if (!any(keep)) {
+    stop("No valid grid cell within 'xrange_rel' and 'yrange_rel'!")
+  }
+  w <- ((xhi - xlo) * (yhi - ylo))[keep]
+  ## degenerate ranges (a single x or y value) have zero area
+  if (all(w == 0)) w[] <- 1
+  k <- which(keep)[sample.int(length(w), 1, prob = w)]
+  c(runif(1, xlo[k], xhi[k]), runif(1, ylo[k], yhi[k]))
 }
 
 
@@ -794,10 +786,12 @@ sim_cov <- function(grid = NULL,
 ##' @param knots_dif Optional knot locations for the diffusion component.
 ##' @param funcs Optional named list of simulation functions. If \code{NULL},
 ##'   defaults are created with [default_sim_funcs()].
-##' @param use_reject Logical; if \code{TRUE}, invalid movement proposals are
-##'   rejected and resampled.
-##' @param n_reject Maximum number of rejection attempts per step if
-##'   \code{use_reject = TRUE}.
+##' @param n_reject Maximum number of attempts to redraw the diffusion part of
+##'   a movement step that leaves the valid grid cells (or reaches a location
+##'   where taxis or advection is undefined). \code{0} turns rejection off. A
+##'   step that is still invalid after all attempts is not taken, i.e. the tag
+##'   stays at its current position for that time step. Only used for
+##'   \code{sim_engine = 1}.
 ##' @param sim_engine Integer specifying the simulation engine: \code{1} for
 ##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
 ##' @param ctmc_method Matrix-exponential method used for CTMC simulation:
@@ -874,7 +868,6 @@ sim_tags <- function(tag_type,
                      knots_tax = NULL,
                      knots_dif = NULL,
                      funcs = NULL,
-                     use_reject = FALSE,
                      n_reject = 20,
                      sim_engine = 1,
                      ctmc_method = 1,
@@ -1055,9 +1048,7 @@ sim_tags <- function(tag_type,
                                          trange_rel = trange_rel,
                                          xrange_rel = xrange_rel,
                                          yrange_rel = yrange_rel,
-                                         n_release_events = n_release_events,
-                                         use_reject = use_reject,
-                                         n_reject = n_reject)
+                                         n_release_events = n_release_events)
   } else {
     n_release_events <- nrow(release_events)
   }
@@ -1072,6 +1063,7 @@ sim_tags <- function(tag_type,
   id <- .get_random_id()
 
   res_list <- vector("list", n_tags)
+  n_stuck <- 0
   if (n_tags < n_release_events) n_release_events <- n_tags
   n_by_rel_event <- ceiling(n_tags / n_release_events)
   count <- 1
@@ -1102,10 +1094,10 @@ sim_tags <- function(tag_type,
                          xcen = xcen,
                          ycen = ycen,
                          sim_engine = sim_engine,
-                         use_reject = use_reject,
                          n_reject = n_reject,
                          ctmc_method = ctmc_method,
                          add_obs_unc = add_obs_unc)
+      n_stuck <- n_stuck + attr(tmp, "n_stuck")
 
       if (tag_type == "d") {
         res_list[[count]] <- tmp
@@ -1128,6 +1120,12 @@ sim_tags <- function(tag_type,
       }
       count <- count + 1
     }
+  }
+
+  if (verbose && n_stuck > 0) {
+    warning(n_stuck, " simulated movement step(s) left the valid grid cells ",
+            "after ", n_reject, " rejection attempt(s) and were not taken. ",
+            "Increase 'n_reject' or reduce 'dt_tags'.")
   }
 
   tags <- as.data.frame(do.call(rbind, res_list))
@@ -2116,10 +2114,10 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' @param ycen Numeric vector of y-coordinates of grid-cell centres.
 ##' @param sim_engine Integer selecting the simulation engine: \code{1} for
 ##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
-##' @param use_reject Logical; if \code{TRUE}, rejected diffusion proposals are
-##'   redrawn when simulated moves leave the valid domain.
-##' @param n_reject Maximum number of rejection attempts if \code{use_reject =
-##'   TRUE}.
+##' @param n_reject Maximum number of attempts to redraw the diffusion part of
+##'   a move that leaves the valid domain (\code{0} turns rejection off). A move
+##'   that is still invalid is not taken; the number of such steps is returned
+##'   as attribute \code{"n_stuck"}.
 ##' @param ctmc_method Matrix-exponential method used in CTMC simulation:
 ##'   \code{0} for [Matrix::expm()], \code{1} (default) for [RTMB::expAv()] with
 ##'   uniformization.
@@ -2162,7 +2160,6 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                         xcen = NULL,
                         ycen = NULL,
                         sim_engine = 1,
-                        use_reject = FALSE,
                         n_reject = 20,
                         ctmc_method = 1,
                         add_obs_unc = NULL) {
@@ -2197,6 +2194,19 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   t <- unname(t0)
   nc <- nrow(xygrid)
 
+  if (is.null(n_reject) || is.na(n_reject[1])) n_reject <- 0
+  n_reject <- max(0, n_reject[1])
+  n_stuck <- 0
+
+  ## a location is invalid outside the valid grid cells or where taxis or
+  ## advection is undefined
+  is_invalid <- function(xy) {
+    any(is.na(funcs$tax(xy, t))) ||
+      any(is.na(funcs$adv(xy, t))) ||
+      is.na(celltable[cbind(cut(xy[1], xgr, include.lowest = TRUE),
+                            cut(xy[2], ygr, include.lowest = TRUE))])
+  }
+
   .check_ctmc_method(ctmc_method)
 
   if (ctmc_method == 1) {
@@ -2225,23 +2235,20 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                      sd = sqrt(2 * D * dt))
 
       ## Rejection method
-      if (use_reject && !is.na(n_reject)) {
-        cntr <- 0
-        while (cntr < n_reject && (
-          any(is.na(funcs$tax(xy + moveT + moveA + moveD, t) * dt)) ||
-            any(is.na(funcs$adv(xy + moveT + moveA + moveD, t) * dt)) ||
-            is.na(celltable[cbind(cut((xy + moveT + moveA + moveD)[1],
-                                      xgr, include.lowest = TRUE),
-                                  cut((xy + moveT + moveA + moveD)[2],
-                                      ygr, include.lowest = TRUE))]))) {
-                                        moveD <- rnorm(2, mean = 0,
-                                                       sd = sqrt(2 * D * dt))
-                                        cntr <- cntr + 1
-                                      }
+      cntr <- 0
+      while (is_invalid(xy + moveT + moveA + moveD) && cntr < n_reject) {
+        moveD <- rnorm(2, mean = 0,
+                       sd = sqrt(2 * D * dt))
+        cntr <- cntr + 1
       }
 
-      ## New position
-      xy_new <- xy + moveT + moveA + moveD
+      ## New position (an invalid move is not taken)
+      if (is_invalid(xy + moveT + moveA + moveD)) {
+        xy_new <- xy
+        n_stuck <- n_stuck + 1
+      } else {
+        xy_new <- xy + moveT + moveA + moveD
+      }
 
     } else if (sim_engine == 2) {
 
@@ -2328,6 +2335,8 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
     ret[-c(1,nrow(ret)),"y"] <- as.numeric(ret[-c(1,nrow(ret)),"y"]) +
       rnorm(nrow(ret)-2, 0, sdO[2, tag_type_int])
   }
+
+  attr(ret, "n_stuck") <- n_stuck
 
   return(ret)
 }

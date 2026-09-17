@@ -9,9 +9,7 @@ sim_release_events(
   trange_rel = NULL,
   xrange_rel = NULL,
   yrange_rel = NULL,
-  n_release_events = 10,
-  use_reject = TRUE,
-  n_reject = 100
+  n_release_events = 10
 )
 }
 \arguments{
@@ -31,11 +29,6 @@ within which release locations are generated. If \code{NULL}, the full
 y-range of \code{grid} is used.}
 
 \item{n_release_events}{Number of release events to simulate.}
-
-\item{use_reject}{Logical; if \code{TRUE}, candidate release locations that
-fall into invalid grid cells are rejected and redrawn.}
-
-\item{n_reject}{Maximum number of rejection attempts for each release event.}
 }
 \value{
 A numeric matrix with columns \code{x0}, \code{y0}, and \code{t0}, giving
@@ -46,10 +39,10 @@ Simulates release locations and release times for tagging experiments on an
 \code{admove_grid}.
 }
 \details{
-Release positions are drawn uniformly from the specified x- and y-ranges,
-and release times are drawn uniformly from \code{trange_rel}. If
-\code{use_reject = TRUE}, locations falling into \code{NA} cells of the grid
-are rejected and resampled.
+Release positions are drawn uniformly from the parts of the valid (non-
+\code{NA}) grid cells that lie within \code{xrange_rel} and
+\code{yrange_rel}, and release times are drawn uniformly from
+\code{trange_rel}.
 }
 \examples{
 rel_events <- sim_release_events(create_grid())

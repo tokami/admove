@@ -28,7 +28,6 @@ sim_tags(
   knots_tax = NULL,
   knots_dif = NULL,
   funcs = NULL,
-  use_reject = FALSE,
   n_reject = 20,
   sim_engine = 1,
   ctmc_method = 1,
@@ -129,11 +128,12 @@ observation times are generated.}
 \item{funcs}{Optional named list of simulation functions. If \code{NULL},
 defaults are created with \code{\link[=default_sim_funcs]{default_sim_funcs()}}.}
 
-\item{use_reject}{Logical; if \code{TRUE}, invalid movement proposals are
-rejected and resampled.}
-
-\item{n_reject}{Maximum number of rejection attempts per step if
-\code{use_reject = TRUE}.}
+\item{n_reject}{Maximum number of attempts to redraw the diffusion part of
+a movement step that leaves the valid grid cells (or reaches a location
+where taxis or advection is undefined). \code{0} turns rejection off. A
+step that is still invalid after all attempts is not taken, i.e. the tag
+stays at its current position for that time step. Only used for
+\code{sim_engine = 1}.}
 
 \item{sim_engine}{Integer specifying the simulation engine: \code{1} for
 continuous-space simulation and \code{2} for CTMC-based grid simulation.}

@@ -24,7 +24,6 @@
   xcen = NULL,
   ycen = NULL,
   sim_engine = 1,
-  use_reject = FALSE,
   n_reject = 20,
   ctmc_method = 1,
   add_obs_unc = NULL
@@ -79,11 +78,10 @@ simulation.}
 \item{sim_engine}{Integer selecting the simulation engine: \code{1} for
 continuous-space simulation and \code{2} for CTMC-based grid simulation.}
 
-\item{use_reject}{Logical; if \code{TRUE}, rejected diffusion proposals are
-redrawn when simulated moves leave the valid domain.}
-
-\item{n_reject}{Maximum number of rejection attempts if \code{use_reject =
-TRUE}.}
+\item{n_reject}{Maximum number of attempts to redraw the diffusion part of
+a move that leaves the valid domain (\code{0} turns rejection off). A move
+that is still invalid is not taken; the number of such steps is returned
+as attribute \code{"n_stuck"}.}
 
 \item{ctmc_method}{Matrix-exponential method used in CTMC simulation:
 \code{0} for \code{\link[Matrix:expm]{Matrix::expm()}}, \code{1} (default) for \code{\link[RTMB:expAv]{RTMB::expAv()}} with

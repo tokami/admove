@@ -216,6 +216,53 @@ test_that("parameters and configuration are dropped when the covariates change",
 })
 
 
+## an L-shaped domain: most of the bounding box is not valid
+make_l_grid <- function() {
+  poly <- sf::st_sf(geometry = sf::st_sfc(sf::st_polygon(list(
+    rbind(c(0, 0), c(1, 0), c(1, 0.3), c(0.3, 0.3), c(0.3, 1), c(0, 1), c(0, 0))
+  ))))
+  create_grid(poly, cellsize = 0.1, verbose = FALSE)
+}
+
+in_valid_cells <- function(grid, x, y) {
+  !is.na(grid$celltable[cbind(cut(x, grid$xgr, include.lowest = TRUE),
+                              cut(y, grid$ygr, include.lowest = TRUE))])
+}
+
+
+test_that("release events are drawn from the valid grid cells", {
+  grid <- make_l_grid()
+  set.seed(1)
+  rel <- sim_release_events(grid, n_release_events = 50)
+  expect_true(all(in_valid_cells(grid, rel[, "x0"], rel[, "y0"])))
+  rel <- sim_release_events(grid, n_release_events = 50,
+                            xrange_rel = c(0.5, 1))
+  expect_true(all(in_valid_cells(grid, rel[, "x0"], rel[, "y0"])))
+  expect_true(all(rel[, "x0"] >= 0.5 & rel[, "y0"] <= 0.3))
+  expect_error(sim_release_events(grid, xrange_rel = c(0.5, 1),
+                                  yrange_rel = c(0.5, 1)),
+               "No valid grid cell")
+})
+
+
+test_that("simulated tracks stay in the valid grid cells", {
+  grid <- make_l_grid()
+  cov <- sim_cov(grid, nt = 2, tref = list(origin = as.Date("2020-01-01"),
+                                           units = "week"))
+  sim <- function(...) {
+    set.seed(1)
+    sim_tags("d", grid = grid, cov = cov, n_tags = 3, dt_tags = 0.05,
+             add_obs_unc = FALSE, target_dif_frac = 1/10, ...)
+  }
+  res <- suppressWarnings(sim(verbose = FALSE))
+  expect_false(anyNA(res$tags[, c("x", "y")]))
+  expect_true(all(in_valid_cells(grid, res$tags$x, res$tags$y)))
+  ## without rejection, invalid steps are not taken (and reported)
+  expect_warning(res <- sim(n_reject = 0), "not taken")
+  expect_true(all(in_valid_cells(grid, res$tags$x, res$tags$y)))
+})
+
+
 test_that("simulated tags keep the admove_tags class", {
 
   res <- sim_data(n_ctags = 5, n_dtags = 1, verbose = FALSE)
