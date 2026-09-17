@@ -31,7 +31,7 @@ sim_tags(
   use_reject = FALSE,
   n_reject = 20,
   sim_engine = 1,
-  ctmc_method = 2,
+  ctmc_method = 1,
   sref = NULL,
   tref = NULL,
   target_dif_frac = 1/500,
@@ -138,8 +138,9 @@ rejected and resampled.}
 \item{sim_engine}{Integer specifying the simulation engine: \code{1} for
 continuous-space simulation and \code{2} for CTMC-based grid simulation.}
 
-\item{ctmc_method}{Integer controlling the matrix-exponential method used for
-CTMC simulation.}
+\item{ctmc_method}{Matrix-exponential method used for CTMC simulation:
+\code{0} for \code{\link[Matrix:expm]{Matrix::expm()}}, \code{1} (default) for \code{\link[RTMB:expAv]{RTMB::expAv()}} with
+uniformization.}
 
 \item{sref}{Optional spatial reference to attach to the simulated data.}
 

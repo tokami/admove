@@ -26,7 +26,7 @@
   sim_engine = 1,
   use_reject = FALSE,
   n_reject = 20,
-  ctmc_method = 2,
+  ctmc_method = 1,
   add_obs_unc = NULL
 )
 }
@@ -85,8 +85,9 @@ redrawn when simulated moves leave the valid domain.}
 \item{n_reject}{Maximum number of rejection attempts if \code{use_reject =
 TRUE}.}
 
-\item{ctmc_method}{Integer controlling the matrix-exponential method used in
-CTMC simulation.}
+\item{ctmc_method}{Matrix-exponential method used in CTMC simulation:
+\code{0} for \code{\link[Matrix:expm]{Matrix::expm()}}, \code{1} (default) for \code{\link[RTMB:expAv]{RTMB::expAv()}} with
+uniformization.}
 
 \item{add_obs_unc}{Add observation uncertainty to tag locations? By default
 (NULL), observation uncertainty is added to archival tags (tag_type =

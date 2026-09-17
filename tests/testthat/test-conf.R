@@ -266,3 +266,40 @@ test_that("check_conf warns when observation error is estimated from ctags alone
   conf$obs_var_type[3] <- 0L
   expect_no_warning(check_conf(conf, dat_c, verbose = FALSE))
 })
+
+
+test_that("ctmc_method accepts 0 and 1 and explains the renumbering of 2", {
+
+  expect_silent(admove:::.check_ctmc_method(0))
+  expect_silent(admove:::.check_ctmc_method(1))
+  expect_error(admove:::.check_ctmc_method(2), "former method 2 is now 1")
+  expect_error(admove:::.check_ctmc_method(3), "must be 0")
+
+  conf <- default_conf(skjepo$sim$dat, verbose = FALSE)
+  conf$ctmc_method <- 2
+  expect_error(check_conf(conf, skjepo$sim$dat, verbose = FALSE),
+               "former method 2 is now 1")
+})
+
+
+test_that("both CTMC matrix-exponential methods give the same likelihood", {
+
+  grid <- create_grid(xrange = c(0, 1), yrange = c(0, 1), cellsize = 0.25,
+                      verbose = FALSE)
+  sim <- withr::with_seed(1, suppressMessages(suppressWarnings(
+    sim_data(grid = grid, n_dtags = 2, n_ctags = 5, trange = c(0, 1),
+             verbose = FALSE)
+  )))
+
+  nll <- function(method) {
+    conf <- sim$conf
+    conf$engine <- 2
+    conf$ctmc_method <- method
+    obj <- suppressMessages(suppressWarnings(
+      admove(sim$dat, conf, sim$par, sim$map, run = FALSE, verbose = FALSE)
+    ))$obj
+    obj$fn(obj$par)
+  }
+
+  expect_equal(nll(1), nll(0), tolerance = 1e-6)
+})

@@ -800,8 +800,9 @@ sim_cov <- function(grid = NULL,
 ##'   \code{use_reject = TRUE}.
 ##' @param sim_engine Integer specifying the simulation engine: \code{1} for
 ##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
-##' @param ctmc_method Integer controlling the matrix-exponential method used for
-##'   CTMC simulation.
+##' @param ctmc_method Matrix-exponential method used for CTMC simulation:
+##'   \code{0} for [Matrix::expm()], \code{1} (default) for [RTMB::expAv()] with
+##'   uniformization.
 ##' @param sref Optional spatial reference to attach to the simulated data.
 ##' @param tref Optional temporal reference to attach to the simulated data.
 ##' @param target_dif_frac Target diffusion strength as a fraction of the
@@ -876,7 +877,7 @@ sim_tags <- function(tag_type,
                      use_reject = FALSE,
                      n_reject = 20,
                      sim_engine = 1,
-                     ctmc_method = 2,
+                     ctmc_method = 1,
                      sref = NULL,
                      tref = NULL,
                      target_dif_frac = 1/500, ## 1/300
@@ -2119,8 +2120,9 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##'   redrawn when simulated moves leave the valid domain.
 ##' @param n_reject Maximum number of rejection attempts if \code{use_reject =
 ##'   TRUE}.
-##' @param ctmc_method Integer controlling the matrix-exponential method used in
-##'   CTMC simulation.
+##' @param ctmc_method Matrix-exponential method used in CTMC simulation:
+##'   \code{0} for [Matrix::expm()], \code{1} (default) for [RTMB::expAv()] with
+##'   uniformization.
 ##' @param add_obs_unc Add observation uncertainty to tag locations? By default
 ##'   (NULL), observation uncertainty is added to archival tags (tag_type =
 ##'   "d"), but not to other tags.
@@ -2162,7 +2164,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                         sim_engine = 1,
                         use_reject = FALSE,
                         n_reject = 20,
-                        ctmc_method = 2,
+                        ctmc_method = 1,
                         add_obs_unc = NULL) {
 
   kappa <- exp(par$logKappa)
@@ -2195,9 +2197,9 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   t <- unname(t0)
   nc <- nrow(xygrid)
 
-  flag_expm_uni <- ifelse(ctmc_method == 2, TRUE, FALSE)
+  .check_ctmc_method(ctmc_method)
 
-  if (ctmc_method > 0) {
+  if (ctmc_method == 1) {
     mstar_template <- make_mstar_template(nextTo, ad = FALSE)
   }
 
@@ -2248,7 +2250,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                                 cut(xy[2], ygr, include.lowest = TRUE))]] <- 1
 
       ## Set to zero
-      if (ctmc_method > 0) {
+      if (ctmc_method == 1) {
         Dstar <- Zstar <- Astar <- mstar_template
         Dstar@x[] <- Zstar@x[] <- Astar@x[] <- 0
       } else {
@@ -2287,12 +2289,12 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
       ## Check
       if (any(is.na(Mstar))) stop("NaN in Mstar!")
 
-      if (ctmc_method > 0) {
+      if (ctmc_method == 1) {
 
         p <- as.vector(RTMB::expAv(Mstar,
                                    dist_prob,
                                    transpose = TRUE,
-                                   uniformization = flag_expm_uni,
+                                   uniformization = TRUE,
                                    rescale_freq = 1))
 
       } else {

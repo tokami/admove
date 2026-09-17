@@ -120,10 +120,9 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   ## Estimation engine
   conf$engine <- 1
 
-  ## CTMC method
+  ## CTMC method (see .check_ctmc_method())
   ## 0 = Matrix::expm
-  ## 1 = expAv (uni = FALSE)
-  ## 2 = expAv (uni = TRUE)
+  ## 1 = RTMB::expAv with uniformization
   conf$ctmc_method <- 0
 
   ## Discretisation of the drift term (taxis + advection) in the generator
@@ -268,6 +267,8 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
     stop("'conf$smooth_method' must be one of \"rtmb\", \"natural\" or \"poly\".",
          call. = FALSE)
   }
+
+  .check_ctmc_method(conf$ctmc_method)
 
   ## mark-recapture tags carry a single displacement per tag, whose variance
   ## the observation error and diffusion both explain; without other tag types
@@ -524,4 +525,25 @@ set_seasons <- function(conf, dat, n, cov = NULL, verbose = TRUE) {
     }
   }
   conf
+}
+
+
+## Matrix-exponential method of the CTMC engine: 0 = Matrix::expm(), 1 =
+## RTMB::expAv() with uniformization. expAv() without uniformization (the former
+## method 1) was removed: it runs a fixed number of series terms (Nmax, 2e9 by
+## default), so it never finished, and with a small Nmax the plain series is
+## numerically unstable for stiff generators. The former method 2 is now 1.
+.check_ctmc_method <- function(ctmc_method) {
+
+  if (is.null(ctmc_method)) return(invisible(NULL))
+
+  if (length(ctmc_method) != 1L || is.na(ctmc_method) ||
+        !ctmc_method %in% c(0, 1)) {
+    stop("'ctmc_method' must be 0 (Matrix::expm) or 1 (RTMB::expAv with uniformization), not ",
+         deparse(ctmc_method), ".",
+         if (identical(as.numeric(ctmc_method), 2)) " The former method 2 is now 1.",
+         call. = FALSE)
+  }
+
+  invisible(NULL)
 }

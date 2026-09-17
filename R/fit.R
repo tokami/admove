@@ -175,6 +175,8 @@ admove <- function(dat,
   ## check that kappa is not estimated alongside alpha
   .check_kappa_map(par, map, conf)
 
+  .check_ctmc_method(conf$ctmc_method)
+
   ## check that mapping in line with obs_var_type
   ind_t_use <- c(conf$use_dtags, conf$use_stags, conf$use_ctags)
   obs_var_type_map <- !apply(matrix(map$logSdO, 2, 3)[,ind_t_use, drop = FALSE], 2, function(x) any(is.na(x)))

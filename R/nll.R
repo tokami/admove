@@ -255,13 +255,11 @@ nll <- function(par, dat) {
 
   } else if (dat$engine == 2) {  ## CTMC
 
-    flag_expm_uni <- ifelse(dat$ctmc_method == 2, TRUE, FALSE)
-
     time_mode <- ifelse(is.null(dat$dt) || is.na(dat$dt),
                         "fill_gaps", "fixed_dt")
 
 
-    if (dat$ctmc_method > 0) {
+    if (dat$ctmc_method == 1) {
       mstar_template <- make_mstar_template(nextTo, ad = TRUE)
     }
 
@@ -307,7 +305,7 @@ nll <- function(par, dat) {
         dt <- dts[t-1]
 
         ## Set to zero
-        if (dat$ctmc_method > 0) {
+        if (dat$ctmc_method == 1) {
           Zstar <- Astar <- Dstar <- mstar_template
           Zstar@x[] <- Astar@x[] <- Dstar@x[] <- 0
         } else {
@@ -345,12 +343,12 @@ nll <- function(par, dat) {
         Mstar[cbind(1:nc, 1:nc)] <- -RTMB::rowSums(Mstar)
 
         ## dist prob after move
-        if (dat$ctmc_method > 0) {
+        if (dat$ctmc_method == 1) {
 
           pred_dist <- as.vector(RTMB::expAv(Mstar,
                                      last_dist,
                                      transpose = TRUE,
-                                     uniformization = flag_expm_uni,
+                                     uniformization = TRUE,
                                      rescale_freq = 1,
                                      trace = FALSE))
 
