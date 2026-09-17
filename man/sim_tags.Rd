@@ -27,6 +27,8 @@ sim_tags(
   trange_rec = NULL,
   knots_tax = NULL,
   knots_dif = NULL,
+  n_knots_tax = NULL,
+  n_knots_dif = NULL,
   funcs = NULL,
   n_reject = 20,
   sim_engine = 1,
@@ -124,6 +126,12 @@ observation times are generated.}
 \item{knots_tax}{Optional knot locations for the taxis component.}
 
 \item{knots_dif}{Optional knot locations for the diffusion component.}
+
+\item{n_knots_tax, n_knots_dif}{Optional number of default knots per
+covariate for the taxis and diffusion components, placed at covariate
+quantiles as in \code{\link[=setup_data]{setup_data()}}. Ignored if the corresponding knot matrix is
+supplied. If \code{NULL}, the knots of a supplied data object or model are
+kept, and otherwise the defaults of \code{\link[=setup_data]{setup_data()}} (3 and 1) are used.}
 
 \item{funcs}{Optional named list of simulation functions. If \code{NULL},
 defaults are created with \code{\link[=default_sim_funcs]{default_sim_funcs()}}.}

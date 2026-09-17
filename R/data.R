@@ -24,10 +24,16 @@
 ##'   range. If `NULL`, the time range is inferred from available tags and
 ##'   covariates.
 ##' @param knots_tax Optional matrix of spline knots for the taxis preference
-##'   functions. If `NULL`, default knots are chosen from covariate quantiles.
+##'   functions, with knots in rows and one column per covariate. If `NULL`,
+##'   `n_knots_tax` knots are placed at covariate quantiles.
 ##' @param knots_dif Optional matrix of spline knots for the diffusion
-##'   preference functions. If `NULL`, default knots are chosen from covariate
-##'   quantiles.
+##'   preference functions, with knots in rows and one column per covariate. If
+##'   `NULL`, `n_knots_dif` knots are placed at covariate quantiles.
+##' @param n_knots_tax Number of default knots per covariate for the taxis
+##'   preference functions. Default is `3`. Ignored if `knots_tax` is supplied.
+##' @param n_knots_dif Number of default knots per covariate for the diffusion
+##'   preference functions. Default is `1`, i.e. constant diffusion. Ignored if
+##'   `knots_dif` is supplied.
 ##' @param sref Optional spatial reference to use as the target spatial
 ##'   reference for all inputs. If supplied, it should be coercible to an
 ##'   `admove_sref` object.
@@ -54,9 +60,17 @@
 ##' covariate time ranges. If no valid time range can be determined, a default
 ##' range of `c(0, 1)` is used.
 ##'
-##' If spline knots are not supplied, default knots are generated from the
-##' marginal covariate distributions. Taxis knots use three quantiles per
-##' covariate, while diffusion knots use one quantile per covariate.
+##' If spline knots are not supplied, default knots are placed at quantiles of
+##' the marginal covariate distributions: `n_knots_tax` knots per covariate for
+##' taxis (default three: the 5%, 50% and 95% quantiles) and `n_knots_dif` knots
+##' for diffusion (default one: the median, i.e. constant diffusion). Two knots
+##' are placed at the 25% and 75% quantiles, four at the 5%, 30%, 70% and 95%
+##' quantiles, and five or more evenly between the 5% and 95% quantiles. One
+##' knot gives a constant function and two knots a linear one (a natural cubic
+##' spline through two points is a straight line). All covariates share the
+##' same number of knots. The spline coefficients created by [default_par()]
+##' are sized from these knots, so set the number of knots here rather than
+##' editing `dat$knots_tax` or `dat$knots_dif` afterwards.
 ##'
 ##' The returned object also contains default prediction components in
 ##' `dat$pred`, including:
@@ -104,6 +118,17 @@
 ##'   shift_tref = TRUE
 ##' )
 ##'
+##' ## five taxis knots and a linear diffusion function
+##' dat5 <- setup_data(
+##'   grid = grid,
+##'   cov = cov,
+##'   tags = c(dtags, ctags),
+##'   n_knots_tax = 5,
+##'   n_knots_dif = 2,
+##'   transform_sref = TRUE,
+##'   shift_tref = TRUE
+##' )
+##'
 ##' @export
 setup_data <- function(grid = NULL,
                        cov = NULL,
@@ -111,11 +136,16 @@ setup_data <- function(grid = NULL,
                        trange = NULL,
                        knots_tax = NULL,
                        knots_dif = NULL,
+                       n_knots_tax = 3,
+                       n_knots_dif = 1,
                        sref = NULL,
                        tref = NULL,
                        transform_sref = FALSE,
                        shift_tref = FALSE,
                        verbose = TRUE) {
+
+  n_knots_tax <- .check_n_knots(n_knots_tax, "n_knots_tax")
+  n_knots_dif <- .check_n_knots(n_knots_dif, "n_knots_dif")
 
   res <- list()
 
@@ -463,25 +493,15 @@ setup_data <- function(grid = NULL,
 
   cov_obs <- cov
   if (is.null(res$knots_tax) && !is.null(cov)) {
-    tmp <- sapply(cov,
-                  function(x)
-                    quantile(as.numeric(x),
-                             get_pretty_probs(3),
-                             na.rm = TRUE))
-    res$knots_tax <- matrix(as.numeric(tmp), nrow = 3, ncol = length(cov))
-  }
-
-  if (length(res$knots_tax) != 0 && any(apply(res$knots_tax, 2, duplicated))) {
-    warning("Some knots are the same! This will likely give an error!")
+    res$knots_tax <- .default_knots(cov, n_knots_tax, "n_knots_tax")
+  } else {
+    .warn_duplicated_knots(res$knots_tax, "knots_tax")
   }
 
   if (is.null(res$knots_dif) && !is.null(cov)) {
-    tmp <- sapply(cov,
-                  function(x)
-                    quantile(as.numeric(x),
-                             get_pretty_probs(1),
-                             na.rm = TRUE))
-    res$knots_dif <- matrix(as.numeric(tmp), nrow = 1, ncol = length(cov))
+    res$knots_dif <- .default_knots(cov, n_knots_dif, "n_knots_dif")
+  } else {
+    .warn_duplicated_knots(res$knots_dif, "knots_dif")
   }
 
 
@@ -675,4 +695,70 @@ print.admove_data <- function(x, ...) {
   tmp <- x
   attributes(tmp) <- NULL
   NextMethod("print", tmp, ...)
+}
+
+
+## Helpers ----------------------------------------------------------------------
+
+## Validate a number of spline knots: a single whole number of at least one.
+.check_n_knots <- function(n, name) {
+
+  if (!is.numeric(n) || length(n) != 1L || !is.finite(n) || n < 1 ||
+        n != round(n)) {
+    stop("'", name, "' must be a single whole number of at least 1.",
+         call. = FALSE)
+  }
+
+  as.integer(n)
+}
+
+
+## Default spline knots: `n` quantiles of each covariate, as a matrix with knots
+## in rows and one column per covariate. A covariate with too few distinct values
+## gives repeated knots, which the natural spline cannot pass through, so say
+## which covariate it is instead of failing later inside the likelihood.
+.default_knots <- function(cov, n, name) {
+
+  knots <- vapply(cov,
+                  function(x) as.numeric(stats::quantile(as.numeric(x),
+                                                         get_pretty_probs(n),
+                                                         na.rm = TRUE,
+                                                         names = FALSE)),
+                  numeric(n))
+  knots <- matrix(knots, nrow = n, ncol = length(cov))
+
+  dup <- which(apply(knots, 2, function(k) any(duplicated(k))))
+  if (length(dup) > 0) {
+    warning("With ", name, " = ", n, ", some default knots coincide for ",
+            .knot_cov_labels(cov, dup), " (too few distinct covariate values). ",
+            "This will likely give an error! Use fewer knots or supply the ",
+            "knot matrix directly.", call. = FALSE)
+  }
+
+  knots
+}
+
+
+## Warn about repeated knots in a user-supplied knot matrix.
+.warn_duplicated_knots <- function(knots, name) {
+
+  if (length(knots) == 0 || !is.matrix(knots)) return(invisible(NULL))
+
+  dup <- which(apply(knots, 2, function(k) any(duplicated(k))))
+  if (length(dup) > 0) {
+    warning("Some knots in '", name, "' are the same (column(s) ",
+            paste(dup, collapse = ", "), ")! This will likely give an error!",
+            call. = FALSE)
+  }
+
+  invisible(NULL)
+}
+
+
+.knot_cov_labels <- function(cov, i) {
+  nms <- names(cov)
+  lab <- if (is.null(nms)) rep("", length(cov)) else nms
+  lab <- ifelse(is.na(lab) | lab == "", paste0("covariate ", seq_along(cov)),
+                paste0("covariate '", lab, "'"))
+  paste(lab[i], collapse = ", ")
 }

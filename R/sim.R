@@ -65,6 +65,11 @@
 ##'   a one-cell buffer before covariates are simulated.
 ##' @param knots_tax Optional knot locations for the taxis component.
 ##' @param knots_dif Optional knot locations for the diffusion component.
+##' @param n_knots_tax,n_knots_dif Optional number of default knots per
+##'   covariate for the taxis and diffusion components, placed at covariate
+##'   quantiles as in [setup_data()]. Ignored if the corresponding knot matrix is
+##'   supplied. If \code{NULL}, the knots of a supplied data object or model are
+##'   kept, and otherwise the defaults of [setup_data()] (3 and 1) are used.
 ##' @param release_events Optional data frame or matrix of release events. If
 ##'   \code{NULL}, release events are simulated internally using
 ##'   [sim_release_events()].
@@ -159,6 +164,8 @@ sim_data <- function(x = NULL,
                      sim_buffer = TRUE,
                      knots_tax = NULL,
                      knots_dif = NULL,
+                     n_knots_tax = NULL,
+                     n_knots_dif = NULL,
                      ## release events
                      release_events = NULL,
                      n_release_events = 10,
@@ -189,7 +196,8 @@ sim_data <- function(x = NULL,
   ## an argument given explicitly always wins, so that single pieces of a
   ## fitted model can be replaced, e.g. sim_data(fit, grid = new_grid)
   inp <- .resolve_sim_inputs(x, grid, cov, par, dat, conf, fit,
-                             trange, knots_tax, knots_dif)
+                             trange, knots_tax, knots_dif,
+                             n_knots_tax, n_knots_dif)
   grid <- inp$grid
   cov <- inp$cov
   par <- inp$par
@@ -269,6 +277,8 @@ sim_data <- function(x = NULL,
                       grid = grid,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
+                      n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
+                      n_knots_dif = .n_knots_or_default(n_knots_dif, 1),
                       trange = trange,
                       verbose = FALSE)
 
@@ -419,11 +429,12 @@ sim_data <- function(x = NULL,
   sref(tags) <- sref(grid)
   tref(tags) <- tref(cov)
 
+  ## the knots the tags were simulated with, which the parameters are sized for
   dat <- setup_data(cov = cov,
                     grid = grid,
                     tags = tags,
-                    knots_tax = knots_tax,
-                    knots_dif = knots_dif,
+                    knots_tax = dat$knots_tax,
+                    knots_dif = dat$knots_dif,
                     trange = trange)
 
   res <- list()
@@ -784,6 +795,11 @@ sim_cov <- function(grid = NULL,
 ##'   observation times are generated.
 ##' @param knots_tax Optional knot locations for the taxis component.
 ##' @param knots_dif Optional knot locations for the diffusion component.
+##' @param n_knots_tax,n_knots_dif Optional number of default knots per
+##'   covariate for the taxis and diffusion components, placed at covariate
+##'   quantiles as in [setup_data()]. Ignored if the corresponding knot matrix is
+##'   supplied. If \code{NULL}, the knots of a supplied data object or model are
+##'   kept, and otherwise the defaults of [setup_data()] (3 and 1) are used.
 ##' @param funcs Optional named list of simulation functions. If \code{NULL},
 ##'   defaults are created with [default_sim_funcs()].
 ##' @param n_reject Maximum number of attempts to redraw the diffusion part of
@@ -867,6 +883,8 @@ sim_tags <- function(tag_type,
                      trange_rec = NULL,
                      knots_tax = NULL,
                      knots_dif = NULL,
+                     n_knots_tax = NULL,
+                     n_knots_dif = NULL,
                      funcs = NULL,
                      n_reject = 20,
                      sim_engine = 1,
@@ -900,7 +918,8 @@ sim_tags <- function(tag_type,
   ## an argument given explicitly always wins, so that single pieces of a
   ## fitted model can be replaced, e.g. sim_tags("c", fit, grid = new_grid)
   inp <- .resolve_sim_inputs(x, grid, cov, par, dat, conf, fit,
-                             trange, knots_tax, knots_dif)
+                             trange, knots_tax, knots_dif,
+                             n_knots_tax, n_knots_dif)
   grid <- inp$grid
   cov <- inp$cov
   par <- inp$par
@@ -989,6 +1008,8 @@ sim_tags <- function(tag_type,
                       grid = grid,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
+                      n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
+                      n_knots_dif = .n_knots_or_default(n_knots_dif, 1),
                       trange = trange,
                       sref = sref_target,
                       tref = tref_target,
@@ -1668,8 +1689,8 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' by the same rules.
 ##'
 ##' @param x Any admove object, or \code{NULL}. See [.admove_slot()].
-##' @param grid,cov,par,dat,conf,fit,trange,knots_tax,knots_dif The arguments of
-##'   the calling function, as supplied by the user.
+##' @param grid,cov,par,dat,conf,fit,trange,knots_tax,knots_dif,n_knots_tax,n_knots_dif
+##'   The arguments of the calling function, as supplied by the user.
 ##'
 ##' @details
 ##' Arguments given explicitly always win: values are taken from \code{fit}
@@ -1677,7 +1698,10 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' describes its own grid, covariates, knots and time range, so it is dropped
 ##' (and rebuilt by the caller) as soon as one of those is replaced. The knots
 ##' hold one column of covariate values per covariate and therefore only
-##' survive a change of the covariate fields if the user supplied them.
+##' survive a change of the covariate fields if the user supplied them. A
+##' number of knots (\code{n_knots_tax}, \code{n_knots_dif}) that differs from
+##' the inherited knots replaces them in the same way, unless a knot matrix was
+##' supplied, which always wins.
 ##'
 ##' @return
 ##' A named list with the resolved \code{grid}, \code{cov}, \code{par},
@@ -1697,7 +1721,9 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                                 fit = NULL,
                                 trange = NULL,
                                 knots_tax = NULL,
-                                knots_dif = NULL) {
+                                knots_dif = NULL,
+                                n_knots_tax = NULL,
+                                n_knots_dif = NULL) {
 
   ## 'x' takes any admove object and is routed to the argument it belongs to
   if (!is.null(x)) {
@@ -1774,6 +1800,17 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
     }
   }
 
+  ## a requested number of knots replaces inherited knots of another size; a
+  ## knot matrix supplied by the user always wins, as in setup_data()
+  if (.n_knots_differ(n_knots_tax, knots_tax_in, knots_tax)) {
+    knots_tax <- NULL
+    dat <- NULL
+  }
+  if (.n_knots_differ(n_knots_dif, knots_dif_in, knots_dif)) {
+    knots_dif <- NULL
+    dat <- NULL
+  }
+
   list(grid = grid,
        cov = cov,
        par = par,
@@ -1787,6 +1824,21 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
        conf_in = conf_in,
        knots_tax_in = knots_tax_in,
        knots_dif_in = knots_dif_in)
+}
+
+
+## TRUE when a requested number of knots should replace the knots inherited from
+## a data object or model: a number was requested, no knot matrix was supplied,
+## and the inherited knots have another number of rows.
+.n_knots_differ <- function(n_knots, knots_in, knots) {
+  if (is.null(n_knots) || !is.null(knots_in) || is.null(knots)) return(FALSE)
+  n_knots <- .check_n_knots(n_knots, deparse(substitute(n_knots)))
+  NROW(knots) != n_knots
+}
+
+
+.n_knots_or_default <- function(n_knots, default) {
+  if (is.null(n_knots)) default else n_knots
 }
 
 

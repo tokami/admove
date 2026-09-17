@@ -989,6 +989,9 @@ get_par_est <- function(par, map, opt) {
 
 
 
+## Quantile probabilities at which default spline knots are placed. Up to four
+## knots use fixed values; more knots are spread evenly between the 5% and 95%
+## quantiles, which keeps the outer knots away from extreme covariate values.
 get_pretty_probs <- function(n) {
   if (n == 1) {
     0.5
@@ -998,7 +1001,9 @@ get_pretty_probs <- function(n) {
     c(0.05, 0.5, 0.95)
   } else if (n == 4) {
     c(0.05, 0.3, 0.7, 0.95)
-  } else stop("pretty_probs only implemented for upt to 4 knots")
+  } else {
+    seq(0.05, 0.95, length.out = n)
+  }
 }
 
 

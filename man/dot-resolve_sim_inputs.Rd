@@ -14,14 +14,15 @@
   fit = NULL,
   trange = NULL,
   knots_tax = NULL,
-  knots_dif = NULL
+  knots_dif = NULL,
+  n_knots_tax = NULL,
+  n_knots_dif = NULL
 )
 }
 \arguments{
 \item{x}{Any admove object, or \code{NULL}. See \code{\link[=.admove_slot]{.admove_slot()}}.}
 
-\item{grid, cov, par, dat, conf, fit, trange, knots_tax, knots_dif}{The arguments of
-the calling function, as supplied by the user.}
+\item{grid, cov, par, dat, conf, fit, trange, knots_tax, knots_dif, n_knots_tax, n_knots_dif}{The arguments of the calling function, as supplied by the user.}
 }
 \value{
 A named list with the resolved \code{grid}, \code{cov}, \code{par},
@@ -43,6 +44,9 @@ and \code{dat} only where the caller left them empty. A data object
 describes its own grid, covariates, knots and time range, so it is dropped
 (and rebuilt by the caller) as soon as one of those is replaced. The knots
 hold one column of covariate values per covariate and therefore only
-survive a change of the covariate fields if the user supplied them.
+survive a change of the covariate fields if the user supplied them. A
+number of knots (\code{n_knots_tax}, \code{n_knots_dif}) that differs from
+the inherited knots replaces them in the same way, unless a knot matrix was
+supplied, which always wins.
 }
 \keyword{internal}
