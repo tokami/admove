@@ -143,11 +143,7 @@ test_that(".check_kappa_map is silent when taxis is switched off", {
 
 test_that("summary reports the fixed kappa scale", {
 
-  ## nlminb may warn about NA/NaN function evaluations on this example
-  fit <- suppressWarnings(
-    admove(skjepo$sim, do_sdreport = FALSE, do_predictions = FALSE,
-           do_report = FALSE, verbose = FALSE)
-  )
+  fit <- small_fit()
 
   out <- capture.output(summary(fit))
 

@@ -49,11 +49,12 @@ dimension.}
 \item{date_decimal}{Logical; if \code{TRUE}, interpret time labels as decimal
 years and convert them to model time. Default: \code{FALSE}.}
 
-\item{date_format}{Optional character string passed to \code{\link[=as.Date]{as.Date()}} to parse
-character time labels. Default: \code{NULL}.}
+\item{date_format}{Optional format string (see \code{\link[=strptime]{strptime()}}) to parse
+character time labels, e.g. \code{"\%Y-\%m-\%d \%H:\%M"}. The time of day is kept.
+Default: \code{NULL}.}
 
-\item{date_origin}{Optional origin passed to \code{\link[=as.Date]{as.Date()}} when time labels are
-stored numerically. Default: \code{NULL}.}
+\item{date_origin}{Optional origin when time labels are stored numerically
+as (possibly fractional) days since \code{date_origin}. Default: \code{NULL}.}
 
 \item{tz}{Time zone used when converting dates. Default: \code{"UTC"}.}
 

@@ -163,6 +163,73 @@ utils::globalVariables(c("get_cov", "get_sim_par", "get_sim_funcs"))
 }
 
 
+## Parse the time column/labels of prep_tags() and prep_cov() into dates.
+##
+## Unlike as.Date(), the time of day is kept: character input is parsed with
+## as.POSIXct() (using 'date_format' if given), and numeric input is taken as
+## (possibly fractional) days since 'date_origin'. If no value carries a time
+## of day, a Date is returned, so date-only input behaves exactly as before.
+## Values that were present but could not be parsed are reported in a warning,
+## because dropping them silently only surfaces much later, in setup_data().
+.parse_dates <- function(x, date_format = NULL, date_origin = NULL,
+                         date_decimal = FALSE, tz = "UTC") {
+
+  if (isTRUE(date_decimal)) {
+    return(.decimal_year_2_date(as.numeric(x), tz = tz))
+  }
+
+  if (inherits(x, "POSIXt")) {
+    out <- as.POSIXct(x)
+  } else if (inherits(x, "Date")) {
+    out <- x
+  } else {
+    x_chr <- if (is.factor(x)) as.character(x) else x
+    x_num <- if (is.numeric(x_chr)) x_chr else suppressWarnings(as.numeric(x_chr))
+    is_num <- is.numeric(x_chr) ||
+      (is.null(date_format) && !all(is.na(x_num[!is.na(x_chr)])))
+
+    if (is_num) {
+      if (is.null(date_origin)) {
+        stop("Numeric times need 'date_origin' (or 'date_decimal = TRUE') to be converted into dates.")
+      }
+      origin <- .origin_2_posix(date_origin, tz = tz)
+      ## round to milliseconds so that whole days do not end up at 23:59:59.999
+      out <- .POSIXct(round(as.numeric(origin) + as.numeric(x_num) * 86400, 3),
+                      tz = tz)
+    } else if (!is.null(date_format)) {
+      out <- as.POSIXct(as.character(x_chr), format = date_format, tz = tz)
+    } else {
+      out <- tryCatch(as.POSIXct(as.character(x_chr), tz = tz),
+                      error = function(e) {
+                        stop("Could not parse the dates. Please provide 'date_format' (see ?strptime).",
+                             call. = FALSE)
+                      })
+    }
+
+    failed <- is.na(out) & !is.na(x_chr) & nzchar(trimws(as.character(x_chr)))
+    if (any(failed)) {
+      warning(sum(failed), " of ", sum(!is.na(x_chr)), " dates could not be parsed",
+              if (!is.null(date_format)) paste0(" with date_format = '", date_format, "'"),
+              " and are set to NA (e.g. ",
+              paste0("'", utils::head(unique(as.character(x_chr[failed])), 3), "'", collapse = ", "),
+              "). Please check the date format (see ?strptime).",
+              call. = FALSE)
+    }
+  }
+
+  ## no time of day anywhere -> keep the calendar-day behaviour
+  if (inherits(out, "POSIXt")) {
+    lt <- as.POSIXlt(out, tz = tz)
+    secs <- lt$hour * 3600 + lt$min * 60 + lt$sec
+    if (all(abs(secs) < 1e-3 | is.na(secs))) {
+      out <- as.Date(format(out, "%Y-%m-%d", tz = tz))
+    }
+  }
+
+  out
+}
+
+
 #' Convert dates to numeric time since an origin
 #'
 #' Convert a vector of valid dates or date-times to a numeric time scale measured

@@ -95,11 +95,14 @@ is the layout recapture-uncertainty tables usually come in. Default:
 \item{date_decimal}{Logical; if \code{TRUE}, interpret the time variable as a
 decimal year and convert it to model time. Default: \code{FALSE}.}
 
-\item{date_format}{Optional character string passed to \code{\link[=as.Date]{as.Date()}} to parse
-character dates. Default: \code{NULL}.}
+\item{date_format}{Optional format string (see \code{\link[=strptime]{strptime()}}) to parse
+character dates or date-times, e.g. \code{"\%m/\%d/\%Y \%H:\%M"}. The time of day is
+kept. Dates that cannot be parsed are reported in a warning. Default:
+\code{NULL}.}
 
-\item{date_origin}{Optional origin passed to \code{\link[=as.Date]{as.Date()}} when times are
-stored numerically. Default: \code{NULL}.}
+\item{date_origin}{Optional origin when times are stored numerically as
+(possibly fractional) days since \code{date_origin}, e.g. \code{"1899-12-30"} for
+spreadsheet dates. Default: \code{NULL}.}
 
 \item{keep_only_recaptured}{Logical; if \code{TRUE}, only keep tags with at least
 two observations. Currently mainly relevant for mark-recapture-style data.

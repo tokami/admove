@@ -36,10 +36,11 @@
 ##'   dimension.
 ##' @param date_decimal Logical; if `TRUE`, interpret time labels as decimal
 ##'   years and convert them to model time. Default: `FALSE`.
-##' @param date_format Optional character string passed to [as.Date()] to parse
-##'   character time labels. Default: `NULL`.
-##' @param date_origin Optional origin passed to [as.Date()] when time labels are
-##'   stored numerically. Default: `NULL`.
+##' @param date_format Optional format string (see [strptime()]) to parse
+##'   character time labels, e.g. `"%Y-%m-%d %H:%M"`. The time of day is kept.
+##'   Default: `NULL`.
+##' @param date_origin Optional origin when time labels are stored numerically
+##'   as (possibly fractional) days since `date_origin`. Default: `NULL`.
 ##' @param tz Time zone used when converting dates. Default: `"UTC"`.
 ##' @param sref Optional spatial reference information to attach to the returned
 ##'   object.
@@ -370,16 +371,9 @@ prep_cov <- function(x,
         !is.null(date_format) ||
          isTRUE(date_decimal)) {
 
-    if (is.null(date_format) && !is.null(date_origin)) {
-      dati <- as.Date(dati, origin = date_origin, tz = tz)
-    } else if (is.null(date_origin) && !is.null(date_format)) {
-      dati <- as.Date(dati, format = date_format, tz = tz)
-    } else if (isFALSE(date_decimal)) {
-      dati <- as.Date(dati, format = date_format, origin = date_origin,
-                      tz = tz)
-    } else {
-      dati <- .decimal_year_2_date(as.numeric(dati), tz = tz)
-    }
+    dati <- .parse_dates(dati, date_format = date_format,
+                         date_origin = date_origin,
+                         date_decimal = date_decimal, tz = tz)
 
     ## convert date to numeric
     d2t <- date_2_time(dati, tref)

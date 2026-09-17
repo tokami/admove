@@ -93,10 +93,7 @@ test_that(".is_constant_field tolerates rounding noise and ignores non-finite va
 
 test_that(".fitted_par returns the stored parameter list when present", {
 
-  fit <- suppressWarnings(
-    admove(skjepo$sim, do_sdreport = FALSE, do_predictions = FALSE,
-           do_report = FALSE, verbose = FALSE)
-  )
+  fit <- small_fit()
 
   expect_false(is.null(fit$pl))
   expect_identical(admove:::.fitted_par(fit), fit$pl)
@@ -105,10 +102,7 @@ test_that(".fitted_par returns the stored parameter list when present", {
 
 test_that(".fitted_par rebuilds the parameter list when pl is absent", {
 
-  fit <- suppressWarnings(
-    admove(skjepo$sim, do_sdreport = FALSE, do_predictions = FALSE,
-           do_report = FALSE, verbose = FALSE)
-  )
+  fit <- small_fit()
   pl <- fit$pl
   fit$pl <- NULL
 
@@ -120,10 +114,7 @@ test_that("preference knots lie on the preference curve", {
 
   for (sdrep in c(FALSE, TRUE)) {
 
-    fit <- suppressWarnings(
-      admove(skjepo$sim, do_sdreport = sdrep, do_predictions = FALSE,
-             do_report = TRUE, verbose = FALSE)
-    )
+    fit <- small_fit(sdreport = sdrep, report = TRUE)
     pe <- admove:::.fitted_par(fit)
 
     for (ty in c("taxis", "diffusion")) {

@@ -44,12 +44,6 @@
 ##'   is right for a few hundred tags flags every fit of a few thousand. The
 ##'   maximum gradient component is stored in the fitted object as
 ##'   \code{max_gradient} and reported by [summarise_fit()].
-##' @param n_restarts Number of times the optimizer may be restarted from its
-##'   own solution while the maximum gradient component is still above
-##'   \code{grad_tol}. Default \code{2}. A restart costs nothing when the first
-##'   call already converged. It helps when [stats::nlminb()] stops early with a
-##'   stalled trust region, but it cannot escape a point the optimizer is
-##'   genuinely stuck at -- there it only makes the reported status honest.
 ##' @param do_predictions Logical; if \code{TRUE} (default), model predictions
 ##'   are computed after fitting. If \code{FALSE}, prediction-related outputs are
 ##'   skipped, and some plotting methods may not be available.
@@ -107,7 +101,6 @@ admove <- function(dat,
                    upper = NULL,
                    rel_tol = 1e-10,
                    grad_tol = 1e-4,
-                   n_restarts = 2,
                    do_predictions = TRUE,
                    do_sdreport = TRUE,
                    do_report = TRUE,
@@ -273,33 +266,8 @@ admove <- function(dat,
                        upper = upper2)
 
   ## nlminb can stop at a point that is not stationary and still report
-  ## convergence = 0, so judge on the gradient as well. Restarting from the
-  ## previous solution gives the trust region a fresh start; when the optimizer
-  ## is genuinely stuck the parameters simply do not move and the reported
-  ## status usually turns into "false convergence (8)", which is informative in
-  ## itself. Stop as soon as the gradient is small or the solution stops moving.
+  ## convergence = 0, so judge on the gradient as well
   max_gradient <- .max_abs_gradient(obj, opt$par)
-  n_restarts <- max(0L, as.integer(n_restarts))
-
-  if (n_restarts > 0) {
-    for (i in seq_len(n_restarts)) {
-      if (!.not_converged(opt, max_gradient, grad_tol)) break
-      if (!is.finite(max_gradient)) break
-      opt_new <- stats::nlminb(opt$par, obj$fn, obj$gr,
-                               control = ctrl,
-                               lower = lower2,
-                               upper = upper2)
-      moved <- !isTRUE(all.equal(unname(opt_new$par), unname(opt$par)))
-      opt <- opt_new
-      max_gradient <- .max_abs_gradient(obj, opt$par)
-      if (verbose) {
-        message("Restart ", i, ": objective ", signif(opt$objective, 10),
-                ", max|gradient| ", signif(max_gradient, 4),
-                if (!moved) " (parameters unchanged)" else "")
-      }
-      if (!moved) break
-    }
-  }
 
   t3 <- Sys.time()
 
@@ -1779,12 +1747,6 @@ plot_fit <- function(x,
   if (opt$convergence > 0) return("gradient_ok")
 
   "ok"
-}
-
-
-## Whether another optimizer restart is worth trying: anything short of "ok".
-.not_converged <- function(opt, max_gradient, grad_tol) {
-  !identical(.convergence_status(opt, max_gradient, grad_tol), "ok")
 }
 
 

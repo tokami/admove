@@ -24,23 +24,21 @@ test_that(".max_abs_gradient is NA when the gradient cannot be evaluated", {
 })
 
 
-test_that(".not_converged flags a large gradient even when nlminb is happy", {
+test_that(".convergence_status flags a large gradient even when nlminb is happy", {
 
   ok <- list(convergence = 0L, message = "relative convergence (4)")
 
-  expect_false(admove:::.not_converged(ok, 1e-4, 1e-2))
-  expect_true(admove:::.not_converged(ok, 60, 1e-2))
-  expect_true(admove:::.not_converged(ok, NA_real_, 1e-2))
-  expect_true(admove:::.not_converged(list(convergence = 1L), 1e-8, 1e-2))
+  expect_equal(admove:::.convergence_status(ok, 1e-4, 1e-2), "ok")
+  expect_equal(admove:::.convergence_status(ok, 60, 1e-2), "bad")
+  expect_equal(admove:::.convergence_status(ok, NA_real_, 1e-2), "bad")
+  expect_equal(admove:::.convergence_status(list(convergence = 1L), 1e-8, 1e-2),
+               "gradient_ok")
 })
 
 
 test_that("a fit stores the maximum gradient and summary reports it", {
 
-  fit <- suppressWarnings(
-    admove(skjepo$sim, do_sdreport = FALSE, do_predictions = FALSE,
-           do_report = FALSE, verbose = FALSE)
-  )
+  fit <- small_fit()
 
   expect_true(is.numeric(fit$max_gradient))
   expect_equal(fit$grad_tol, 1e-4)
@@ -52,10 +50,7 @@ test_that("a fit stores the maximum gradient and summary reports it", {
 
 test_that("summary warns when the optimizer stopped away from a stationary point", {
 
-  fit <- suppressWarnings(
-    admove(skjepo$sim, do_sdreport = FALSE, do_predictions = FALSE,
-           do_report = FALSE, verbose = FALSE)
-  )
+  fit <- small_fit()
 
   ## pretend the optimizer stopped with a large gradient but reported success
   fit$opt$convergence <- 0L
@@ -64,18 +59,6 @@ test_that("summary warns when the optimizer stopped away from a stationary point
   out <- capture.output(summary(fit))
   expect_true(any(grepl("did not obtain proper convergence", out)))
   expect_true(any(grepl("gradient is not zero", out)))
-})
-
-
-test_that("n_restarts = 0 skips the restart loop", {
-
-  ## only checks that the argument is accepted and the fit is unchanged in shape
-  fit <- suppressWarnings(
-    admove(skjepo$sim, n_restarts = 0, do_sdreport = FALSE,
-           do_predictions = FALSE, do_report = FALSE, verbose = FALSE)
-  )
-
-  expect_true(is.numeric(fit$max_gradient))
 })
 
 
@@ -90,9 +73,11 @@ test_that("the gradient tolerance scales with the objective", {
   expect_equal(admove:::.grad_threshold(1e-4, 12), 12e-4)
 
   ## the values the EPO skipjack fits actually stop at
-  for (g in c(0.013, 0.034, 0.087)) expect_false(admove:::.not_converged(big, g, 1e-4))
-  expect_true(admove:::.not_converged(big, 60, 1e-4))
-  expect_true(admove:::.not_converged(small, 0.087, 1e-4))
+  for (g in c(0.013, 0.034, 0.087)) {
+    expect_equal(admove:::.convergence_status(big, g, 1e-4), "ok")
+  }
+  expect_equal(admove:::.convergence_status(big, 60, 1e-4), "bad")
+  expect_equal(admove:::.convergence_status(small, 0.087, 1e-4), "bad")
 
   ## objectives below 1 do not shrink the threshold further
   expect_equal(admove:::.grad_threshold(1e-4, 0.001), 1e-4)
@@ -114,20 +99,12 @@ test_that("a zero gradient outranks the optimizer's status code", {
 
   expect_equal(admove:::.convergence_status(
     list(convergence = 0L, objective = 11244), 0.087, 1e-4), "ok")
-
-  ## a restart is still attempted for anything short of "ok"
-  expect_true(admove:::.not_converged(big, 0.017, 1e-4))
-  expect_false(admove:::.not_converged(
-    list(convergence = 0L, objective = 11244), 0.087, 1e-4))
 })
 
 
 test_that("summary notes, rather than condemns, a stalled line search", {
 
-  fit <- suppressWarnings(
-    admove(skjepo$sim, do_sdreport = FALSE, do_predictions = FALSE,
-           do_report = FALSE, verbose = FALSE)
-  )
+  fit <- small_fit()
   fit$opt$convergence <- 1L
   fit$opt$message <- "false convergence (8)"
   fit$max_gradient <- 1e-8

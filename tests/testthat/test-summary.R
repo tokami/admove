@@ -67,7 +67,7 @@ test_that(".par_display_labels maps element names to summary row names", {
 
 test_that("summary prints one row per estimated parameter", {
 
-  sim <- skjepo$sim
+  sim <- small_sim()
   conf <- sim$conf
   conf$use_advection <- TRUE
   map <- default_map(sim$dat, conf, sim$par)

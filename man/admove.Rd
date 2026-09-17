@@ -15,7 +15,6 @@ admove(
   upper = NULL,
   rel_tol = 1e-10,
   grad_tol = 1e-04,
-  n_restarts = 2,
   do_predictions = TRUE,
   do_sdreport = TRUE,
   do_report = TRUE,
@@ -71,13 +70,6 @@ which scales with the number of observations: an absolute threshold that
 is right for a few hundred tags flags every fit of a few thousand. The
 maximum gradient component is stored in the fitted object as
 \code{max_gradient} and reported by \code{\link[=summarise_fit]{summarise_fit()}}.}
-
-\item{n_restarts}{Number of times the optimizer may be restarted from its
-own solution while the maximum gradient component is still above
-\code{grad_tol}. Default \code{2}. A restart costs nothing when the first
-call already converged. It helps when \code{\link[stats:nlminb]{stats::nlminb()}} stops early with a
-stalled trust region, but it cannot escape a point the optimizer is
-genuinely stuck at -- there it only makes the reported status honest.}
 
 \item{do_predictions}{Logical; if \code{TRUE} (default), model predictions
 are computed after fitting. If \code{FALSE}, prediction-related outputs are

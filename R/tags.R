@@ -36,10 +36,13 @@
 ##'   `NULL`, which leaves the entries as literal column names.
 ##' @param date_decimal Logical; if `TRUE`, interpret the time variable as a
 ##'   decimal year and convert it to model time. Default: `FALSE`.
-##' @param date_format Optional character string passed to [as.Date()] to parse
-##'   character dates. Default: `NULL`.
-##' @param date_origin Optional origin passed to [as.Date()] when times are
-##'   stored numerically. Default: `NULL`.
+##' @param date_format Optional format string (see [strptime()]) to parse
+##'   character dates or date-times, e.g. `"%m/%d/%Y %H:%M"`. The time of day is
+##'   kept. Dates that cannot be parsed are reported in a warning. Default:
+##'   `NULL`.
+##' @param date_origin Optional origin when times are stored numerically as
+##'   (possibly fractional) days since `date_origin`, e.g. `"1899-12-30"` for
+##'   spreadsheet dates. Default: `NULL`.
 ##' @param keep_only_recaptured Logical; if `TRUE`, only keep tags with at least
 ##'   two observations. Currently mainly relevant for mark-recapture-style data.
 ##'   Default: `TRUE`.
@@ -271,24 +274,9 @@ prep_tags <- function(x,
         !is.null(date_format) ||
          isTRUE(date_decimal)) {
 
-    if (is.null(date_format) && !is.null(date_origin)) {
-      dati <- as.Date(x$t,
-                      origin = date_origin,
-                      tz = tz)
-
-    } else if (is.null(date_origin) && !is.null(date_format)) {
-      dati <- as.Date(x$t,
-                      format = date_format,
-                      tz = tz)
-
-    } else if (isFALSE(date_decimal)) {
-      dati <- as.Date(x$t,
-                      origin = date_origin,
-                      format = date_format,
-                      tz = tz)
-    } else {
-      dati <- .decimal_year_2_date(as.numeric(x$t), tz = tz)
-    }
+    dati <- .parse_dates(x$t, date_format = date_format,
+                         date_origin = date_origin,
+                         date_decimal = date_decimal, tz = tz)
 
     x$t <- date_2_time(dati, tref)
     tref <- create_tref(attr(x$t, "tref")[["origin"]],
