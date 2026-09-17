@@ -16,14 +16,13 @@ add_tag_dist(
 \arguments{
 \item{fit}{A fitted object of class \code{admove}, as returned by \code{\link[=admove]{admove()}}.}
 
-\item{i}{Integer index or vector of indices of the tags to process. \code{NULL}
-(default) processes all tags.}
+\item{i}{Tag indices or tag ids to process, as in \code{\link[=tag_predictions]{tag_predictions()}}.
+\code{NULL} (default) processes all tags.}
 
-\item{dt}{Time step used for the Kalman-filter forward pass (engine 1 only).
-Default is \code{0.5}.}
+\item{dt}{Unused; kept for backward compatibility.}
 
-\item{engine}{Optional integer overriding the engine stored in
-\code{fit$conf$engine}. \code{1} = Kalman filter, \code{2} = CTMC.}
+\item{engine}{Optional override of the engine stored in \code{fit$conf$engine}.
+Must select the CTMC engine (\code{"ctmc"}, or its alias \code{2}).}
 
 \item{xrel0, yrel0}{Optional coordinates overriding the release location
 for CTMC-based predictions (applied to every tag in \code{i}).}
@@ -35,11 +34,16 @@ and metadata required by \code{\link[=plot_tag_dist]{plot_tag_dist()}}.
 }
 \description{
 Propagates the model's predicted spatial location distribution for one or
-more archival tags from release to recovery time, using either the CTMC
-forward-pass (engine 2) or a Kalman-filter forward pass (engine 1). Results
-are stored in \code{fit$tag_dist} (a named list keyed by tag index) and consumed
-by \code{\link[=plot_tag_dist]{plot_tag_dist()}}. Separating the expensive computation from rendering
-means plot aesthetics can be changed without re-running the model.
+more archival tags from release to recovery time with the CTMC forward pass
+(\code{conf$engine = "ctmc"}). Results are stored in \code{fit$tag_dist} (a named list keyed
+by tag index) and consumed by \code{\link[=plot_tag_dist]{plot_tag_dist()}}. Separating the expensive
+computation from rendering means plot aesthetics can be changed without
+re-running the model.
+
+The Kalman filter (\code{conf$engine = "kf"}) carries a mean and a variance rather
+than a distribution over cells, and the predictions it evaluates are
+reported by the likelihood itself: use \code{\link[=tag_predictions]{tag_predictions()}},
+\code{\link[=plot_tag_pred]{plot_tag_pred()}} and \code{\link[=plot_tag_resid]{plot_tag_resid()}} for it.
 
 Successive calls accumulate into the same list, so distributions can be
 added in batches without discarding earlier results.
@@ -48,5 +52,5 @@ Tags recaptured within a single time step (engine 1) or with fewer than two
 position records are skipped with a warning rather than stopping.
 }
 \seealso{
-\code{\link[=plot_tag_dist]{plot_tag_dist()}}
+\code{\link[=plot_tag_dist]{plot_tag_dist()}}, \code{\link[=tag_predictions]{tag_predictions()}}
 }

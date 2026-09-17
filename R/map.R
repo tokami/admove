@@ -102,7 +102,8 @@ default_map <- function(dat, conf, par){
   next_id <- 1L
 
   for (i in seq_len(3)) {
-    if (use_type[i] && conf$obs_var_type[i] %in% c(1, 2)) {
+    if (use_type[i] &&
+          .get_obs_var_type_integer(conf$obs_var_type)[i] %in% c(1, 2)) {
       logSdO[(2 * i - 1):(2 * i)] <- next_id  ## assume equal var in x,y
       next_id <- next_id + 1L
     }

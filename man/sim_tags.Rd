@@ -31,8 +31,8 @@ sim_tags(
   n_knots_dif = NULL,
   funcs = NULL,
   n_reject = 20,
-  sim_engine = 1,
-  ctmc_method = 1,
+  sim_engine = "kf",
+  ctmc_method = "expav",
   sref = NULL,
   tref = NULL,
   target_dif_frac = 1/500,
@@ -141,14 +141,15 @@ a movement step that leaves the valid grid cells (or reaches a location
 where taxis or advection is undefined). \code{0} turns rejection off. A
 step that is still invalid after all attempts is not taken, i.e. the tag
 stays at its current position for that time step. Only used for
-\code{sim_engine = 1}.}
+\code{sim_engine = "kf"}.}
 
-\item{sim_engine}{Integer specifying the simulation engine: \code{1} for
-continuous-space simulation and \code{2} for CTMC-based grid simulation.}
+\item{sim_engine}{Simulation engine: \code{"kf"} for continuous-space
+simulation and \code{"ctmc"} for CTMC-based grid simulation. The numbers
+\code{1} and \code{2} are accepted as aliases.}
 
 \item{ctmc_method}{Matrix-exponential method used for CTMC simulation:
-\code{0} for \code{\link[Matrix:expm]{Matrix::expm()}}, \code{1} (default) for \code{\link[RTMB:expAv]{RTMB::expAv()}} with
-uniformization.}
+\code{"expm"} for \code{\link[Matrix:expm]{Matrix::expm()}}, \code{"expav"} (default) for
+\code{\link[RTMB:expAv]{RTMB::expAv()}} with uniformization.}
 
 \item{sref}{Optional spatial reference to attach to the simulated data.}
 

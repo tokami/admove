@@ -126,10 +126,10 @@ test_that("default_conf sets sensible default variance options", {
 
   conf <- default_conf(dat, verbose = FALSE)
 
-  expect_equal(conf$obs_var_type, c(0, 0, 0))
+  expect_equal(conf$obs_var_type, rep("none", 3))
   expect_equal(conf$do_update, c(TRUE,TRUE,FALSE))
-  expect_equal(conf$engine, 1)
-  expect_equal(conf$ctmc_method, 0)
+  expect_equal(conf$engine, "kf")
+  expect_equal(conf$ctmc_method, "expm")
 })
 
 
@@ -213,7 +213,8 @@ test_that("check_conf preserves user supplied values", {
 
   expect_false(conf_checked$use_taxis)
   expect_true(conf_checked$use_advection)
-  expect_equal(conf_checked$engine, 2)
+  ## numbers are accepted and normalised to the names
+  expect_equal(conf_checked$engine, "ctmc")
 })
 
 
@@ -269,17 +270,22 @@ test_that("check_conf warns when observation error is estimated from ctags alone
 })
 
 
-test_that("ctmc_method accepts 0 and 1 and explains the renumbering of 2", {
+test_that("ctmc_method takes the method names and rejects the old numbers", {
 
-  expect_silent(admove:::.check_ctmc_method(0))
-  expect_silent(admove:::.check_ctmc_method(1))
-  expect_error(admove:::.check_ctmc_method(2), "former method 2 is now 1")
-  expect_error(admove:::.check_ctmc_method(3), "must be 0")
+  expect_silent(admove:::.check_ctmc_method("expm"))
+  expect_silent(admove:::.check_ctmc_method("expav"))
+  expect_error(admove:::.check_ctmc_method("uniformization"), "must be either")
+
+  ## the old numbering is not remapped: a 1 written for it would otherwise
+  ## silently select the other method
+  expect_error(admove:::.check_ctmc_method(0), 'replace 0 with "expm"')
+  expect_error(admove:::.check_ctmc_method(1), 'replace 1 with "expav"')
+  expect_error(admove:::.check_ctmc_method(2), "now given as a string")
 
   conf <- default_conf(skjepo$sim$dat, verbose = FALSE)
-  conf$ctmc_method <- 2
+  conf$ctmc_method <- 1
   expect_error(check_conf(conf, skjepo$sim$dat, verbose = FALSE),
-               "former method 2 is now 1")
+               'replace 1 with "expav"')
 })
 
 
@@ -302,5 +308,60 @@ test_that("both CTMC matrix-exponential methods give the same likelihood", {
     obj$fn(obj$par)
   }
 
-  expect_equal(nll(1), nll(0), tolerance = 1e-6)
+  expect_equal(nll("expav"), nll("expm"), tolerance = 1e-6)
+})
+
+
+test_that("engine and obs_var_type are configured by name, numbers still work", {
+
+  dat <- skjepo$sim$dat
+
+  conf <- default_conf(dat, verbose = FALSE)
+  expect_equal(conf$engine, "kf")
+  expect_equal(conf$obs_var_type, rep("none", 3))
+
+  ## names, in any case, and the numbers they replaced
+  expect_equal(admove:::.get_engine_integer("ctmc"), 2L)
+  expect_equal(admove:::.get_engine_integer("CTMC"), 2L)
+  expect_equal(admove:::.get_engine_name(2), "ctmc")
+  expect_equal(admove:::.get_engine_name("kf"), "kf")
+
+  expect_equal(admove:::.get_obs_var_type_integer(rep("none", 3)), rep(0L, 3))
+  expect_equal(admove:::.get_obs_var_type_name(c(1, 2, 3)),
+               c("all_but_last", "all", "data"))
+
+  ## a number assigned into a character setting arrives as "1"
+  conf$obs_var_type[1] <- 1L
+  expect_equal(admove:::.get_obs_var_type_integer(conf$obs_var_type),
+               c(1L, 0L, 0L))
+  expect_equal(check_conf(conf, dat, verbose = FALSE)$obs_var_type,
+               c("all_but_last", "none", "none"))
+
+  ## check_conf normalises whatever spelling was used
+  conf2 <- check_conf(list(engine = 2, obs_var_type = c(0, 0, 2)), dat,
+                      verbose = FALSE)
+  expect_equal(conf2$engine, "ctmc")
+  expect_equal(conf2$obs_var_type, c("none", "none", "all"))
+
+  expect_error(check_conf(list(engine = "kalman"), dat, verbose = FALSE),
+               "must be \"kf\"")
+  expect_error(check_conf(list(obs_var_type = c("none", "none", "sometimes")),
+                          dat, verbose = FALSE),
+               "must be one of")
+})
+
+
+test_that("the map follows obs_var_type given by name", {
+
+  dat <- skjepo$sim$dat
+  conf <- default_conf(dat, verbose = FALSE)
+  par <- suppressMessages(default_par(dat, conf, verbose = FALSE))
+
+  conf_name <- conf
+  conf_name$obs_var_type <- c("all", "none", "none")
+  conf_num <- conf
+  conf_num$obs_var_type <- c(2L, 0L, 0L)
+
+  expect_equal(default_map(dat, conf_name, par)$logSdO,
+               default_map(dat, conf_num, par)$logSdO)
 })

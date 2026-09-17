@@ -23,9 +23,9 @@
   celltable = NULL,
   xcen = NULL,
   ycen = NULL,
-  sim_engine = 1,
+  sim_engine = "kf",
   n_reject = 20,
-  ctmc_method = 1,
+  ctmc_method = "expav",
   add_obs_unc = NULL
 )
 }
@@ -75,7 +75,8 @@ simulation.}
 
 \item{ycen}{Numeric vector of y-coordinates of grid-cell centres.}
 
-\item{sim_engine}{Integer selecting the simulation engine: \code{1} for
+\item{sim_engine}{Simulation engine, \code{"kf"} or \code{"ctmc"} (or the
+aliases \code{1} and \code{2}): \code{"kf"} for
 continuous-space simulation and \code{2} for CTMC-based grid simulation.}
 
 \item{n_reject}{Maximum number of attempts to redraw the diffusion part of
@@ -84,8 +85,8 @@ that is still invalid is not taken; the number of such steps is returned
 as attribute \code{"n_stuck"}.}
 
 \item{ctmc_method}{Matrix-exponential method used in CTMC simulation:
-\code{0} for \code{\link[Matrix:expm]{Matrix::expm()}}, \code{1} (default) for \code{\link[RTMB:expAv]{RTMB::expAv()}} with
-uniformization.}
+\code{"expm"} for \code{\link[Matrix:expm]{Matrix::expm()}}, \code{"expav"} (default) for
+\code{\link[RTMB:expAv]{RTMB::expAv()}} with uniformization.}
 
 \item{add_obs_unc}{Add observation uncertainty to tag locations? By default
 (NULL), observation uncertainty is added to archival tags (tag_type =
@@ -103,10 +104,10 @@ discrete spatial grid using a continuous-time Markov chain (CTMC)
 formulation.
 }
 \details{
-For \code{sim_engine = 1}, movement is simulated in continuous space by
+For \code{sim_engine = "kf"}, movement is simulated in continuous space by
 combining taxis, advection, and diffusion increments at each time step.
 
-For \code{sim_engine = 2}, movement is simulated on the spatial grid by
+For \code{sim_engine = "ctmc"}, movement is simulated on the spatial grid by
 constructing a transition-rate matrix from diffusion, taxis, and advection,
 and then propagating the tag distribution forward over one time step.
 

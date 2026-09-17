@@ -45,7 +45,7 @@ sim_data(
   n_resightings = c(1, 5),
   n_candidates = 1,
   candidate_sd = NULL,
-  sim_engine = 1,
+  sim_engine = "kf",
   n_reject = 100,
   target_dif_frac = 1/300,
   target_tax_frac = 1/10,
@@ -180,8 +180,9 @@ known recapture). See \code{\link[=sim_tags]{sim_tags()}}.}
 \item{candidate_sd}{Numeric; spread of the simulated candidate positions
 around the true recapture. See \code{\link[=sim_tags]{sim_tags()}}.}
 
-\item{sim_engine}{Integer specifying the simulation engine: \code{1} for
-continuous-space simulation and \code{2} for CTMC-based grid simulation.}
+\item{sim_engine}{Simulation engine: \code{"kf"} for continuous-space
+simulation and \code{"ctmc"} for CTMC-based grid simulation. The numbers
+\code{1} and \code{2} are accepted as aliases.}
 
 \item{n_reject}{Maximum number of attempts to redraw a movement step that
 leaves the valid grid cells. \code{0} turns rejection off. A step that is

@@ -42,9 +42,10 @@ generated from \code{dat} and \code{conf}.}
 If \code{NULL}, a default map is generated from \code{dat}, \code{conf},
 and \code{par}.}
 
-\item{engine}{Optional integer to override \code{conf$engine}. Use
-\code{1} for the Kalman filter and \code{2} for the CTMC formulation.
-If \code{NULL}, the value in \code{conf} is used.}
+\item{engine}{Optional override of \code{conf$engine}: \code{"kf"} for the
+Kalman filter or \code{"ctmc"} for the CTMC formulation (the numbers
+\code{1} and \code{2} are accepted as aliases). If \code{NULL}, the value
+in \code{conf} is used.}
 
 \item{run}{Logical; if \code{TRUE} (default), the model is optimized. If
 \code{FALSE}, only the RTMB objective object is constructed and returned.}
@@ -86,9 +87,10 @@ run to extract reported RTMB quantities.}
 are precomputed for all tags via \code{\link[=add_tag_dist]{add_tag_dist()}} and stored in
 \code{fit$tag_dist} (consumed by \code{\link[=plot_tag_dist]{plot_tag_dist()}}). Default is
 \code{FALSE}, as this is per-tag expensive and only needed for tag-location
-visualisation; it requires a prediction grid and runs after the steps
-above. Compute distributions for selected tags later with
-\code{add_tag_dist(fit, i = ...)}.}
+visualisation; it requires the CTMC engine and a prediction grid, and runs
+after the steps above. Compute distributions for selected tags later with
+\code{add_tag_dist(fit, i = ...)}. With the Kalman filter the predicted
+positions come from \code{\link[=tag_predictions]{tag_predictions()}} instead.}
 
 \item{save_covariance}{Logical; if \code{TRUE}, the covariance matrix from
 \code{\link[RTMB:sdreport]{RTMB::sdreport()}} is retained. This may substantially increase memory use.}

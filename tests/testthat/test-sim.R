@@ -328,29 +328,27 @@ test_that("sim_tags resolves 'x' and 'fit' like sim_data", {
 
 test_that("simulated observation error is estimated by the returned conf", {
 
-  conf <- list(obs_var_type = c(0L, 0L, 0L))
+  none3 <- rep("none", 3)
+  conf <- list(obs_var_type = none3)
 
   ## archival tags got noise -> estimate it
   expect_equal(admove:::.sim_obs_var_conf(conf, NULL, "d")$obs_var_type,
-               c(1L, 0L, 0L))
+               c("all_but_last", "none", "none"))
   ## no noisy tag types -> unchanged
-  expect_equal(admove:::.sim_obs_var_conf(conf, NULL, NULL)$obs_var_type,
-               c(0L, 0L, 0L))
+  expect_equal(admove:::.sim_obs_var_conf(conf, NULL, NULL)$obs_var_type, none3)
   ## an explicit user setting wins
-  expect_equal(admove:::.sim_obs_var_conf(conf, conf, "d")$obs_var_type,
-               c(0L, 0L, 0L))
+  expect_equal(admove:::.sim_obs_var_conf(conf, conf, "d")$obs_var_type, none3)
   ## mark-recapture tags are never switched on: their kept positions carry no
   ## simulated noise, and ctags alone cannot estimate it
-  expect_equal(admove:::.sim_obs_var_conf(conf, NULL, c("c"))$obs_var_type,
-               c(0L, 0L, 0L))
+  expect_equal(admove:::.sim_obs_var_conf(conf, NULL, c("c"))$obs_var_type, none3)
   expect_equal(admove:::.sim_obs_var_conf(conf, NULL, c("d", "c"))$obs_var_type,
-               c(1L, 0L, 0L))
-  ## a stronger existing setting is kept
+               c("all_but_last", "none", "none"))
+  ## the former numbers are accepted, and a stronger existing setting is kept
   conf2 <- list(obs_var_type = c(2L, 0L, 0L))
   expect_equal(admove:::.sim_obs_var_conf(conf2, NULL, "d")$obs_var_type,
-               c(2L, 0L, 0L))
+               c("all", "none", "none"))
 
   sim <- small_sim()
-  expect_equal(sim$conf$obs_var_type[1], 1L)
+  expect_equal(sim$conf$obs_var_type[1], "all_but_last")
   expect_false(all(is.na(sim$map$logSdO)))
 })

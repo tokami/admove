@@ -21,9 +21,10 @@
 ##' @param map An optional parameter map, typically created by [default_map()].
 ##'   If \code{NULL}, a default map is generated from \code{dat}, \code{conf},
 ##'   and \code{par}.
-##' @param engine Optional integer to override \code{conf$engine}. Use
-##'   \code{1} for the Kalman filter and \code{2} for the CTMC formulation.
-##'   If \code{NULL}, the value in \code{conf} is used.
+##' @param engine Optional override of \code{conf$engine}: \code{"kf"} for the
+##'   Kalman filter or \code{"ctmc"} for the CTMC formulation (the numbers
+##'   \code{1} and \code{2} are accepted as aliases). If \code{NULL}, the value
+##'   in \code{conf} is used.
 ##' @param run Logical; if \code{TRUE} (default), the model is optimized. If
 ##'   \code{FALSE}, only the RTMB objective object is constructed and returned.
 ##' @param lower Optional lower bounds for optimization. If \code{NULL}, no
@@ -56,9 +57,10 @@
 ##'   are precomputed for all tags via [add_tag_dist()] and stored in
 ##'   \code{fit$tag_dist} (consumed by [plot_tag_dist()]). Default is
 ##'   \code{FALSE}, as this is per-tag expensive and only needed for tag-location
-##'   visualisation; it requires a prediction grid and runs after the steps
-##'   above. Compute distributions for selected tags later with
-##'   \code{add_tag_dist(fit, i = ...)}.
+##'   visualisation; it requires the CTMC engine and a prediction grid, and runs
+##'   after the steps above. Compute distributions for selected tags later with
+##'   \code{add_tag_dist(fit, i = ...)}. With the Kalman filter the predicted
+##'   positions come from [tag_predictions()] instead.
 ##' @param save_covariance Logical; if \code{TRUE}, the covariance matrix from
 ##'   [RTMB::sdreport()] is retained. This may substantially increase memory use.
 ##' @param dbg Logical; if \code{TRUE}, the function is run in debugging mode.
@@ -140,7 +142,10 @@ admove <- function(dat,
   if(is.null(par)) par <- default_par(dat, conf)
   if(is.null(map)) map <- default_map(dat, conf, par)
 
-  conf$engine <- .get_engine_integer(conf$engine)
+  conf$engine <- .get_engine_name(conf$engine)
+  conf$obs_var_type <- .get_obs_var_type_name(conf$obs_var_type)
+  engine_int <- .get_engine_integer(conf$engine)
+  obs_var_type_int <- .get_obs_var_type_integer(conf$obs_var_type)
   conf <- .check_seasonal_lengths(conf, dat)
 
   ## knot matrices must line up with the covariate fields and the spline arrays
@@ -180,17 +185,17 @@ admove <- function(dat,
   ## check that mapping in line with obs_var_type
   ind_t_use <- c(conf$use_dtags, conf$use_stags, conf$use_ctags)
   obs_var_type_map <- !apply(matrix(map$logSdO, 2, 3)[,ind_t_use, drop = FALSE], 2, function(x) any(is.na(x)))
-  obs_var_type_conf <- sapply(conf$obs_var_type[ind_t_use], function(x) ifelse(x %in% c(1,2), TRUE, FALSE))
+  obs_var_type_conf <- obs_var_type_int[ind_t_use] %in% c(1, 2)
   if(any(obs_var_type_conf != obs_var_type_map)) stop("conf$obs_var_type and mapped parameters (map) do not agree. Did you manipulate map, but not conf? Please check!")
 
   ## check that sdx and sdy in tags if obs_var_type == 3
-  if (any(conf$obs_var_type == 3) &&
+  if (any(obs_var_type_int == 3) &&
         (!any(colnames(dat$tags) == "sdx") ||
            !any(colnames(dat$tags) == "sdy"))) stop("Option to use imported observation uncertainty specified (conf$obs_var_type = 3), but columns 'sdx' and 'sdy' not provided in dat$tags! Please add these columns with the respective information.")
 
   ## extra checks for CTMC
-  if (conf$engine == 2) {
-    if (is.null(dat$grid)) stop("No grid provided! CTMC (engine = 2) requires a grid (dat$grid). See create_grid()!")
+  if (engine_int == 2L) {
+    if (is.null(dat$grid)) stop("No grid provided! CTMC (engine = \"ctmc\") requires a grid (dat$grid). See create_grid()!")
     if (!any(colnames(dat$tags) == "ic")) stop("Tags are not matched to the grid cells (column tags$ic is missing). Run check_tags()!")
 
     if (verbose && identical(conf$drift_scheme, "central")) {
@@ -201,8 +206,11 @@ admove <- function(dat,
     }
   }
 
-  ## Combine conf and dat
+  ## Combine conf and dat. nll() reads the integer codes of the engine and the
+  ## observation-variance types, while conf keeps the names the user set.
   tmb_all <- c(dat, conf)
+  tmb_all$engine <- engine_int
+  tmb_all$obs_var_type <- obs_var_type_int
   tmb_all$tags <- split(dat$tags, dat$tags$id)
   tmb_all$dbg <- dbg
 
@@ -366,7 +374,12 @@ admove <- function(dat,
 
   if (do_tag_dist) {
 
-    if (is.null(dat$pred$grid$igrid)) {
+    if (identical(engine_int, 1L)) {
+
+      if (verbose) message("Tag location distributions are a CTMC feature; ",
+                           "see tag_predictions() for the Kalman filter.")
+
+    } else if (is.null(dat$pred$grid$igrid)) {
 
       if (verbose) message("No prediction grid provided; skipping tag distributions.")
 
@@ -861,11 +874,16 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 ##'
 ##' @description
 ##' Propagates the model's predicted spatial location distribution for one or
-##' more archival tags from release to recovery time, using either the CTMC
-##' forward-pass (engine 2) or a Kalman-filter forward pass (engine 1). Results
-##' are stored in `fit$tag_dist` (a named list keyed by tag index) and consumed
-##' by [plot_tag_dist()]. Separating the expensive computation from rendering
-##' means plot aesthetics can be changed without re-running the model.
+##' more archival tags from release to recovery time with the CTMC forward pass
+##' (`conf$engine = "ctmc"`). Results are stored in `fit$tag_dist` (a named list keyed
+##' by tag index) and consumed by [plot_tag_dist()]. Separating the expensive
+##' computation from rendering means plot aesthetics can be changed without
+##' re-running the model.
+##'
+##' The Kalman filter (`conf$engine = "kf"`) carries a mean and a variance rather
+##' than a distribution over cells, and the predictions it evaluates are
+##' reported by the likelihood itself: use [tag_predictions()],
+##' [plot_tag_pred()] and [plot_tag_resid()] for it.
 ##'
 ##' Successive calls accumulate into the same list, so distributions can be
 ##' added in batches without discarding earlier results.
@@ -874,12 +892,11 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 ##' position records are skipped with a warning rather than stopping.
 ##'
 ##' @param fit A fitted object of class `admove`, as returned by [admove()].
-##' @param i Integer index or vector of indices of the tags to process. `NULL`
-##'   (default) processes all tags.
-##' @param dt Time step used for the Kalman-filter forward pass (engine 1 only).
-##'   Default is `0.5`.
-##' @param engine Optional integer overriding the engine stored in
-##'   `fit$conf$engine`. `1` = Kalman filter, `2` = CTMC.
+##' @param i Tag indices or tag ids to process, as in [tag_predictions()].
+##'   `NULL` (default) processes all tags.
+##' @param dt Unused; kept for backward compatibility.
+##' @param engine Optional override of the engine stored in `fit$conf$engine`.
+##'   Must select the CTMC engine (`"ctmc"`, or its alias `2`).
 ##' @param xrel0,yrel0 Optional coordinates overriding the release location
 ##'   for CTMC-based predictions (applied to every tag in `i`).
 ##'
@@ -888,7 +905,7 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 ##' successfully processed tag index) containing the precomputed distributions
 ##' and metadata required by [plot_tag_dist()].
 ##'
-##' @seealso [plot_tag_dist()]
+##' @seealso [plot_tag_dist()], [tag_predictions()]
 ##'
 ##' @export
 add_tag_dist <- function(fit, i = NULL, dt = 0.5,
@@ -905,12 +922,26 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
     tags <- dat$tags
   }
 
-  if (is.null(i)) i <- seq_along(tags)
-
-  if (any(i < 1L | i > length(tags)))
-    stop("Tag index 'i' contains values outside [1, ", length(tags), "].")
+  ## indices or ids, resolved to indices into the tag list
+  i <- match(.resolve_tag_ids(i, names(tags)), names(tags))
 
   if (is.null(engine)) engine <- conf$engine
+  engine <- .get_engine_integer(.get_engine_name(engine, "engine"))
+
+  ## The Kalman filter tracks a mean and a variance, not a distribution over
+  ## cells, and the predictions it evaluates are reported by nll() itself.
+  ## Rebuilding them here duplicated the filter and drew the prediction on top
+  ## of the observation it was updated with, so this path now points at the
+  ## functions that read the reported predictions instead.
+  if (identical(engine, 1L)) {
+    stop("add_tag_dist() is for the CTMC engine (conf$engine = \"ctmc\"), which ",
+         "carries a distribution over grid cells.\n",
+         "  For the Kalman filter use the reported predictions:\n",
+         "    pred <- tag_predictions(fit)            # table of predicted vs observed\n",
+         "    plot_tag_pred(fit, i = 1)               # one tag: map and coordinates over time\n",
+         "    plot_tag_resid(fit, tag_type = \"c\")     # residuals, coverage, error vs horizon",
+         call. = FALSE)
+  }
 
   ## accumulate into existing list; convert old single-entry format if needed
   tag_dist_list <- fit$tag_dist
@@ -926,9 +957,7 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
   ## CTMC generator list: reuse the one add_predictions() already stored, and
   ## build it only once (it does not depend on the tag), falling back to a fresh
   ## computation only if predictions were not run
-  mstar <- if (engine == 2L) {
-    if (!is.null(fit$pred$mstar)) fit$pred$mstar else calc_mstar(fit)
-  } else NULL
+  mstar <- if (!is.null(fit$pred$mstar)) fit$pred$mstar else calc_mstar(fit)
 
   for (idx in i) {
 
@@ -951,109 +980,41 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
     ## so the distribution must be propagated to the latest of them.
     trec <- max(tag[, 1], na.rm = TRUE)
 
-    if (engine == 2L) {
+    tall <- dat$pred$time
 
-      tall <- dat$pred$time
+    itrel <- as.integer(cut(trel, tall, include.lowest = TRUE))
+    itrec <- as.integer(cut(trec, tall, include.lowest = TRUE))
+    tind <- sapply(tag$t, function(tt) which.min(abs(tall[itrel:itrec] - tt)))
+    nt <- max(itrec) - itrel + 1L
 
-      itrel <- as.integer(cut(trel, tall, include.lowest = TRUE))
-      itrec <- as.integer(cut(trec, tall, include.lowest = TRUE))
-      tind <- sapply(tag$t, function(tt) which.min(abs(tall[itrel:itrec] - tt)))
-      nt <- max(itrec) - itrel + 1L
+    dist_prob <- matrix(0, nt + 1L, nrow(dat$pred$grid$xygrid))
+    icrel <- dat$pred$grid$celltable[cbind(cut(xrel, dat$pred$grid$xgr),
+                                           cut(yrel, dat$pred$grid$ygr))]
+    dist_prob[1L, icrel] <- 1
 
-      dist_prob <- matrix(0, nt + 1L, nrow(dat$pred$grid$xygrid))
-      icrel <- dat$pred$grid$celltable[cbind(cut(xrel, dat$pred$grid$xgr),
-                                             cut(yrel, dat$pred$grid$ygr))]
-      dist_prob[1L, icrel] <- 1
-
-      for (k in seq_len(nt)) {
-        m <- as.matrix(Matrix::expm(
-          mstar[[itrel + k - 1L]] * diff(dat$pred$time)[itrel + k - 1L]))
-        dist_prob[k + 1L, ] <- as.vector(dist_prob[k, ] %*% m)
-      }
-
-      dens_list <- vector("list", nrow(tag))
-      for (k in seq_along(tind)) {
-        ct <- dat$pred$grid$celltable
-        ct[which(!is.na(ct))] <- dist_prob[tind[k], ]
-        dens_list[[k]] <- ct
-      }
-
-      tag_dist_list[[as.character(idx)]] <- list(
-        engine = engine,
-        tag = tag,
-        i = idx,
-        dens_list = dens_list,
-        xg = x_centers(dat$pred$grid),
-        yg = y_centers(dat$pred$grid),
-        xrange = dat$grid$xrange,
-        yrange = dat$grid$yrange
-      )
-
-    } else {
-
-      funcs <- default_sim_funcs(dat, conf, fit$pl)
-      dt_min <- min(dat$min_dt, median(diff(sort(tag$t))))
-
-      out <- build_time(tag$t, mode = "fixed_dt",
-                        dt_min = dt_min, dt = dt, eps = 1)
-      ts <- out$ts
-      dts <- out$dts
-      nts <- out$nts
-      observed <- out$observed
-
-      if (nts == 1L) {
-        warning("Tag ", idx, " is recaptured within the first time step; skipping. ",
-                "Use a smaller dt or pick a different tag.", call. = FALSE)
-        skipped <- c(skipped, idx)
-        next
-      }
-
-      kappa <- exp(fit$pl$logKappa)
-
-      traj <- matrix(NA_real_, nts, 4L)
-      colnames(traj) <- c("x0", "y0", "v1", "v2")
-      xy0 <- matrix(c(xrel, yrel), 1L, 2L)
-      P <- c(0, 0)
-      traj[1L, ] <- c(xy0[1L], xy0[2L], 0, 0)
-
-      for (t in 2:nts) {
-        dt_t <- dts[t - 1L]
-        moveT0 <- if (conf$use_taxis)     kappa * funcs$tax(xy0, ts[t - 1L]) * dt_t else c(0, 0)
-        moveA0 <- if (conf$use_advection) funcs$adv(xy0, ts[t - 1L]) * dt_t         else c(0, 0)
-        D0 <- exp(funcs$dif(xy0, ts[t - 1L]))
-
-        xy0 <- xy0 + moveT0 + moveA0
-        PP <- P + 2 * D0 * dt_t
-
-        if (t %in% observed) {
-          ind_obs <- which(observed == t) + 1L
-          for (j in seq_along(ind_obs)) {
-            F <- PP
-            P <- PP - PP / F * PP
-            obs_xy <- c(tag$x[ind_obs[j]], tag$y[ind_obs[j]])
-            xy0 <- xy0 + PP / F * (obs_xy - xy0)
-          }
-        } else {
-          P <- F <- PP
-        }
-
-        traj[t, ] <- c(xy0[, 1L], xy0[, 2L], F[1L], F[2L])
-      }
-
-      ind.track <- sapply(tag[, 1L], function(tt) which.min(abs(ts - tt)))
-      xrange <- range(traj[, 1L], tag[, 2L], na.rm = TRUE)
-      yrange <- range(traj[, 2L], tag[, 3L], na.rm = TRUE)
-
-      tag_dist_list[[as.character(idx)]] <- list(
-        engine = engine,
-        tag = tag,
-        i = idx,
-        traj = traj,
-        ind.track = ind.track,
-        xrange = xrange,
-        yrange = yrange
-      )
+    for (k in seq_len(nt)) {
+      m <- as.matrix(Matrix::expm(
+        mstar[[itrel + k - 1L]] * diff(dat$pred$time)[itrel + k - 1L]))
+      dist_prob[k + 1L, ] <- as.vector(dist_prob[k, ] %*% m)
     }
+
+    dens_list <- vector("list", nrow(tag))
+    for (k in seq_along(tind)) {
+      ct <- dat$pred$grid$celltable
+      ct[which(!is.na(ct))] <- dist_prob[tind[k], ]
+      dens_list[[k]] <- ct
+    }
+
+    tag_dist_list[[as.character(idx)]] <- list(
+      engine = engine,
+      tag = tag,
+      i = idx,
+      dens_list = dens_list,
+      xg = x_centers(dat$pred$grid),
+      yg = y_centers(dat$pred$grid),
+      xrange = dat$grid$xrange,
+      yrange = dat$grid$yrange
+    )
   }
 
   if (length(skipped) > 0L)

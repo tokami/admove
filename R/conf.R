@@ -23,6 +23,13 @@
 ##' discretisation scheme, and default seasonal settings for covariates and
 ##' spline effects.
 ##'
+##' `ctmc_method` selects how the matrix exponential of the CTMC generator is
+##' computed: `"expm"` (the default) uses [Matrix::expm()], `"expav"` uses
+##' [RTMB::expAv()] with uniformization. Both are given as strings; the former
+##' numbers (`0` and `1`) are rejected with a message naming their replacement,
+##' because a `1` written for the old numbering would otherwise silently select
+##' the other method.
+##'
 ##' `drift_scheme` selects how the drift term (taxis *and* advection) is
 ##' discretised on the grid when assembling the generator. `"upwind"` (the
 ##' default) is first-order upstream: off-diagonal rates are guaranteed
@@ -51,15 +58,29 @@
 ##' covariate. Taxis and advection remain season-specific. See [default_map()]
 ##' for how these settings translate into fixed and estimated coefficients.
 ##'
-##' Observation uncertainty is **off by default** (`obs_var_type = c(0L, 0L, 0L)`),
-##' meaning tag locations are treated as exact. To estimate observation variance
-##' for a tag type, set the corresponding element to `1L` (all but last
-##' observation of each tag) or `2L` (all observations). For example, to estimate
-##' observation variance for data-storage tags: `conf$obs_var_type[1] <- 1L`.
-##' The three elements are the tag types in the order data-storage,
-##' mark-resight, mark-recapture, and all three are supported: for
-##' mark-recapture tags (`obs_var_type[3]`) the term absorbs the error in the
-##' reported recapture position. Note that `1L` and `2L` coincide for a tag with
+##' `engine` selects the estimation engine by name: `"kf"` (the default) is the
+##' Kalman filter, continuous in space and discrete in time, `"ctmc"` the
+##' continuous-time Markov chain, discrete in space and continuous in time. The
+##' numbers `1` (`"kf"`) and `2` (`"ctmc"`) are accepted as aliases and
+##' normalised to the names by [check_conf()].
+##'
+##' Observation uncertainty is **off by default**
+##' (`obs_var_type = c("none", "none", "none")`), meaning tag locations are
+##' treated as exact. The three elements are the tag types in the order
+##' data-storage, mark-resight, mark-recapture, and each is one of
+##' \describe{
+##'   \item{`"none"`}{locations are exact (default);}
+##'   \item{`"all_but_last"`}{estimate the observation variance for all but the
+##'     last observation of each tag;}
+##'   \item{`"all"`}{estimate it for every observation;}
+##'   \item{`"data"`}{fix it to the `sdx` and `sdy` columns of the tags.}
+##' }
+##' For example, to estimate the observation variance of data-storage tags:
+##' `conf$obs_var_type[1] <- "all_but_last"`. The former numbers `0:3` are
+##' accepted in the same order and normalised to the names by [check_conf()].
+##' All three tag types are supported: for mark-recapture tags
+##' (`obs_var_type[3]`) the term absorbs the error in the reported recapture
+##' position. Note that `"all_but_last"` and `"all"` coincide for a tag with
 ##' only two observations if `do_update` is `FALSE` for that type, since nothing
 ##' is conditioned on in between.
 ##'
@@ -117,25 +138,27 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   conf$use_advection <- FALSE
 
   ## Observation uncertainty (per tag type: dtags, stags, ctags)
-  ## 0 = not estimating observation uncertainty (default; treat locations as exact)
-  ## 1 = estimating observation uncertainty for all but last observation
-  ## 2 = estimating observation uncertainty for all observations
-  ## 3 = fixing observation uncertainty to imported values (tag$sdx, tag$sdy)
-  ## Enable estimation via conf$obs_var_type[1] <- 1L (dtags) etc.
-  conf$obs_var_type <- c(0L, 0L, 0L)
+  ## "none"         = not estimated (default; treat locations as exact)
+  ## "all_but_last" = estimated for all but the last observation of a tag
+  ## "all"          = estimated for every observation
+  ## "data"         = fixed to imported values (tag$sdx, tag$sdy)
+  ## Enable estimation via conf$obs_var_type[1] <- "all_but_last" (dtags) etc.
+  ## The former numbers 0:3 are still accepted, in the same order.
+  conf$obs_var_type <- rep("none", 3)
 
   ## CTMC/KF updating
   ## 0 = no updating (default for ctags)
   ## 1 = updating (default for d and stags)
   conf$do_update <- c(TRUE, TRUE, FALSE)
 
-  ## Estimation engine
-  conf$engine <- 1
+  ## Estimation engine: "kf" (Kalman filter) or "ctmc" (continuous-time Markov
+  ## chain); 1 and 2 are accepted as aliases
+  conf$engine <- "kf"
 
-  ## CTMC method (see .check_ctmc_method())
-  ## 0 = Matrix::expm
-  ## 1 = RTMB::expAv with uniformization
-  conf$ctmc_method <- 0
+  ## CTMC matrix-exponential method (see .check_ctmc_method())
+  ## "expm"  = Matrix::expm
+  ## "expav" = RTMB::expAv with uniformization
+  conf$ctmc_method <- "expm"
 
   ## Discretisation of the drift term (taxis + advection) in the generator
   ## "upwind"  = first-order upstream; off-diagonal rates are always >= 0, so
@@ -286,6 +309,11 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
          call. = FALSE)
   }
 
+  ## engine and observation-variance types are configured by name; numbers are
+  ## accepted and normalised here, so everything downstream sees the names
+  conf$engine <- .get_engine_name(conf$engine)
+  conf$obs_var_type <- .get_obs_var_type_name(conf$obs_var_type)
+
   .check_ctmc_method(conf$ctmc_method)
 
   if (!is.character(conf$kf_boundary) || length(conf$kf_boundary) != 1L ||
@@ -298,12 +326,14 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   ## the observation error and diffusion both explain; without other tag types
   ## the two cannot be separated
   tag_types <- if (!is.null(dat$tags)) unique(as.character(dat$tags$tag_type)) else character(0)
-  if (length(conf$obs_var_type) >= 3L && conf$obs_var_type[3] %in% c(1L, 2L) &&
+  if (length(conf$obs_var_type) >= 3L &&
+        conf$obs_var_type[3] %in% c("all_but_last", "all") &&
         identical(tag_types, "c")) {
-    warning("Observation error is estimated for mark-recapture tags (conf$obs_var_type[3] = ",
-            conf$obs_var_type[3], "), but the data contain only mark-recapture tags. ",
+    warning("Observation error is estimated for mark-recapture tags ",
+            "(conf$obs_var_type[3] = \"", conf$obs_var_type[3],
+            "\"), but the data contain only mark-recapture tags. ",
             "It cannot be separated from diffusion without archival or mark-resight tags; ",
-            "consider conf$obs_var_type[3] <- 0.",
+            "consider conf$obs_var_type[3] <- \"none\".",
             call. = FALSE)
   }
 
@@ -561,13 +591,33 @@ set_seasons <- function(conf, dat, n, cov = NULL, verbose = TRUE) {
 
   if (is.null(ctmc_method)) return(invisible(NULL))
 
-  if (length(ctmc_method) != 1L || is.na(ctmc_method) ||
-        !ctmc_method %in% c(0, 1)) {
-    stop("'ctmc_method' must be 0 (Matrix::expm) or 1 (RTMB::expAv with uniformization), not ",
-         deparse(ctmc_method), ".",
-         if (identical(as.numeric(ctmc_method), 2)) " The former method 2 is now 1.",
+  ## The methods used to be numbered, with 0 = expm and 1 = expAv. Numbers are
+  ## no longer accepted rather than remapped, because a script's 1 cannot be
+  ## told apart from a new one and would silently change the method.
+  if (is.numeric(ctmc_method)) {
+    was <- .ctmc_method_from_number(ctmc_method)
+    stop("'ctmc_method' is now given as a string: \"expm\" (Matrix::expm) or ",
+         "\"expav\" (RTMB::expAv with uniformization). The old numbering was ",
+         "0 = \"expm\" and 1 = \"expav\", so replace ", deparse(ctmc_method),
+         if (is.na(was)) " with one of those two." else
+           paste0(" with ", deparse(was), "."),
+         call. = FALSE)
+  }
+
+  if (!is.character(ctmc_method) || length(ctmc_method) != 1L ||
+        is.na(ctmc_method) || !ctmc_method %in% c("expm", "expav")) {
+    stop("'ctmc_method' must be either \"expm\" (Matrix::expm) or \"expav\" ",
+         "(RTMB::expAv with uniformization), not ", deparse(ctmc_method), ".",
          call. = FALSE)
   }
 
   invisible(NULL)
+}
+
+
+## The string the old numbering stood for, for the migration message.
+.ctmc_method_from_number <- function(x) {
+  if (length(x) == 1L && !is.na(x) && x == 0) return("expm")
+  if (length(x) == 1L && !is.na(x) && x == 1) return("expav")
+  NA_character_
 }

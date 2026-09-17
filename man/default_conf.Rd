@@ -35,6 +35,13 @@ the estimation engine, the CTMC approximation method, the drift
 discretisation scheme, and default seasonal settings for covariates and
 spline effects.
 
+\code{ctmc_method} selects how the matrix exponential of the CTMC generator is
+computed: \code{"expm"} (the default) uses \code{\link[Matrix:expm]{Matrix::expm()}}, \code{"expav"} uses
+\code{\link[RTMB:expAv]{RTMB::expAv()}} with uniformization. Both are given as strings; the former
+numbers (\code{0} and \code{1}) are rejected with a message naming their replacement,
+because a \code{1} written for the old numbering would otherwise silently select
+the other method.
+
 \code{drift_scheme} selects how the drift term (taxis \emph{and} advection) is
 discretised on the grid when assembling the generator. \code{"upwind"} (the
 default) is first-order upstream: off-diagonal rates are guaranteed
@@ -63,15 +70,29 @@ season and is easily traded off against a seasonal taxis acting on the same
 covariate. Taxis and advection remain season-specific. See \code{\link[=default_map]{default_map()}}
 for how these settings translate into fixed and estimated coefficients.
 
-Observation uncertainty is \strong{off by default} (\code{obs_var_type = c(0L, 0L, 0L)}),
-meaning tag locations are treated as exact. To estimate observation variance
-for a tag type, set the corresponding element to \code{1L} (all but last
-observation of each tag) or \code{2L} (all observations). For example, to estimate
-observation variance for data-storage tags: \code{conf$obs_var_type[1] <- 1L}.
-The three elements are the tag types in the order data-storage,
-mark-resight, mark-recapture, and all three are supported: for
-mark-recapture tags (\code{obs_var_type[3]}) the term absorbs the error in the
-reported recapture position. Note that \code{1L} and \code{2L} coincide for a tag with
+\code{engine} selects the estimation engine by name: \code{"kf"} (the default) is the
+Kalman filter, continuous in space and discrete in time, \code{"ctmc"} the
+continuous-time Markov chain, discrete in space and continuous in time. The
+numbers \code{1} (\code{"kf"}) and \code{2} (\code{"ctmc"}) are accepted as aliases and
+normalised to the names by \code{\link[=check_conf]{check_conf()}}.
+
+Observation uncertainty is \strong{off by default}
+(\code{obs_var_type = c("none", "none", "none")}), meaning tag locations are
+treated as exact. The three elements are the tag types in the order
+data-storage, mark-resight, mark-recapture, and each is one of
+\describe{
+\item{\code{"none"}}{locations are exact (default);}
+\item{\code{"all_but_last"}}{estimate the observation variance for all but the
+last observation of each tag;}
+\item{\code{"all"}}{estimate it for every observation;}
+\item{\code{"data"}}{fix it to the \code{sdx} and \code{sdy} columns of the tags.}
+}
+For example, to estimate the observation variance of data-storage tags:
+\code{conf$obs_var_type[1] <- "all_but_last"}. The former numbers \code{0:3} are
+accepted in the same order and normalised to the names by \code{\link[=check_conf]{check_conf()}}.
+All three tag types are supported: for mark-recapture tags
+(\code{obs_var_type[3]}) the term absorbs the error in the reported recapture
+position. Note that \code{"all_but_last"} and \code{"all"} coincide for a tag with
 only two observations if \code{do_update} is \code{FALSE} for that type, since nothing
 is conditioned on in between.
 

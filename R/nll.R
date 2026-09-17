@@ -60,6 +60,17 @@ nll <- function(par, dat) {
   ntags <- length(dat$tags)
   boundary_excess <- rep(0, ntags)
 
+  ## Predicted observation distribution, one row per row of the tag data in the
+  ## order the tags are split (see tag_predictions()): the mean and variance the
+  ## likelihood evaluates each observation against, i.e. before its update and
+  ## including observation error. pred_set marks the rows that were filled, and
+  ## is plain numeric because only non-AD code writes it.
+  nobs_tags <- vapply(dat$tags, nrow, integer(1))
+  obs_offset <- c(0L, cumsum(nobs_tags))
+  nobs_all <- sum(nobs_tags)
+  pred_x <- pred_y <- pred_var_x <- pred_var_y <- rep(0, nobs_all)
+  pred_set <- rep(0, nobs_all)
+
 
   ## Covariate field limits for the KF. The interpolants are only defined
   ## between the outermost cell centres and return NaN beyond, so a predicted
@@ -249,6 +260,13 @@ nll <- function(par, dat) {
             this_xy <- c(tag$x[ind_obs_j], tag$y[ind_obs_j])
             w <- this_xy - pred_xy
 
+            ind_pred <- obs_offset[i] + ind_obs_j
+            pred_x[ind_pred] <- pred_xy[1]
+            pred_y[ind_pred] <- pred_xy[2]
+            pred_var_x[ind_pred] <- F[1]
+            pred_var_y[ind_pred] <- F[2]
+            pred_set[ind_pred] <- 1
+
             ld <- RTMB::dnorm(w[1], 0, sqrt(F[1]), TRUE) +
               RTMB::dnorm(w[2], 0, sqrt(F[2]), TRUE)
 
@@ -302,7 +320,7 @@ nll <- function(par, dat) {
                         "fill_gaps", "fixed_dt")
 
 
-    if (dat$ctmc_method == 1) {
+    if (identical(dat$ctmc_method, "expav")) {
       mstar_template <- make_mstar_template(nextTo, ad = TRUE)
     }
 
@@ -348,7 +366,7 @@ nll <- function(par, dat) {
         dt <- dts[t-1]
 
         ## Set to zero
-        if (dat$ctmc_method == 1) {
+        if (identical(dat$ctmc_method, "expav")) {
           Zstar <- Astar <- Dstar <- mstar_template
           Zstar@x[] <- Astar@x[] <- Dstar@x[] <- 0
         } else {
@@ -386,7 +404,7 @@ nll <- function(par, dat) {
         Mstar[cbind(1:nc, 1:nc)] <- -RTMB::rowSums(Mstar)
 
         ## dist prob after move
-        if (dat$ctmc_method == 1) {
+        if (identical(dat$ctmc_method, "expav")) {
 
           pred_dist <- as.vector(RTMB::expAv(Mstar,
                                      last_dist,
@@ -490,7 +508,7 @@ nll <- function(par, dat) {
 
   } else {
 
-    stop("This engine is not yet implemented. Select 1 for Kalman filter and 2 for CTMC.")
+    stop("This engine is not yet implemented. Select \"kf\" for the Kalman filter or \"ctmc\" for the CTMC.")
 
   }
 
@@ -511,6 +529,13 @@ nll <- function(par, dat) {
   ## per tag: summed distance by which predicted positions were moved back to
   ## the edge of the covariate field (KF, conf$kf_boundary = "clamp")
   REPORT(boundary_excess)
+
+  ## predicted observation distribution per tag row (KF only; see above)
+  REPORT(pred_x)
+  REPORT(pred_y)
+  REPORT(pred_var_x)
+  REPORT(pred_var_y)
+  REPORT(pred_set)
 
 
   return(nll)

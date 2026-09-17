@@ -385,11 +385,11 @@ By default, *admove* uses the Kalman filter approach as described in
 AUTHOR_PAPER. However, it also supports an alternative method based on
 the matrix exponential. You can easily switch between the two by setting the
 `engine` argument in the configuration list. To use the matrix exponential
-approach, simply set `engine = 2`.
+approach, simply set `engine = "ctmc"`.
 
 ```{r, eval=FALSE, echo=TRUE}
 conf <- default_conf(dat)
-conf$engine <- 2
+conf$engine <- "ctmc"
 ```
 
 Lastly, it may be useful to map parameters, for example, to estimate a single

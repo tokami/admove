@@ -94,8 +94,9 @@
 ##'   around the true recapture. See [sim_tags()].
 ##' @param n_resightings Integer vector giving the minimum and maximum number of
 ##'   resightings for mark-resight tags.
-##' @param sim_engine Integer specifying the simulation engine: \code{1} for
-##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
+##' @param sim_engine Simulation engine: \code{"kf"} for continuous-space
+##'   simulation and \code{"ctmc"} for CTMC-based grid simulation. The numbers
+##'   \code{1} and \code{2} are accepted as aliases.
 ##' @param n_reject Maximum number of attempts to redraw a movement step that
 ##'   leaves the valid grid cells. \code{0} turns rejection off. A step that is
 ##'   still invalid after all attempts is not taken. See [sim_tags()].
@@ -184,13 +185,15 @@ sim_data <- function(x = NULL,
                      n_candidates = 1,
                      candidate_sd = NULL,
                      ## other
-                     sim_engine = 1,
+                     sim_engine = "kf",
                      n_reject = 100,
                      target_dif_frac = 1/300,
                      target_tax_frac = 1/10,
                      target_sdO_frac = 1/30,
                      plot = FALSE,
                      verbose = TRUE) {
+
+  sim_engine <- .get_engine_integer(.get_engine_name(sim_engine, "sim_engine"))
 
   ## 'x' takes any admove object and is routed to the argument it belongs to;
   ## an argument given explicitly always wins, so that single pieces of a
@@ -807,12 +810,13 @@ sim_cov <- function(grid = NULL,
 ##'   where taxis or advection is undefined). \code{0} turns rejection off. A
 ##'   step that is still invalid after all attempts is not taken, i.e. the tag
 ##'   stays at its current position for that time step. Only used for
-##'   \code{sim_engine = 1}.
-##' @param sim_engine Integer specifying the simulation engine: \code{1} for
-##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
+##'   \code{sim_engine = "kf"}.
+##' @param sim_engine Simulation engine: \code{"kf"} for continuous-space
+##'   simulation and \code{"ctmc"} for CTMC-based grid simulation. The numbers
+##'   \code{1} and \code{2} are accepted as aliases.
 ##' @param ctmc_method Matrix-exponential method used for CTMC simulation:
-##'   \code{0} for [Matrix::expm()], \code{1} (default) for [RTMB::expAv()] with
-##'   uniformization.
+##'   \code{"expm"} for [Matrix::expm()], \code{"expav"} (default) for
+##'   [RTMB::expAv()] with uniformization.
 ##' @param sref Optional spatial reference to attach to the simulated data.
 ##' @param tref Optional temporal reference to attach to the simulated data.
 ##' @param target_dif_frac Target diffusion strength as a fraction of the
@@ -887,8 +891,8 @@ sim_tags <- function(tag_type,
                      n_knots_dif = NULL,
                      funcs = NULL,
                      n_reject = 20,
-                     sim_engine = 1,
-                     ctmc_method = 1,
+                     sim_engine = "kf",
+                     ctmc_method = "expav",
                      sref = NULL,
                      tref = NULL,
                      target_dif_frac = 1/500, ## 1/300
@@ -906,6 +910,8 @@ sim_tags <- function(tag_type,
   if (is.na(tag_type)) {
     stop("Tag type not implemented, use tag_type = 'd', 's', or 'c' for data-storage, mark-resight, and mark-recapture tags, respectively.")
   }
+
+  sim_engine <- .get_engine_integer(.get_engine_name(sim_engine, "sim_engine"))
 
   if (is.null(n_tags) || is.na(n_tags[1])) stop("Please provide a valid number of tags (n_tags)!")
   n_tags <- floor(n_tags[1])
@@ -2164,24 +2170,25 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' @param celltable Matrix linking grid-cell positions to cell indices.
 ##' @param xcen Numeric vector of x-coordinates of grid-cell centres.
 ##' @param ycen Numeric vector of y-coordinates of grid-cell centres.
-##' @param sim_engine Integer selecting the simulation engine: \code{1} for
+##' @param sim_engine Simulation engine, \code{"kf"} or \code{"ctmc"} (or the
+##'   aliases \code{1} and \code{2}): \code{"kf"} for
 ##'   continuous-space simulation and \code{2} for CTMC-based grid simulation.
 ##' @param n_reject Maximum number of attempts to redraw the diffusion part of
 ##'   a move that leaves the valid domain (\code{0} turns rejection off). A move
 ##'   that is still invalid is not taken; the number of such steps is returned
 ##'   as attribute \code{"n_stuck"}.
 ##' @param ctmc_method Matrix-exponential method used in CTMC simulation:
-##'   \code{0} for [Matrix::expm()], \code{1} (default) for [RTMB::expAv()] with
-##'   uniformization.
+##'   \code{"expm"} for [Matrix::expm()], \code{"expav"} (default) for
+##'   [RTMB::expAv()] with uniformization.
 ##' @param add_obs_unc Add observation uncertainty to tag locations? By default
 ##'   (NULL), observation uncertainty is added to archival tags (tag_type =
 ##'   "d"), but not to other tags.
 ##'
 ##' @details
-##' For \code{sim_engine = 1}, movement is simulated in continuous space by
+##' For \code{sim_engine = "kf"}, movement is simulated in continuous space by
 ##' combining taxis, advection, and diffusion increments at each time step.
 ##'
-##' For \code{sim_engine = 2}, movement is simulated on the spatial grid by
+##' For \code{sim_engine = "ctmc"}, movement is simulated on the spatial grid by
 ##' constructing a transition-rate matrix from diffusion, taxis, and advection,
 ##' and then propagating the tag distribution forward over one time step.
 ##'
@@ -2211,9 +2218,9 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                         celltable = NULL,
                         xcen = NULL,
                         ycen = NULL,
-                        sim_engine = 1,
+                        sim_engine = "kf",
                         n_reject = 20,
-                        ctmc_method = 1,
+                        ctmc_method = "expav",
                         add_obs_unc = NULL) {
 
   kappa <- exp(par$logKappa)
@@ -2260,8 +2267,9 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   }
 
   .check_ctmc_method(ctmc_method)
+  sim_engine <- .get_engine_integer(.get_engine_name(sim_engine, "sim_engine"))
 
-  if (ctmc_method == 1) {
+  if (identical(ctmc_method, "expav")) {
     mstar_template <- make_mstar_template(nextTo, ad = FALSE)
   }
 
@@ -2309,7 +2317,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                                 cut(xy[2], ygr, include.lowest = TRUE))]] <- 1
 
       ## Set to zero
-      if (ctmc_method == 1) {
+      if (identical(ctmc_method, "expav")) {
         Dstar <- Zstar <- Astar <- mstar_template
         Dstar@x[] <- Zstar@x[] <- Astar@x[] <- 0
       } else {
@@ -2348,7 +2356,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
       ## Check
       if (any(is.na(Mstar))) stop("NaN in Mstar!")
 
-      if (ctmc_method == 1) {
+      if (identical(ctmc_method, "expav")) {
 
         p <- as.vector(RTMB::expAv(Mstar,
                                    dist_prob,
@@ -2371,7 +2379,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
       ind_xy <- which(celltable == ind_c, arr.ind = TRUE)
       xy_new <- c(xcen[ind_xy[1]], ycen[ind_xy[2]])
 
-    } else stop("Only sim_engine = 1 (Kalman filter) and 2 (CTMC) implemented!")
+    } else stop("Only sim_engine = \"kf\" (Kalman filter) and \"ctmc\" (CTMC) implemented!")
 
     xy <- xy_new
     t <- t + dt
@@ -2408,10 +2416,14 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   if (length(noisy_types) == 0 || is.null(conf$obs_var_type)) return(conf)
   if (!is.null(conf_in$obs_var_type)) return(conf)
 
+  ovt <- .get_obs_var_type_integer(conf$obs_var_type)
+
   for (tt in noisy_types) {
     i <- .get_tag_type_integer(tt)
-    conf$obs_var_type[i] <- max(1L, as.integer(conf$obs_var_type[i]))
+    ovt[i] <- max(1L, ovt[i])
   }
+
+  conf$obs_var_type <- .get_obs_var_type_name(ovt)
 
   conf
 }

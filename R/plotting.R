@@ -1855,8 +1855,10 @@ plot_compare <- function(fit, ...,
 ##'
 ##' @param x A fitted object of class `admove` with `$tag_dist` added by
 ##'   [add_tag_dist()].
-##' @param select Integer vector of tag indices to display. `NULL` (default)
-##'   shows all computed tags (subject to `n_tags`).
+##' @param select Tags to display, as indices into the tag list or as tag ids.
+##'   `NULL` (default) shows all computed tags (subject to `n_tags`).
+##' @param i Alias for `select`, for consistency with [add_tag_dist()] and
+##'   [tag_predictions()]. Only one of the two may be given.
 ##' @param n_tags Maximum number of tags to display (rows). `NULL` shows all
 ##'   selected tags.
 ##' @param n_time_steps Number of time steps (columns) per tag. Default is `6`.
@@ -1881,6 +1883,7 @@ plot_compare <- function(fit, ...,
 ##' @export
 plot_tag_dist <- function(x,
                           select = NULL,
+                          i = NULL,
                           n_tags = NULL,
                           n_time_steps = 6L,
                           plot_land = FALSE,
@@ -1907,6 +1910,13 @@ plot_tag_dist <- function(x,
          "  Try a finer time step, e.g.:\n",
          "    fit <- add_tag_dist(fit, i = 1, dt = 0.05)")
 
+  if (!is.null(i)) {
+    if (!is.null(select)) {
+      stop("Give either 'select' or its alias 'i', not both.", call. = FALSE)
+    }
+    select <- i
+  }
+
   td_store <- x$tag_dist
 
   ## handle old single-entry format (list with $engine at top level)
@@ -1916,16 +1926,21 @@ plot_tag_dist <- function(x,
 
   available <- names(td_store)
 
-  ## resolve which tags to show
+  ## resolve which tags to show: keys are indices into the tag list, but tag
+  ## ids are accepted as well (and are what the user usually has at hand)
   if (is.null(select)) {
     sel_keys <- available
   } else {
     sel_keys <- as.character(select)
-    missing_keys <- sel_keys[!sel_keys %in% available]
+    ids <- vapply(td_store, function(td) as.character(td$tag$id[1]), character(1))
+    by_id <- match(sel_keys, ids)
+    sel_keys <- ifelse(sel_keys %in% available, sel_keys,
+                       ifelse(is.na(by_id), NA_character_, available[by_id]))
+    missing_keys <- as.character(select)[is.na(sel_keys)]
     if (length(missing_keys) > 0L)
       stop("Tag(s) ", .format_ids(missing_keys),
            " have no precomputed distribution. Available: ",
-           .format_ids(available), ".")
+           .format_ids(available), " (or their ids: ", .format_ids(ids), ").")
   }
   if (!is.null(n_tags)) sel_keys <- head(sel_keys, n_tags)
 
@@ -2919,4 +2934,422 @@ plot_pref_grid <- function(x,
     if(!add) box(lwd = 1.5)
 
   }
+}
+
+
+##' Plot predicted against observed tag positions
+##'
+##' @description
+##' Compares the positions the model predicts with the observed ones, from the
+##' table returned by [tag_predictions()].
+##'
+##' With a single tag the plot has three panels: a map with the observed and the
+##' predicted track and prediction ellipses, and the x and y coordinate against
+##' time with the prediction interval. With several tags it is a single map with,
+##' per tag, a line from the starting position to the observed position and one
+##' to the predicted position, which is the natural view for mark-recapture tags.
+##'
+##' Every prediction belongs to one observation, at the same time: the predicted
+##' track therefore ends at the time of the last observation. A few pairs along
+##' the track are marked, dated and joined by a line, and their times are marked
+##' in the coordinate panels too, so that points can be matched between panels.
+##' Only the release (conditioned on, not predicted) and observations excluded
+##' from the fit have no prediction.
+##'
+##' @param x A fitted object of class `admove`, as returned by [admove()].
+##' @param i Tag indices or tag ids to show. `NULL` (default) uses every tag in
+##'   `pred`, or all archival tags when `type = "forecast"` and `pred` is not
+##'   supplied.
+##' @param type Prediction to show, passed to [tag_predictions()]: `"forecast"`
+##'   (from release, the default for a single tag) or `"osa"` (one step ahead,
+##'   the default for several tags).
+##' @param pred Optional table from [tag_predictions()], to avoid recomputing
+##'   it. Must contain the requested tags.
+##' @param level Confidence level of the prediction ellipses and intervals.
+##'   Default `0.95`.
+##' @param n_ellipse Maximum number of prediction ellipses drawn along a single
+##'   tag's track. The observations they belong to are marked and dated. Default
+##'   `6`.
+##' @param link How to join an observation to its own prediction: `TRUE`
+##'   (default) joins the dated pairs, `"all"` joins every observation to its
+##'   prediction (a dense fan for a long track), `FALSE` draws no lines.
+##' @param plot_land Logical; if `TRUE` (default), land masses are added.
+##' @param plot_grid Logical; if `TRUE` (default), the model grid is outlined.
+##' @param col_obs,col_pred Colours of the observed and predicted positions.
+##' @param xlab,ylab Axis labels of the map panel. Default to the spatial units.
+##' @param ... Additional arguments passed to [plot()] for the map panel.
+##'
+##' @return
+##' Invisibly returns the prediction table that was plotted.
+##'
+##' @seealso [tag_predictions()], [plot_tag_resid()], [plot_tag_dist()]
+##'
+##' @export
+plot_tag_pred <- function(x,
+                          i = NULL,
+                          type = NULL,
+                          pred = NULL,
+                          level = 0.95,
+                          n_ellipse = 6L,
+                          link = TRUE,
+                          plot_land = TRUE,
+                          plot_grid = TRUE,
+                          col_obs = "grey20",
+                          col_pred = "dodgerblue3",
+                          xlab = NULL,
+                          ylab = NULL,
+                          ...) {
+
+  .check_class(x, "admove")
+
+  ids <- .resolve_tag_ids(i, names(.split_tags(x$dat$tags)))
+
+  if (is.null(type)) type <- if (length(ids) == 1L) "forecast" else "osa"
+  type <- match.arg(type, c("osa", "forecast"))
+
+  if (is.null(pred)) {
+    pred <- tag_predictions(x, type = type, i = ids, verbose = FALSE)
+  } else {
+    pred <- pred[pred$id %in% ids, , drop = FALSE]
+    if (nrow(pred) == 0L) {
+      stop("None of the requested tag(s) are in 'pred'. Available: ",
+           .format_ids(unique(pred$id)), ".", call. = FALSE)
+    }
+  }
+
+  if (nrow(pred) == 0L) {
+    stop("No predicted positions for the requested tag(s).", call. = FALSE)
+  }
+
+  ids <- intersect(ids, unique(pred$id))
+
+  if (is.null(xlab)) xlab <- .axis_lab("x", .pred_units(x, "space"))
+  if (is.null(ylab)) ylab <- .axis_lab("y", .pred_units(x, "space"))
+
+  opar <- par(no.readonly = TRUE)
+  on.exit(suppressWarnings(graphics::par(opar)))
+
+  if (length(ids) == 1L) {
+    .plot_tag_pred_single(x, pred, level, n_ellipse, link, plot_land, plot_grid,
+                          col_obs, col_pred, xlab, ylab, ...)
+  } else {
+    .plot_tag_pred_many(x, pred, level, plot_land, plot_grid,
+                        col_obs, col_pred, xlab, ylab, ...)
+  }
+
+  invisible(pred)
+}
+
+
+##' Plot prediction residuals of tag positions
+##'
+##' @description
+##' Diagnostics for the predicted tag positions of [tag_predictions()]: whether
+##' the predicted displacements match the observed ones, whether the
+##' standardised residuals are standard normal, whether the prediction ellipses
+##' have the right coverage, and whether the errors grow with the prediction
+##' horizon.
+##'
+##' @param x A fitted object of class `admove`, as returned by [admove()].
+##' @param pred Optional table from [tag_predictions()]. If `NULL` (default), it
+##'   is computed with `type`.
+##' @param type Prediction to use, passed to [tag_predictions()]. Default
+##'   `"osa"`.
+##' @param tag_type Optional tag types to keep, e.g. `"c"` for mark-recapture
+##'   tags. `NULL` (default) keeps all.
+##' @param col Colour of the points.
+##' @param ... Additional arguments passed to [plot()].
+##'
+##' @details
+##' The four panels are
+##' \enumerate{
+##'   \item predicted against observed displacement, in x and y, with the 1:1
+##'     line: points along the line mean the model gets the direction and
+##'     distance of movement right;
+##'   \item a normal QQ plot of the standardised residuals `z_x` and `z_y`:
+##'     points on the line mean the prediction uncertainty has the right size;
+##'   \item the share of observations inside the 50% and 95% prediction
+##'     ellipses, against those nominal levels;
+##'   \item the squared standardised distance `d2` against the prediction
+##'     horizon, with the median and the 95% quantile of its chi-squared
+##'     reference distribution: a rising cloud means the errors grow faster than
+##'     the model expects.
+##' }
+##'
+##' @return
+##' Invisibly returns the prediction table that was plotted.
+##'
+##' @seealso [tag_predictions()], [plot_tag_pred()]
+##'
+##' @export
+plot_tag_resid <- function(x,
+                           pred = NULL,
+                           type = c("osa", "forecast"),
+                           tag_type = NULL,
+                           col = "dodgerblue3",
+                           ...) {
+
+  type <- match.arg(type)
+
+  if (is.null(pred)) {
+    .check_class(x, "admove")
+    pred <- tag_predictions(x, type = type, verbose = FALSE)
+  }
+
+  if (!is.null(tag_type)) {
+    tag_type <- c("d", "s", "c", "a")[vapply(tag_type, .get_tag_type, integer(1))]
+    pred <- pred[pred$tag_type %in% tag_type, , drop = FALSE]
+  }
+
+  if (nrow(pred) == 0L) {
+    stop("No predicted positions left to plot.", call. = FALSE)
+  }
+
+  opar <- par(no.readonly = TRUE)
+  on.exit(suppressWarnings(graphics::par(opar)))
+  par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+
+  ## 1: predicted vs observed displacement
+  dx_obs <- pred$x - pred$x_from
+  dy_obs <- pred$y - pred$y_from
+  dx_pred <- pred$pred_x - pred$x_from
+  dy_pred <- pred$pred_y - pred$y_from
+  rng <- range(c(dx_obs, dy_obs, dx_pred, dy_pred), na.rm = TRUE)
+
+  plot(dx_obs, dx_pred, xlim = rng, ylim = rng,
+       xlab = "observed displacement", ylab = "predicted displacement",
+       main = "Displacement", pch = 16, cex = 0.7,
+       col = adjustcolor(col, 0.5), ...)
+  points(dy_obs, dy_pred, pch = 1, cex = 0.7, col = adjustcolor("grey20", 0.5))
+  abline(0, 1, lwd = 1.5)
+  abline(h = 0, v = 0, col = grey(0.8))
+  legend("topleft", legend = c("x", "y"), pch = c(16, 1),
+         col = c(adjustcolor(col, 0.5), adjustcolor("grey20", 0.5)),
+         bty = "n", cex = 0.9)
+  box(lwd = 1.5)
+
+  ## 2: normal QQ plot of the standardised residuals
+  z <- c(pred$z_x, pred$z_y)
+  z <- z[is.finite(z)]
+  qqnorm(z, main = "Standardised residuals", pch = 16, cex = 0.7,
+         col = adjustcolor(col, 0.5), xlab = "normal quantiles", ylab = "z")
+  qqline(z, lwd = 1.5)
+  box(lwd = 1.5)
+
+  ## 3: coverage of the prediction ellipses
+  cover <- c("50%" = mean(pred$inside_50, na.rm = TRUE),
+             "95%" = mean(pred$inside_95, na.rm = TRUE))
+  bp <- barplot(cover, ylim = c(0, 1), col = adjustcolor(col, 0.5),
+                ylab = "share inside", main = "Ellipse coverage")
+  segments(bp - 0.4, c(0.5, 0.95), bp + 0.4, c(0.5, 0.95), lwd = 2)
+  text(bp, cover, labels = round(cover, 2), pos = 3, cex = 0.9, xpd = NA)
+  legend("bottomright", legend = "nominal", lwd = 2, bty = "n", cex = 0.9)
+  box(lwd = 1.5)
+
+  ## 4: squared standardised distance against the prediction horizon
+  plot(pred$horizon, pred$d2,
+       xlab = .axis_lab("prediction horizon", .pred_units(x, "time")),
+       ylab = "d2", main = "Error vs horizon",
+       pch = 16, cex = 0.7, col = adjustcolor(col, 0.5), log = "y")
+  abline(h = qchisq(c(0.5, 0.95), df = 2), lwd = c(1.5, 1.5), lty = c(1, 2))
+  legend("topright", legend = c("median", "95%"), lwd = 1.5, lty = c(1, 2),
+         bty = "n", cex = 0.9)
+  box(lwd = 1.5)
+
+  invisible(pred)
+}
+
+
+## Internal functions ---------------------------------------------------------------
+
+## Axis label with units in brackets when they are known.
+.axis_lab <- function(lab, units) {
+  if (is.null(units) || length(units) != 1L || is.na(units)) return(lab)
+  paste0(lab, " [", units, "]")
+}
+
+
+## Spatial or temporal units of a fit, NULL when they cannot be read (e.g. when
+## only a prediction table was supplied).
+.pred_units <- function(x, what = c("space", "time")) {
+  what <- match.arg(what)
+  if (is.null(x) || is.null(x$dat)) return(NULL)
+  f <- if (identical(what, "space")) units_space else units_time
+  tryCatch(f(x$dat), error = function(e) NULL)
+}
+
+
+## Points of an axis-aligned confidence ellipse (x and y are independent in the
+## KF prediction, so the ellipse has no rotation).
+.pred_ellipse <- function(mx, my, sx, sy, level = 0.95, n = 80L) {
+  r <- sqrt(qchisq(level, df = 2))
+  th <- seq(0, 2 * pi, length.out = n)
+  list(x = mx + r * sx * cos(th), y = my + r * sy * sin(th))
+}
+
+
+## Map plus coordinate-versus-time panels for a single tag.
+.plot_tag_pred_single <- function(x, pred, level, n_ellipse, link, plot_land,
+                                  plot_grid, col_obs, col_pred, xlab, ylab,
+                                  ...) {
+
+  tag <- .split_tags(x$dat$tags)[[pred$id[1]]]
+  t_obs <- as.numeric(tag$t)
+  d_obs <- .pred_dates(t_obs, tref(x$dat))
+  d_pred <- .pred_dates(pred$t, tref(x$dat))
+
+  ## release position, which is conditioned on and hence not in 'pred'
+  x_rel <- pred$x_from[1]
+  y_rel <- pred$y_from[1]
+
+  ell <- .ellipse_index(nrow(pred), n_ellipse)
+  ells <- lapply(ell, function(k) {
+    .pred_ellipse(pred$pred_x[k], pred$pred_y[k],
+                  pred$sd_x[k], pred$sd_y[k], level)
+  })
+
+  xr <- range(c(tag$x, pred$pred_x, unlist(lapply(ells, `[[`, "x"))),
+              na.rm = TRUE)
+  yr <- range(c(tag$y, pred$pred_y, unlist(lapply(ells, `[[`, "y"))),
+              na.rm = TRUE)
+
+  layout(matrix(c(1, 1, 2, 3), 2, 2), widths = c(1.4, 1))
+  par(mar = c(4, 4, 2, 1))
+
+  ## map
+  plot(NA, NA, xlim = xr, ylim = yr, asp = 1, xlab = xlab, ylab = ylab,
+       main = paste0("Tag ", pred$id[1], " (", pred$tag_type[1], ", ",
+                     pred$type[1], ")"), ...)
+  if (plot_grid && !is.null(x$dat$grid)) {
+    graphics::rect(x$dat$grid$xrange[1], x$dat$grid$yrange[1],
+                   x$dat$grid$xrange[2], x$dat$grid$yrange[2],
+                   border = grey(0.8))
+  }
+  if (plot_land) plot_land(sref = sref(x$dat), verbose = FALSE)
+
+  ## outlines rather than stacked fills, which would pile up into a dark blob;
+  ## the last one is filled so the final uncertainty stands out
+  for (k in seq_along(ells)) {
+    e <- ells[[k]]
+    polygon(e$x, e$y,
+            border = adjustcolor(col_pred, 0.55), lty = 3,
+            col = if (k == length(ells)) adjustcolor(col_pred, 0.1) else NA)
+  }
+  ## which observation each prediction belongs to
+  if (identical(link, "all")) {
+    segments(pred$x, pred$y, pred$pred_x, pred$pred_y,
+             col = adjustcolor(grey(0.4), 0.2))
+  }
+  if (!isFALSE(link)) {
+    segments(pred$x[ell], pred$y[ell], pred$pred_x[ell], pred$pred_y[ell],
+             col = adjustcolor(grey(0.3), 0.6))
+  }
+
+  lines(tag$x, tag$y, col = adjustcolor(col_obs, 0.6))
+  points(tag$x, tag$y, pch = 16, cex = 0.6, col = adjustcolor(col_obs, 0.8))
+  lines(c(x_rel, pred$pred_x), c(y_rel, pred$pred_y),
+        col = col_pred, lwd = 1.5)
+
+  ## the dated pairs: observation open, prediction filled
+  points(pred$x[ell], pred$y[ell], pch = 1, cex = 1.1, col = col_obs, lwd = 1.5)
+  points(pred$pred_x[ell], pred$pred_y[ell], pch = 16, cex = 0.9,
+         col = col_pred)
+  text(pred$x[ell], pred$y[ell], labels = .pred_short_date(d_pred[ell]),
+       pos = 4, offset = 0.4, cex = 0.7, col = grey(0.25), xpd = NA)
+
+  points(x_rel, y_rel, pch = 17, cex = 1.2, col = "black")
+  points(tag$x[nrow(tag)], tag$y[nrow(tag)], pch = 15, cex = 1.1,
+         col = col_obs)
+  legend("topleft",
+         legend = c("release", "observed", "predicted", "same time",
+                    paste0(100 * level, "% ellipse")),
+         pch = c(17, 16, 16, NA, 15), lwd = c(NA, 1, 1.5, 1, NA),
+         col = c("black", col_obs, col_pred, grey(0.3),
+                 adjustcolor(col_pred, 0.3)),
+         bty = "n", cex = 0.8)
+  box(lwd = 1.5)
+
+  ## coordinate against time
+  zq <- qnorm(1 - (1 - level) / 2)
+  for (coord in c("x", "y")) {
+    mu <- pred[[paste0("pred_", coord)]]
+    sd <- pred[[paste0("sd_", coord)]]
+    ylim <- range(c(tag[[coord]], mu - zq * sd, mu + zq * sd), na.rm = TRUE)
+
+    plot(d_obs, tag[[coord]], type = "n", ylim = ylim,
+         xlab = if (identical(coord, "y")) .pred_time_lab(d_obs, x) else "",
+         ylab = .axis_lab(coord, .pred_units(x, "space")))
+    polygon(c(d_pred, rev(d_pred)), c(mu - zq * sd, rev(mu + zq * sd)),
+            border = NA, col = adjustcolor(col_pred, 0.15))
+    abline(v = d_pred[ell], lty = 3, col = grey(0.6))
+    lines(d_pred, mu, col = col_pred, lwd = 1.5)
+    points(d_obs, tag[[coord]], pch = 16, cex = 0.6,
+           col = adjustcolor(col_obs, 0.8))
+    box(lwd = 1.5)
+  }
+}
+
+
+## One map with observed and predicted positions of several tags.
+.plot_tag_pred_many <- function(x, pred, level, plot_land, plot_grid,
+                                col_obs, col_pred, xlab, ylab, ...) {
+
+  xr <- range(c(pred$x, pred$pred_x, pred$x_from), na.rm = TRUE)
+  yr <- range(c(pred$y, pred$pred_y, pred$y_from), na.rm = TRUE)
+
+  par(mar = c(4, 4, 2, 1))
+  plot(NA, NA, xlim = xr, ylim = yr, asp = 1, xlab = xlab, ylab = ylab,
+       main = paste0(length(unique(pred$id)), " tags (", pred$type[1], ")"),
+       ...)
+  if (plot_grid && !is.null(x$dat$grid)) {
+    graphics::rect(x$dat$grid$xrange[1], x$dat$grid$yrange[1],
+                   x$dat$grid$xrange[2], x$dat$grid$yrange[2],
+                   border = grey(0.8))
+  }
+  if (plot_land) plot_land(sref = sref(x$dat), verbose = FALSE)
+
+  segments(pred$x_from, pred$y_from, pred$x, pred$y,
+           col = adjustcolor(col_obs, 0.5))
+  segments(pred$x_from, pred$y_from, pred$pred_x, pred$pred_y,
+           col = adjustcolor(col_pred, 0.5))
+  points(pred$x_from, pred$y_from, pch = 17, cex = 0.5, col = "black")
+  points(pred$x, pred$y, pch = 16, cex = 0.6,
+         col = adjustcolor(col_obs, 0.8))
+  points(pred$pred_x, pred$pred_y, pch = 16, cex = 0.6,
+         col = adjustcolor(col_pred, 0.8))
+  legend("topleft", legend = c("start", "observed", "predicted"),
+         pch = c(17, 16, 16), col = c("black", col_obs, col_pred),
+         bty = "n", cex = 0.8)
+  box(lwd = 1.5)
+}
+
+
+## Label of a time axis: "date" when the values are dates, the time units
+## otherwise.
+.pred_time_lab <- function(d, x) {
+  if (inherits(d, "POSIXt") || inherits(d, "Date")) return("date")
+  .axis_lab("time", .pred_units(x, "time"))
+}
+
+
+## Dates for a time axis, falling back to the model times when there is no
+## usable time reference.
+.pred_dates <- function(t, tr) {
+  d <- tryCatch(time_2_date(as.numeric(t), tref = tr), error = function(e) NULL)
+  if (is.null(d) || all(is.na(d))) as.numeric(t) else d
+}
+
+
+## Short label for a dated point on the map.
+.pred_short_date <- function(d) {
+  if (inherits(d, "POSIXt") || inherits(d, "Date")) return(format(d, "%Y-%m"))
+  format(signif(as.numeric(d), 4))
+}
+
+
+## Indices of the observations that get a prediction ellipse.
+.ellipse_index <- function(n, n_ellipse) {
+  n_ellipse <- max(1L, as.integer(n_ellipse))
+  if (n <= n_ellipse) return(seq_len(n))
+  unique(round(seq(1, n, length.out = n_ellipse)))
 }

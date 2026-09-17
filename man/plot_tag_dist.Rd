@@ -7,6 +7,7 @@
 plot_tag_dist(
   x,
   select = NULL,
+  i = NULL,
   n_tags = NULL,
   n_time_steps = 6L,
   plot_land = FALSE,
@@ -20,8 +21,11 @@ plot_tag_dist(
 \item{x}{A fitted object of class \code{admove} with \verb{$tag_dist} added by
 \code{\link[=add_tag_dist]{add_tag_dist()}}.}
 
-\item{select}{Integer vector of tag indices to display. \code{NULL} (default)
-shows all computed tags (subject to \code{n_tags}).}
+\item{select}{Tags to display, as indices into the tag list or as tag ids.
+\code{NULL} (default) shows all computed tags (subject to \code{n_tags}).}
+
+\item{i}{Alias for \code{select}, for consistency with \code{\link[=add_tag_dist]{add_tag_dist()}} and
+\code{\link[=tag_predictions]{tag_predictions()}}. Only one of the two may be given.}
 
 \item{n_tags}{Maximum number of tags to display (rows). \code{NULL} shows all
 selected tags.}

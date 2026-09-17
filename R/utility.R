@@ -1461,8 +1461,75 @@ make_x_y_cov <- function(grid, tref = NULL) {
 }
 
 
+## Estimation engines and observation-variance types are configured by name.
+## The numbers they used to be given as are unambiguous (they have always meant
+## the same thing), so they stay accepted as aliases; everything inside the
+## package works on the integer codes, which is what nll() reads.
+.engine_names <- c("kf", "ctmc")
+
 .get_engine_integer <- function(x) {
+  if (is.null(x)) return(NULL)
   if (is.numeric(x)) return(as.integer(x))
-  engine_types <- c("KF","CTMC")
-  as.integer(factor(x, levels = engine_types))
+  ## a number assigned into a character setting arrives as "1"
+  .name_or_number(tolower(as.character(x)), .engine_names, 1L)
+}
+
+
+## Canonical engine name, with an informative error for anything else.
+.get_engine_name <- function(x, arg = "conf$engine") {
+
+  i <- .get_engine_integer(x)
+
+  if (length(i) != 1L || is.na(i) || !i %in% seq_along(.engine_names)) {
+    stop("'", arg, "' must be \"kf\" (Kalman filter: continuous space, ",
+         "discrete time) or \"ctmc\" (continuous-time Markov chain: discrete ",
+         "space, continuous time), not ", deparse(x),
+         ". The numbers 1 (kf) and 2 (ctmc) are accepted as well.",
+         call. = FALSE)
+  }
+
+  .engine_names[i]
+}
+
+
+## Observation-variance types, in the order of their numeric codes 0:3.
+.obs_var_type_names <- c("none", "all_but_last", "all", "data")
+
+.get_obs_var_type_integer <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (is.numeric(x)) return(as.integer(x))
+  ## conf$obs_var_type[1] <- 1L on a character vector arrives as "1"
+  .name_or_number(tolower(as.character(x)), .obs_var_type_names, 0L)
+}
+
+
+## Integer code of a setting given by name, or of the number it was given as
+## (element-wise assignment into a character vector turns 1L into "1").
+.name_or_number <- function(x, names, first_code) {
+
+  out <- match(x, names) - 1L + first_code
+
+  num <- suppressWarnings(as.integer(x))
+  out[is.na(out) & !is.na(num)] <- num[is.na(out) & !is.na(num)]
+
+  out
+}
+
+
+## Canonical observation-variance type names, one per tag type.
+.get_obs_var_type_name <- function(x, arg = "conf$obs_var_type") {
+
+  i <- .get_obs_var_type_integer(x)
+
+  if (length(i) == 0L || any(is.na(i)) ||
+        any(!i %in% (seq_along(.obs_var_type_names) - 1L))) {
+    stop("'", arg, "' must be one of \"none\" (locations are exact), ",
+         "\"all_but_last\" (estimate the observation variance for all but the ",
+         "last observation of a tag), \"all\" (estimate it for every ",
+         "observation) or \"data\" (fix it to the tags' sdx / sdy columns), ",
+         "one per tag type, not ", deparse(x),
+         ". The numbers 0 to 3 are accepted as well.", call. = FALSE)
+  }
+
+  .obs_var_type_names[i + 1L]
 }
