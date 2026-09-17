@@ -9,7 +9,7 @@ The complete simulated data set of class \code{admove_sim} containing:
 \describe{
 \item{grid}{The simulation grid of class \code{admove_grid}}
 \item{cov}{The covariance fields of class \code{admove_cov}}
-\item{par_sim}{The "true" parameters used for simulation}
+\item{par_true}{The true parameters used for simulation}
 \item{tags}{Simulated tags (here: make-resight tags)}
 \item{dat}{The \code{admove} input data of class \code{admove_data}}
 \item{conf}{A list with configuration settings}

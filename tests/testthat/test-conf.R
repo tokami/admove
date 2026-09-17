@@ -246,3 +246,23 @@ test_that("check_conf errors when conf is not a list", {
     "'conf' must be a list or NULL"
   )
 })
+
+
+test_that("check_conf warns when observation error is estimated from ctags alone", {
+
+  dat <- skjepo$sim$dat
+  conf <- default_conf(dat, verbose = FALSE)
+  conf$obs_var_type[3] <- 1L
+
+  ## archival and mark-recapture tags: no warning
+  expect_no_warning(check_conf(conf, dat, verbose = FALSE))
+
+  ## mark-recapture tags only
+  dat_c <- dat
+  dat_c$tags <- dat$tags[dat$tags$tag_type == "c", ]
+  expect_warning(check_conf(conf, dat_c, verbose = FALSE),
+                 "only mark-recapture tags")
+
+  conf$obs_var_type[3] <- 0L
+  expect_no_warning(check_conf(conf, dat_c, verbose = FALSE))
+})

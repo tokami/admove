@@ -44,14 +44,20 @@ remotes::install_github("tokami/admove")
 library(admove)
 
 ## Simulate a small tagging data set
+set.seed(6)
 sim <- sim_data()
 
 ## Fit admove to the simulated data
 fit <- admove(sim)
 
-## Plot simulated data and model predictions
-plot_compare(list(sim = sim, fit = fit))
+## Compare the estimated habitat preference and taxis with the simulated truth
+plot_compare(list(sim = sim, fit = fit), quantity = c("pref", "taxis"))
 ```
+
+<img src="man/figures/README-overview.png" alt="Estimated (orange) and simulated (blue) habitat preference function and taxis field of the quick-start example" width="100%" />
+
+The estimated habitat preference function (A) and the taxis field it
+implies (B) closely match the values used to simulate the data.
 
 # More information
 

@@ -1619,7 +1619,7 @@ plot_fit <- function(x,
 ## parameters in the same way. Keys without a label are returned unchanged.
 .par_display_labels <- function(x, keys) {
 
-  pl <- if (inherits(x, "admove_sim")) x$par_sim else x$pl
+  pl <- if (inherits(x, "admove_sim")) x$par_true else x$pl
   if (is.null(pl) || is.null(x$map)) return(keys)
 
   sel <- .select_estimated_par(pl, x$map)

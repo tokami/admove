@@ -140,7 +140,7 @@ sim_ctags <- sim_tags("c",
                       target_tax_frac = target_tax_frac,
                       target_sdO_frac = target_sdO_frac)
 
-sim_ctags$par_sim
+sim_ctags$par_true
 ctags <- sim_ctags$tags
 
 plot(ctags)
@@ -164,7 +164,7 @@ sim_dtags <- sim_tags("d",
                 target_tax_frac = target_tax_frac,
                 target_sdO_frac = target_sdO_frac)
 
-sim_dtags$par_sim
+sim_dtags$par_true
 dtags <- sim_dtags$tags
 
 plot(grid, auto_layout = FALSE, plot_land = TRUE)
@@ -296,24 +296,27 @@ dat <- setup_data(grid = grid,
                   transform_sref = TRUE,
                   shift_tref = TRUE)
 
-stopifnot(sim_ctags$par_sim$alpha == sim_dtags$par_sim$alpha)
-stopifnot(sim_ctags$par_sim$beta == sim_dtags$par_sim$beta)
+stopifnot(sim_ctags$par_true$alpha == sim_dtags$par_true$alpha)
+stopifnot(sim_ctags$par_true$beta == sim_dtags$par_true$beta)
 
 ## simulation list (admove_sim)
 sim <- list()
 sim$grid <- grid
 sim$cov <- cov
-sim$par_sim <- sim_ctags$par_sim ## same as: sim_dtags$par_sim
+sim$par_true <- sim_ctags$par_true ## same as: sim_dtags$par_true
 sim$tags <- c(dtags, ctags)
 sim$dat <- dat
 sim$conf <- default_conf(dat)
+## the simulated archival tags carry observation error; estimate it, otherwise
+## the fit explains the noise as movement and overestimates diffusion
+sim$conf$obs_var_type[1] <- 1L
 sim$par <- default_par(dat, sim$conf)
 ## copy kappa as it is fixed
-sim$par$logKappa <- sim$par_sim$logKappa
+sim$par$logKappa <- sim$par_true$logKappa
 sim$map <- default_map(dat, sim$conf, sim$par)
 
 ## fix sdO
-## sim$par$logSdO <- sim$par_sim$logSdO
+## sim$par$logSdO <- sim$par_true$logSdO
 ## sim$map$logSdO <- factor(rep(NA, 6))
 
 sim <- admove:::.add_class(sim, "admove_sim")
@@ -328,7 +331,7 @@ sim$tags
 ## Fit
 fit <- admove(sim)
 
-sim$par_sim
+sim$par_true
 
 summary(fit)
 

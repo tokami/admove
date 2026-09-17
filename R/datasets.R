@@ -27,7 +27,7 @@
 #' \describe{
 #'   \item{grid}{The simulation grid of class `admove_grid`}
 #'   \item{cov}{The covariance fields of class `admove_cov`}
-#'   \item{par_sim}{The "true" parameters used for simulation}
+#'   \item{par_true}{The true parameters used for simulation}
 #'   \item{tags}{Simulated tags (here: make-resight tags)}
 #'   \item{dat}{The `admove` input data of class `admove_data`}
 #'   \item{conf}{A list with configuration settings}

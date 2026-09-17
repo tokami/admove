@@ -261,20 +261,20 @@ dat <- setup_data(grid = grid,
 confi <- default_conf(dat)
 confi$obs_var_type[2] <- FALSE
 pari <- default_par(dat, confi)
-pari$logSdO <- sim_list$par_sim$logSdO
+pari$logSdO <- sim_list$par_true$logSdO
 mapi <- default_map(dat, confi, pari)
 
 
 res <- list()
 res$grid <- grid
 res$cov <- env
-res$par_sim <- sim_list$par_sim
+res$par_true <- sim_list$par_true
 res$tags <- stags
 res$dat <- dat
 res$conf <- confi
 res$par <- pari
 ## copy kappa as it is fixed
-res$par$logKappa <- res$par_sim$logKappa
+res$par$logKappa <- res$par_true$logKappa
 res$map <- mapi
 
 res <- admove:::.add_class(res, "admove_sim")

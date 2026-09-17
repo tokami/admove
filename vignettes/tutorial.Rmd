@@ -276,7 +276,7 @@ get comparable parameter values between the simulation and estimation, it is
 important to fix it to the value of the simulation in the estimation:
 
 ```{r, eval=TRUE, echo=TRUE}
-par$logKappa <- skjepo$sim$par_sim$logKappa
+par$logKappa <- skjepo$sim$par_true$logKappa
 ```
 
 

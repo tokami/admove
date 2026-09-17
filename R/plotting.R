@@ -538,7 +538,7 @@ plot_taxis <- function(x,
 
     grid <- x$grid
     cov <- x$cov
-    par <- x$par_sim
+    par <- x$par_true
     dat <- x$dat
     funcs <- NULL
 
@@ -895,7 +895,7 @@ plot_advection <- function(x,
 
     grid <- x$grid
     cov <- x$cov
-    par <- x$par_sim
+    par <- x$par_true
     dat <- x$dat
     funcs <- NULL
 
@@ -1148,7 +1148,7 @@ plot_diffusion <- function(x,
 
     grid <- x$grid
     cov <- x$cov
-    par <- x$par_sim
+    par <- x$par_true
     dat <- x$dat
     funcs <- NULL
 
@@ -1478,13 +1478,13 @@ plot_compare_one <- function(fit, ...,
 
     tmp <- lapply(fitlist, function(x) {
       if (inherits(x, "admove_sim")) {
-        nam <- names(x$par_sim)
+        nam <- names(x$par_true)
         map <- names(x$map)[match(nam,names(x$map))]
         map <- map[!is.na(map)]
         notMapped <- unlist(lapply(x$map[map], function(x) !is.na(x) & !duplicated(x)))
         ## mapped <- unlist(x$map[map])
         ## mapped <- is.na(mapped)
-        pars <- unlist(x$par_sim)
+        pars <- unlist(x$par_true)
         pars <- pars[names(pars) %in% names(notMapped)[notMapped]]
         ## ind <- unlist(sapply(c("beta","logSdO"),
         ##                      function(x) grep(x, names(pars))))
@@ -1528,7 +1528,7 @@ plot_compare_one <- function(fit, ...,
     i = 1
     if (inherits(fitlist[[i]], "admove_sim")){
 
-      nam <- names(fitlist[[i]]$par_sim)
+      nam <- names(fitlist[[i]]$par_true)
 
       map <- names(fitlist[[i]]$map)[match(nam,names(fitlist[[i]]$map))]
       map <- map[!is.na(map)]
@@ -1536,7 +1536,7 @@ plot_compare_one <- function(fit, ...,
       ## mapped <- unlist(fitlist[[i]]$map[map])
       ## mapped <- is.na(mapped)
 
-      pars <- unlist(fitlist[[i]]$par_sim[nam])
+      pars <- unlist(fitlist[[i]]$par_true[nam])
       pars <- pars[names(pars) %in% names(notMapped)[notMapped]]
 
 
@@ -1622,7 +1622,7 @@ plot_compare_one <- function(fit, ...,
     if(n > 1){
       for(i in 2:n){
         if(inherits(fitlist[[i]], "admove_sim")){
-          pars <- unlist(fitlist[[i]]$par_sim)
+          pars <- unlist(fitlist[[i]]$par_true)
         ## ind <- unlist(sapply(c("beta","logSdO"),
         ##                      function(x) grep(x, names(pars))))
 
@@ -2400,7 +2400,7 @@ plot_pref_func <- function(x,
 
     grid <- x$grid
     cov <- x$cov
-    par <- x$par_sim
+    par <- x$par_true
     dat <- x$dat
 
     if(is.null(par)) stop("No parameters provided! Use par = list() to specify parameters for taxis.")
@@ -2830,7 +2830,7 @@ plot_pref_grid <- function(x,
     ##     funcs$tax(xy,NA)))
 
     get_true.pref <- .poly_fun(as.numeric(knots_tax),
-                                       as.numeric(x$par_sim$alpha),
+                                       as.numeric(x$par_true$alpha),
                                        method = conf$smooth_method)
 
     i = 1

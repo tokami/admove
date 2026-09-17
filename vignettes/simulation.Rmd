@@ -94,7 +94,7 @@ This generates a complete simulated dataset. The returned object (class
 
 - `sim$grid`: spatial grid
 - `sim$cov`: simulated covariate fields
-- `sim$par_sim`: simulation parameters
+- `sim$par_true`: the true parameters used to simulate the data (`sim$par` holds the starting values for fitting)
 - `sim$tags`: simulated tagging data
 - `sim$dat`: processed data for model fitting
 - `sim$conf`, `sim$par`, `sim$map`: default configuration, parameters, and mappings

@@ -269,6 +269,19 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
          call. = FALSE)
   }
 
+  ## mark-recapture tags carry a single displacement per tag, whose variance
+  ## the observation error and diffusion both explain; without other tag types
+  ## the two cannot be separated
+  tag_types <- if (!is.null(dat$tags)) unique(as.character(dat$tags$tag_type)) else character(0)
+  if (length(conf$obs_var_type) >= 3L && conf$obs_var_type[3] %in% c(1L, 2L) &&
+        identical(tag_types, "c")) {
+    warning("Observation error is estimated for mark-recapture tags (conf$obs_var_type[3] = ",
+            conf$obs_var_type[3], "), but the data contain only mark-recapture tags. ",
+            "It cannot be separated from diffusion without archival or mark-resight tags; ",
+            "consider conf$obs_var_type[3] <- 0.",
+            call. = FALSE)
+  }
+
   conf
 }
 

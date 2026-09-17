@@ -436,7 +436,7 @@ sim_data <- function(x = NULL,
   res <- list()
   res$grid <- grid
   res$cov <- cov
-  res$par_sim <- par
+  res$par_true <- par
   res$tags <- tags
   res$dat <- dat
 
@@ -446,10 +446,14 @@ sim_data <- function(x = NULL,
   res$conf$use_ctags <- !is.null(ctags)
   res$conf$use_dtags <- !is.null(dtags)
   res$conf$use_stags <- !is.null(stags)
+  ## the simulator adds observation error to archival tag positions; estimate
+  ## it by default, otherwise the fit has to explain that noise as movement and
+  ## overestimates diffusion
+  res$conf <- .sim_obs_var_conf(res$conf, conf_in, if (!is.null(dtags)) "d")
   res$conf <- check_conf(res$conf, dat, verbose = FALSE)
   res$par <- default_par(dat, res$conf, verbose = FALSE)
   ## copy kappa as it is fixed
-  res$par$logKappa <- res$par_sim$logKappa
+  res$par$logKappa <- res$par_true$logKappa
   res$map <- default_map(dat, res$conf, res$par)
 
   res <- .add_class(res, "admove_sim")
@@ -1099,7 +1103,8 @@ sim_tags <- function(tag_type,
                          sim_engine = sim_engine,
                          use_reject = use_reject,
                          n_reject = n_reject,
-                         ctmc_method = ctmc_method)
+                         ctmc_method = ctmc_method,
+                         add_obs_unc = add_obs_unc)
 
       if (tag_type == "d") {
         res_list[[count]] <- tmp
@@ -1135,11 +1140,14 @@ sim_tags <- function(tag_type,
   res <- list()
   res$grid <- grid
   res$cov <- cov
-  res$par_sim <- par
+  res$par_true <- par
   res$tags <- tags
   res$dat <- dat
 
   res$conf <- conf
+  ## estimate the observation error that was added (see sim_data())
+  noisy <- if (is.null(add_obs_unc)) tag_type == "d" else isTRUE(add_obs_unc)
+  res$conf <- .sim_obs_var_conf(res$conf, conf_in, if (noisy) tag_type)
   res$par <- default_par(dat, res$conf, verbose = FALSE)
   res$map <- default_map(dat, res$conf, res$par)
 
@@ -1728,7 +1736,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
     if (inherits(fit, "admove")) {
       par0 <- get_par_est(fit$par, fit$map, fit$opt)
     } else if (inherits(fit, "admove_sim")) {
-      par0 <- fit$par_sim
+      par0 <- fit$par_true
     } else {
       stop("The object provided as 'fit' does not inherit class admove or admove_sim. Please check your code.")
     }
@@ -2322,6 +2330,28 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   return(ret)
 }
 
+
+
+
+## Switch on observation variance estimation for the tag types the simulator
+## added observation error to (all positions but the release and the last one,
+## i.e. obs_var_type = 1). A setting the user passed explicitly in 'conf' is
+## kept, as is a stronger setting (2) already present. Mark-recapture tags are
+## never switched on: only their release and recapture positions are kept, and
+## neither carries simulated noise (nor could ctags alone estimate it).
+.sim_obs_var_conf <- function(conf, conf_in, noisy_types) {
+
+  noisy_types <- setdiff(noisy_types, "c")
+  if (length(noisy_types) == 0 || is.null(conf$obs_var_type)) return(conf)
+  if (!is.null(conf_in$obs_var_type)) return(conf)
+
+  for (tt in noisy_types) {
+    i <- .get_tag_type_integer(tt)
+    conf$obs_var_type[i] <- max(1L, as.integer(conf$obs_var_type[i]))
+  }
+
+  conf
+}
 
 
 
