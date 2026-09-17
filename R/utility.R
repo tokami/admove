@@ -681,12 +681,19 @@ group_consecutive_ranges <- function(x){
   return(res)
 }
 
+## Index of the time slice (covariate layer or season) that 'time' falls into.
+## 'time_vec' holds the slice START times, so slice j covers
+## [time_vec[j], time_vec[j + 1]): a time exactly on a start belongs to the slice
+## that starts there. This matters because dates convert to exact slice starts
+## (e.g. the first of a month in monthly units), and rates are evaluated at the
+## start of each step. Times before the first start give 0; times after the last
+## start get the last slice.
 t2index <- function(time, time_vec, period = NULL, seasonal = FALSE){
   if (seasonal) {
     if (is.null(period)) stop("period has to be defined in tref(x) for seasonal splines to be used.")
     time <- time %% period
   }
-  findInterval(time, time_vec, rightmost.closed = TRUE, left.open = TRUE)
+  findInterval(time, time_vec)
 }
 
 

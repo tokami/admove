@@ -392,8 +392,7 @@ setup_data <- function(grid = NULL,
   }
 
   ## Check covariate–tag time overlap -----------------
-  ## t2index() uses findInterval(..., rightmost.closed = TRUE, left.open = TRUE),
-  ## which returns 0 only when t < min(time_cov) and otherwise clamps: a tag
+  ## t2index() returns 0 only when t < min(time_cov) and otherwise clamps: a tag
   ## above the covariate range silently gets the LAST slice. Both directions are
   ## therefore checked. Above the range some overshoot is normal -- slices are
   ## labelled by their start, so a tag in the last month sits up to one slice
