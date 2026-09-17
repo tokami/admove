@@ -1208,6 +1208,15 @@ make_x_y_cov <- function(grid, tref = NULL) {
 }
 
 
+## Clamp v to [lo, hi] on the AD tape. Comparisons (and hence pmin/pmax) are not
+## allowed for AD types, so the clamp is written with abs(): pos(z) = max(z, 0).
+## Inside [lo, hi] it is the identity, value and derivative.
+.clamp_ad <- function(v, lo, hi) {
+  pos <- function(z) 0.5 * (z + abs(z))
+  lo + pos(v - lo) - pos(v - hi)
+}
+
+
 ## Natural cubic spline through the knots (xp, yp), returning either the value
 ## function (deriv = FALSE) or its analytic first derivative (deriv = TRUE).
 ##

@@ -63,6 +63,18 @@
 ##' only two observations if `do_update` is `FALSE` for that type, since nothing
 ##' is conditioned on in between.
 ##'
+##' `kf_boundary` controls what the Kalman filter (`engine = 1`) does when a
+##' predicted position leaves the covariate field, which is only defined between
+##' the outermost cell centres. With `"clamp"` (the default) the position is held
+##' at the edge of the field. With `"none"` the likelihood becomes `NaN`, which
+##' typically makes the optimizer stall close to the starting values ("false
+##' convergence"); mark-recapture tags are most affected, because their predicted
+##' track is not updated between release and recapture. As long as no position
+##' leaves the field, both settings give the same likelihood. If positions are
+##' still held at the edge at the estimates, [admove()] warns: the fit then
+##' depends on the boundary treatment, which usually points to an unrealistic
+##' taxis or advection field near the edge. The CTMC engine is not affected.
+##'
 ##' The smooth used for the habitat preference functions is selected by
 ##' `conf$smooth_method`. All options interpolate the knot values exactly; the
 ##' first two are the same natural cubic spline — piecewise cubic, twice
@@ -172,6 +184,12 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   ##             reproducibility of older fits).
   conf$smooth_method <- "rtmb"
 
+  ## Kalman filter: predicted positions that leave the covariate field
+  ## "clamp" = hold them at the edge of the field (default)
+  ## "none"  = no treatment; the likelihood is NaN once a position leaves the
+  ##           field (behaviour before 2026-09-17)
+  conf$kf_boundary <- "clamp"
+
   conf
 }
 
@@ -269,6 +287,12 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   }
 
   .check_ctmc_method(conf$ctmc_method)
+
+  if (!is.character(conf$kf_boundary) || length(conf$kf_boundary) != 1L ||
+        !conf$kf_boundary %in% c("clamp", "none")) {
+    stop("'conf$kf_boundary' must be either \"clamp\" or \"none\".",
+         call. = FALSE)
+  }
 
   ## mark-recapture tags carry a single displacement per tag, whose variance
   ## the observation error and diffusion both explain; without other tag types

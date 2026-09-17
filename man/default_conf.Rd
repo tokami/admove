@@ -75,6 +75,18 @@ reported recapture position. Note that \code{1L} and \code{2L} coincide for a ta
 only two observations if \code{do_update} is \code{FALSE} for that type, since nothing
 is conditioned on in between.
 
+\code{kf_boundary} controls what the Kalman filter (\code{engine = 1}) does when a
+predicted position leaves the covariate field, which is only defined between
+the outermost cell centres. With \code{"clamp"} (the default) the position is held
+at the edge of the field. With \code{"none"} the likelihood becomes \code{NaN}, which
+typically makes the optimizer stall close to the starting values ("false
+convergence"); mark-recapture tags are most affected, because their predicted
+track is not updated between release and recapture. As long as no position
+leaves the field, both settings give the same likelihood. If positions are
+still held at the edge at the estimates, \code{\link[=admove]{admove()}} warns: the fit then
+depends on the boundary treatment, which usually points to an unrealistic
+taxis or advection field near the edge. The CTMC engine is not affected.
+
 The smooth used for the habitat preference functions is selected by
 \code{conf$smooth_method}. All options interpolate the knot values exactly; the
 first two are the same natural cubic spline — piecewise cubic, twice

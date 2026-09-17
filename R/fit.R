@@ -352,6 +352,18 @@ admove <- function(dat,
                                   "min)."))
   }
 
+  ## tags whose predicted positions are held at the edge of the covariate field
+  ## at the estimates (KF, conf$kf_boundary = "clamp"); reuses the report when
+  ## there is one
+  res$boundary_tags <- if (do_report) {
+    .boundary_ids(res$rep$boundary_excess, names(tmb_all$tags))
+  } else {
+    .boundary_tags(obj, opt$par, names(tmb_all$tags))
+  }
+  if (length(res$boundary_tags) > 0) {
+    warning(.boundary_warning(res$boundary_tags), call. = FALSE)
+  }
+
   if (do_tag_dist) {
 
     if (is.null(dat$pred$grid$igrid)) {
@@ -1120,6 +1132,12 @@ summarise_fit <- function(object, CI = 0.95, ...) {
     cat('      stalled line search at the optimum rather than a failed fit. Check the estimates.\n')
   }
 
+  if (length(x$boundary_tags) > 0) {
+    cat(paste0('NOTE: Predicted positions of ', length(x$boundary_tags),
+               ' tag(s) are held at the edge of the covariate field at the estimates\n',
+               '      (conf$kf_boundary = "clamp"); the fit depends on this boundary treatment.\n'))
+  }
+
   ## if('sderr' %in% names(x)) cat('WARNING: Could not calculate all standard deviations. The optimum found may be invalid. Proceed with caution.\n')
   if (bad) {
     txtobj <- 'Objective function: '
@@ -1714,6 +1732,39 @@ plot_fit <- function(x,
   if (is.null(g) || length(g) == 0) return(NA_real_)
 
   max(abs(as.numeric(g)))
+}
+
+
+## Ids of the tags whose predicted KF positions are held at the edge of the
+## covariate field at `par` (see conf$kf_boundary), from the per-tag distance
+## reported by nll(). Empty when nothing is clamped, for the CTMC engine, and when
+## the report cannot be evaluated.
+.boundary_tags <- function(obj, par, ids) {
+
+  if (is.null(obj) || !is.function(obj$report)) return(character(0))
+
+  excess <- tryCatch(obj$report(par)$boundary_excess, error = function(e) NULL)
+
+  .boundary_ids(excess, ids)
+}
+
+
+.boundary_ids <- function(excess, ids) {
+  if (is.null(excess) || length(excess) != length(ids)) return(character(0))
+  ids[is.finite(excess) & excess > 1e-8]
+}
+
+
+.boundary_warning <- function(ids) {
+  n <- length(ids)
+  paste0("At the estimates, the predicted positions of ", n, " tag(s) (",
+         paste(utils::head(ids, 5), collapse = ", "),
+         if (n > 5) paste0(", ... and ", n - 5, " more"),
+         ") leave the covariate field and are held at its edge ",
+         "(conf$kf_boundary = \"clamp\"). The fit depends on this boundary ",
+         "treatment, which usually points to an unrealistic taxis or advection ",
+         "field near the edge: check the preference functions, use fewer knots, ",
+         "or extend the covariate field.")
 }
 
 

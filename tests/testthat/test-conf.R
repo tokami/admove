@@ -30,7 +30,8 @@ test_that("default_conf returns expected names", {
       "seasonal_cov",
       "seasonal_spline",
       "seasonal_dif",
-      "smooth_method"
+      "smooth_method",
+      "kf_boundary"
     )
   )
 })

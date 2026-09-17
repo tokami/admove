@@ -58,6 +58,39 @@ nll <- function(par, dat) {
   next_dist <- c(dat$grid$cellsize[1], dat$grid$cellsize[1],
                  dat$grid$cellsize[2], dat$grid$cellsize[2])
   ntags <- length(dat$tags)
+  boundary_excess <- rep(0, ntags)
+
+
+  ## Covariate field limits for the KF. The interpolants are only defined
+  ## between the outermost cell centres and return NaN beyond, so a predicted
+  ## position that leaves the field (e.g. a mark-recapture track driven by a
+  ## strong taxis during the first optimizer steps) turns the whole likelihood
+  ## NaN and the optimizer stalls. With kf_boundary = "clamp" predicted
+  ## positions are held at the edge instead. As long as no position leaves the
+  ## field this is the identity, so such likelihoods are unchanged.
+  kf_clamp <- dat$engine == 1 && !is.null(dat$xrange_cov) &&
+    !identical(dat$kf_boundary, "none")
+  if (kf_clamp) {
+    ## RTMB's interpolant is also NaN within ~1e-4 cell widths of the centre of
+    ## an NA cell, and a position clamped in both directions sits exactly on the
+    ## centre of a corner cell, which is often land. So hold positions a thousandth
+    ## of a cell inside the outermost cell centres.
+    cs_field <- min(sapply(seq_along(dat$cov), function(k) {
+      c(diff(dat$xrange_cov[k, ]) / max(1, dim(dat$cov[[k]])[1] - 1),
+        diff(dat$yrange_cov[k, ]) / max(1, dim(dat$cov[[k]])[2] - 1))
+    }))
+    eps_field <- 1e-3 * cs_field
+    xlim_field <- c(max(dat$xrange_cov[, 1]), min(dat$xrange_cov[, 2])) +
+      c(eps_field, -eps_field)
+    ylim_field <- c(max(dat$yrange_cov[, 1]), min(dat$yrange_cov[, 2])) +
+      c(eps_field, -eps_field)
+    clamp_xy <- function(xy) {
+      out <- xy
+      out[, 1] <- .clamp_ad(xy[, 1], xlim_field[1], xlim_field[2])
+      out[, 2] <- .clamp_ad(xy[, 2], ylim_field[1], ylim_field[2])
+      out
+    }
+  }
 
 
   ## testing
@@ -146,6 +179,10 @@ nll <- function(par, dat) {
 
         moveT <- moveA <- move0
 
+        ## the updated position can lie just outside the field when an
+        ## observation does (outer half of a boundary cell)
+        if (kf_clamp) last_xy <- clamp_xy(last_xy)
+
         ## diffusion
         D <- exp(habi_dif$val(last_xy, ts[t-1]))
 
@@ -161,6 +198,12 @@ nll <- function(par, dat) {
         }
 
         pred_xy <- last_xy + moveT + moveA
+        if (kf_clamp) {
+          pred_in <- clamp_xy(pred_xy)
+          boundary_excess[i] <- boundary_excess[i] +
+            sum(abs(pred_xy - pred_in))
+          pred_xy <- pred_in
+        }
         PP <- P + (2 * D * dt)
 
         if (t %in% observed) {
@@ -465,6 +508,9 @@ nll <- function(par, dat) {
   REPORT(pref_dif_pred)
   ADREPORT(pref_taxis_pred)
   ADREPORT(pref_dif_pred)
+  ## per tag: summed distance by which predicted positions were moved back to
+  ## the edge of the covariate field (KF, conf$kf_boundary = "clamp")
+  REPORT(boundary_excess)
 
 
   return(nll)
