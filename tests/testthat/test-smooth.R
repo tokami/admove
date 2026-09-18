@@ -247,3 +247,82 @@ test_that("\"rtmb\" smooth propagates NA off-tape like \"natural\"", {
   expect_true(all(is.na(poly_fun(xp, yp, method = "rtmb",
                                  deriv = TRUE)(c(NA_real_, NA_real_)))))
 })
+
+
+test_that("\"rtmb\" smooth is not frozen at the taping point", {
+
+  ## Regression guard for the cached derivative tape in .poly_fun(). D is built
+  ## once per smooth, inside the active nll tape; `yp` enters it as a reference
+  ## to the outer tape's nodes rather than as a numeric copy, so a new alpha must
+  ## shift both the spline and its derivative when the tape is replayed. A tape
+  ## that froze the knot values would keep returning the value at the taping
+  ## point, which finite differences of the same tape could not detect - so the
+  ## reference is the "natural" branch, which is plain R with no nested tape.
+  skip_if_not_installed("RTMB")
+
+  xp <- c(0, 1, 2, 3, 4)
+  yv <- c(0, 1, 0, -1, 2)
+  xx <- c(0.5, 1.5, 3.2)
+
+  ## the taping point is a flat spline (all knot values zero, as default_par()
+  ## starts alpha), so a frozen tape returns exactly zero for every yv below
+  f <- function(p) sum(poly_fun(xp, p$y, method = "rtmb", deriv = TRUE)(xx))
+  obj <- RTMB::MakeADFun(f, list(y = rep(0, 5)), silent = TRUE)
+
+  ref <- sum(stats::splinefun(xp, yv, method = "natural")(xx, deriv = 1))
+  expect_equal(obj$fn(yv), ref, tolerance = 1e-8)
+  expect_false(isTRUE(all.equal(ref, 0)))
+
+  ## and again far from both the taping point and the first replay
+  yv2 <- c(-1, 0.5, 2, 0, 1)
+  expect_equal(obj$fn(yv2),
+               sum(stats::splinefun(xp, yv2, method = "natural")(xx, deriv = 1)),
+               tolerance = 1e-8)
+})
+
+
+test_that("perturbed alpha gives the same nll and gradient under both smooths", {
+
+  ## Same guard at model level: the taxis drift is kappa * d/dx of the taxis
+  ## smooth, so a derivative tape stuck at the taping point (alpha = 0, i.e. no
+  ## drift at all) would change the nll. "natural" builds the same spline without
+  ## a nested tape, so it is an independent reference for both value and gradient.
+  skip_if_not_installed("RTMB")
+
+  obj_rtmb <- tiny_obj("rtmb")
+  obj_nat <- tiny_obj("natural")
+
+  p0 <- obj_rtmb$par
+  expect_equal(names(p0), names(obj_nat$par))
+  ia <- which(names(p0) == "alpha")
+  expect_gt(length(ia), 0)
+
+  ## far enough from alpha = 0 to make the taxis drift bite, but still inside the
+  ## region where the KF on a single archival tag returns a finite nll
+  p1 <- p0
+  p1[ia] <- c(0.2, -0.3)[seq_along(ia)]
+  p1[names(p1) == "beta"] <- 0.4
+  p1[names(p1) == "logSdO"] <- p0[names(p0) == "logSdO"] + 0.2
+
+  ## the perturbation must actually move the smooth, or the test is vacuous
+  expect_false(isTRUE(all.equal(obj_rtmb$fn(p0), obj_rtmb$fn(p1))))
+
+  expect_equal(obj_rtmb$fn(p1), obj_nat$fn(p1), tolerance = 1e-8)
+
+  g_rtmb <- as.numeric(obj_rtmb$gr(p1))
+  g_nat <- as.numeric(obj_nat$gr(p1))
+  expect_true(all(is.finite(g_rtmb)))
+  expect_false(isTRUE(all.equal(g_rtmb[ia], rep(0, length(ia)))))
+  expect_equal(g_rtmb, g_nat, tolerance = 1e-6)
+
+  ## "natural" has no nested tape, so its own gradient can be checked against
+  ## finite differences of its value - which pins the "rtmb" gradient too
+  h <- 1e-5
+  fd <- sapply(seq_along(p1), function(i) {
+    pu <- pl <- p1
+    pu[i] <- pu[i] + h
+    pl[i] <- pl[i] - h
+    (obj_nat$fn(pu) - obj_nat$fn(pl)) / (2 * h)
+  })
+  expect_equal(g_nat, fd, tolerance = 1e-4)
+})

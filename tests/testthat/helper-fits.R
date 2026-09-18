@@ -47,3 +47,26 @@ small_fit <- function(sdreport = FALSE, report = FALSE) {
 
   fit
 }
+
+
+## Smaller still: 1 archival and 5 conventional tags. Only for tests that need a
+## real nll tape rather than a real fit (e.g. comparing two smooth methods on the
+## same data), where two tape builds on small_sim() would cost more than the rest
+## of the suite. Not fitted - the free parameters are alpha (2), beta and logSdO.
+tiny_sim <- function() {
+  .cached("tiny_sim", withr::with_seed(1, suppressMessages(suppressWarnings(
+    sim_data(skjepo$sim, n_dtags = 1, n_ctags = 5, verbose = FALSE)
+  ))))
+}
+
+
+## nll tape for tiny_sim() under a given conf$smooth_method, unfitted.
+tiny_obj <- function(method) {
+  .cached(paste0("tiny_obj_", method), {
+    sim <- tiny_sim()
+    conf <- sim$conf
+    conf$smooth_method <- method
+    suppressWarnings(admove(sim$dat, conf = conf, par = sim$par, map = sim$map,
+                            run = FALSE, verbose = FALSE))$obj
+  })
+}

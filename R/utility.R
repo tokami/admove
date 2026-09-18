@@ -1192,12 +1192,10 @@ make_x_y_cov <- function(grid, tref = NULL) {
 ## Numerically stable log(sum(exp(x))) for a short AD vector.
 ##
 ## Used for the finite mixture over candidate observation locations (see nll()).
-## A plain log(sum(exp(x))) underflows to -Inf as soon as one candidate is far
-## enough away that its log-density is very negative, which would poison the
-## objective and every gradient. RTMB::logspace_add(a, b) = log(exp(a) + exp(b))
-## is both AD-differentiable and stable, so folding over it keeps the whole
-## accumulation on the tape. max()/which.max() are deliberately avoided: they are
-## non-smooth and would need the values off the tape.
+## Stable log(sum(exp(x))) on the tape, for the ambiguous-recapture mixture.
+## Do not rewrite with the max-shift trick: max()/which.max() are non-smooth and
+## only available off the tape. See dev/code_notes.org, "Ambiguous recapture
+## locations".
 .logsumexp_ad <- function(x) {
   n <- length(x)
   if (n == 0L) return(NULL)
@@ -1208,44 +1206,24 @@ make_x_y_cov <- function(grid, tref = NULL) {
 }
 
 
-## Clamp v to [lo, hi] on the AD tape. Comparisons (and hence pmin/pmax) are not
-## allowed for AD types, so the clamp is written with abs(): pos(z) = max(z, 0).
-## Inside [lo, hi] it is the identity, value and derivative.
+## Clamp v to [lo, hi] on the AD tape. abs() rather than pmin/pmax because
+## comparisons are not allowed for AD types; identity in value and derivative
+## inside [lo, hi]. See dev/code_notes.org, "Bounding-box clamp".
 .clamp_ad <- function(v, lo, hi) {
   pos <- function(z) 0.5 * (z + abs(z))
   lo + pos(v - lo) - pos(v - hi)
 }
 
 
-## Natural cubic spline through the knots (xp, yp), returning either the value
-## function (deriv = FALSE) or its analytic first derivative (deriv = TRUE).
+## Natural cubic spline through the knots (xp, yp), value (deriv = FALSE) or
+## analytic first derivative (deriv = TRUE); the "natural" smooth_method, and the
+## nested-tape-free cross-check for the default "rtmb" one.
 ##
-## `yp` are the estimated function values at the knots (the parameters), so the
-## spline interpolates them exactly. Boundary conditions are "natural" (second
-## derivative zero at the outer knots), which makes the spline extrapolate
-## LINEARLY beyond the knot range - far more robust in the covariate tails than a
-## global polynomial.
-##
-## Implemented with plain automatic-differentiation operations only - no
-## comparisons or branching on the (possibly AD) evaluation point, which RTMB
-## forbids. The spline is written in a truncated-power basis
-##
-##   S(x) = a + b * x + sum_i c_i * pos(x - t_i)^3,   pos(z) = max(0, z),
-##
-## subject to the two "natural" constraints  sum_i c_i = 0  and  sum_i c_i t_i = 0,
-## which force the second derivative to vanish at the ends and hence make S linear
-## beyond the outer knots. pos(z) = 0.5 * (z + abs(z)) is AD-safe (uses abs, not a
-## comparison), so the whole basis is a single smooth formula valid for every x.
-##
-## The coefficients theta = (a, b, c_1..c_n) solve a fixed (n+2) linear system
-## whose matrix depends only on the knots (numeric); the right-hand side is linear
-## in the knot values yp, so RTMB::solve(numeric matrix, AD rhs) is AD-safe -
-## exactly the pattern used by the legacy Vandermonde solve.
-##
-## Retained as the "natural" method. The default is now "rtmb", which delegates
-## to RTMB::splinefun and agrees with this construction to machine precision;
-## this pure-R version needs no atomic and stays available as a cross-check and
-## as a fallback (see .poly_fun).
+## Truncated-power basis with pos(z) = 0.5 * (z + abs(z)): a single branch-free
+## formula, because RTMB forbids comparisons on the (AD) evaluation point. The
+## coefficient system is numeric with an AD right-hand side, so RTMB::solve is
+## AD-safe. Derivation and the end conditions that give the linear tails:
+## dev/code_notes.org, "Preference smooths".
 .natural_spline_fun <- function(xp, yp, deriv = FALSE) {
 
   "c" <- RTMB::ADoverload("c")
@@ -1299,18 +1277,13 @@ make_x_y_cov <- function(grid, tref = NULL) {
 }
 
 
-## Build a preference smooth (and its first derivative) from knot locations `xp`
-## and knot values `yp`. `yp` are the estimated function values at the knots, so
-## the smooth always interpolates them exactly. `method` selects the construction:
-##   "rtmb"    - RTMB::splinefun natural cubic spline. Default. Same spline as
-##               "natural" (they agree to machine precision), but evaluated by
-##               RTMB's atomic, whose cost is independent of the number of knots.
-##   "natural" - the same natural cubic spline written out in a truncated-power
-##               basis in plain R (see .natural_spline_fun); no atomic involved.
-##   "poly"    - legacy single global interpolating polynomial (Vandermonde solve);
-##               retained for reproducibility of older fits.
-## The `adv` and single-knot cases are method-independent (linear-through-origin and
-## constant respectively).
+## Preference smooth and its first derivative, from knot locations `xp` and knot
+## values `yp` (the estimated function values at the knots, so the smooth
+## interpolates them exactly). `method` is conf$smooth_method: "rtmb" (default),
+## "natural" or "poly". Method-independent special cases: `adv = TRUE` is linear
+## through the origin, a single knot is constant, and repeated knots return NULL,
+## which the caller reads as "covariate not used".
+## Construction, costs and tape mechanics: dev/code_notes.org, "Preference smooths".
 .poly_fun <- function(xp, yp, deriv = FALSE, adv = FALSE, method = "rtmb") {
 
   if (is.null(method)) method <- "rtmb"
@@ -1318,75 +1291,60 @@ make_x_y_cov <- function(grid, tref = NULL) {
   if (!adv && length(xp) > 1 && all(diff(xp) == 0)) return(NULL)
 
   if (adv) {
-    ## Simple linear case
     val <- yp[1]
     f <- function(x) x * val
     df <- function(x) rep(val, length(x))
   } else {
     if (length(xp) == 1) {
-      ## For one knot return parameter (e.g. constant diffusion)
+      ## constant, e.g. n_knots_dif = 1
       val <- yp[1]
       f <- function(x) val
       df <- function(x) rep(0, length(x))
     } else if (method == "rtmb") {
-      ## Same natural cubic spline as "natural", evaluated by RTMB's atomic.
       S <- RTMB::splinefun(xp, yp, method = "natural")
       f <- function(x) S(x)
-      ## S(x, deriv = 1) has no analytic derivative: it tapes the spline again
-      ## and differentiates that nested tape, on EVERY call. That tape depends
-      ## only on length(x), never on the values, so build it once per smooth and
-      ## replay it - ~5x faster over a whole fit. Taping it here also keeps the
-      ## evaluation point a bare tape variable rather than an inline expression,
-      ## which is what lets this branch work on RTMB builds predating the
-      ## MakeTape promise fix (kaskr/RTMB "Fix #90"). as.vector() because a
-      ## replayed tape returns a 1 x n matrix.
+      ## S(x, deriv = 1) retapes the spline on every call, so cache that tape and
+      ## replay it. The cache is valid within ONE taping only: `yp` is a reference
+      ## into the outer tape, so replaying D under a different tape gives a
+      ## silently wrong number - no error. .make_pref_funcs() must therefore keep
+      ## being called inside nll(); never hoist it into dat or a package-level memo.
       D <- NULL
       df <- function(x) {
-        ## Off-tape (plotting, simulation) nothing needs caching: the spline
-        ## falls back to stats::splinefun and differentiates directly, whereas
-        ## taping would build one tape the size of the whole covariate field.
-        ## That fallback errors on NA/NaN in its deriv > 0 branch though, and
-        ## the covariate interpolant returns NaN off the field, so evaluate the
-        ## finite points only and leave the gaps missing.
+        ## Off-tape this falls back to stats::splinefun, whose deriv > 0 branch
+        ## errors on NA/NaN - and interpol2Dfun returns NaN off the field, which
+        ## sim_tags() relies on. So evaluate the finite points only.
         if (!inherits(x, "advector") && !inherits(yp, "advector")) {
           out <- rep(NA_real_, length(x))
           ok <- !is.na(x)
           if (any(ok)) out[ok] <- as.vector(S(x[ok], deriv = 1L))
           return(out)
         }
+        ## rebuilt when length(x) changes; as.vector() because a replay is 1 x n
         if (is.null(D) || length(D$par()) != length(x))
           D <<- RTMB::MakeTape(function(z) S(z, deriv = 1L), numeric(length(x)))
         as.vector(D(x))
       }
     } else if (method == "natural") {
-      ## Natural cubic spline through the knot values (see .natural_spline_fun).
       f <- .natural_spline_fun(xp, yp, deriv = FALSE)
       df <- .natural_spline_fun(xp, yp, deriv = TRUE)
     } else if (method == "poly") {
-      ## Solve for polynomial coefficients
       n <- length(xp)
       A <- outer(xp, 0:(n-1), "^")
       alpha <- RTMB::solve(A, yp)
 
       f <- function(x){
-        ## Evaluate polynomial: sum(alpha[j+1] * x^j)
         v <- outer(x, 0:(n-1), "^")
         as.vector(v %*% alpha)
-        ## as.vector(alpha[1] + sum(alpha[-1] * x^(1:(n-1))))
       }
 
       df <- function(x){
-        ## Evaluate derivative: sum(j * alpha[j+1] * x^(j-1))
         if (n == 2) {
-          rep(alpha[2], length(x))  # Linear case
+          rep(alpha[2], length(x))
         }else{
           j <- 1:(n-1)
           v <- outer(x, j - 1, "^")
           as.vector(v %*% (j * alpha[-1]))
         }
-        ## as.vector(alpha[2] +
-        ##           sum(alpha[-c(1:2)] *
-        ##               (2:(n-1)) * x^(1:(n-2))))
       }
     } else {
       stop("Unknown smooth method '", method,

@@ -25,7 +25,7 @@
     }
   }
 
-  ret[is.na(ret)] <- 0
+  ## ret[is.na(ret)] <- 0  ## this is bad
 
   return(ret)
 }

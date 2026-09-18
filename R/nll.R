@@ -60,11 +60,9 @@ nll <- function(par, dat) {
   ntags <- length(dat$tags)
   boundary_excess <- rep(0, ntags)
 
-  ## Predicted observation distribution, one row per row of the tag data in the
-  ## order the tags are split (see tag_predictions()): the mean and variance the
-  ## likelihood evaluates each observation against, i.e. before its update and
-  ## including observation error. pred_set marks the rows that were filled, and
-  ## is plain numeric because only non-AD code writes it.
+  ## Predicted observation distribution, one entry per tag row in split() order;
+  ## pred_set is plain numeric because only non-AD code writes it. Layout and
+  ## meaning: dev/code_notes.org, "Predicted vs observed positions".
   nobs_tags <- vapply(dat$tags, nrow, integer(1))
   obs_offset <- c(0L, cumsum(nobs_tags))
   nobs_all <- sum(nobs_tags)
@@ -72,20 +70,15 @@ nll <- function(par, dat) {
   pred_set <- rep(0, nobs_all)
 
 
-  ## Covariate field limits for the KF. The interpolants are only defined
-  ## between the outermost cell centres and return NaN beyond, so a predicted
-  ## position that leaves the field (e.g. a mark-recapture track driven by a
-  ## strong taxis during the first optimizer steps) turns the whole likelihood
-  ## NaN and the optimizer stalls. With kf_boundary = "clamp" predicted
-  ## positions are held at the edge instead. As long as no position leaves the
-  ## field this is the identity, so such likelihoods are unchanged.
+  ## Covariate field limits for the KF: one predicted position outside the field
+  ## turns the whole likelihood NaN, so kf_boundary = "clamp" holds positions at
+  ## the edge. See dev/code_notes.org, "Bounding-box clamp".
   kf_clamp <- dat$engine == 1 && !is.null(dat$xrange_cov) &&
     !identical(dat$kf_boundary, "none")
   if (kf_clamp) {
-    ## RTMB's interpolant is also NaN within ~1e-4 cell widths of the centre of
-    ## an NA cell, and a position clamped in both directions sits exactly on the
-    ## centre of a corner cell, which is often land. So hold positions a thousandth
-    ## of a cell inside the outermost cell centres.
+    ## eps_field is load-bearing, not cosmetic: clamping in both coordinates
+    ## lands on a corner cell centre, usually land, and the interpolant is NaN
+    ## within ~1e-4 cells of an NA cell centre.
     cs_field <- min(sapply(seq_along(dat$cov), function(k) {
       c(diff(dat$xrange_cov[k, ]) / max(1, dim(dat$cov[[k]])[1] - 1),
         diff(dat$yrange_cov[k, ]) / max(1, dim(dat$cov[[k]])[2] - 1))
@@ -236,13 +229,10 @@ nll <- function(par, dat) {
             F <- PP
 
             ## obs uncertainty
-            ## obs_var_type 1 means "all but the last observation", so the
-            ## comparison is against the last observation EVENT of this tag --
-            ## not against nts, which counts the integration time points and is
-            ## larger than nrow(tag) whenever gaps are filled (the default);
-            ## comparing to nts made type 1 behave like type 2. Comparing
-            ## events rather than rows keeps every candidate position of an
-            ## ambiguous final observation on the same footing.
+            ## Type 1 compares against the last observation EVENT, never against
+            ## nts (time points, > nrow(tag) when gaps are filled) -- that made
+            ## type 1 behave like type 2. See dev/code_notes.org, "Observation
+            ## variance from the data".
             if ((dat$obs_var_type[ind_tt] == 1 && ev[ind_obs_j] != last_ev) ||
                   dat$obs_var_type[ind_tt] == 2 ||
                   dat$obs_var_type[ind_tt] == 3) {
@@ -272,15 +262,11 @@ nll <- function(par, dat) {
 
             if (amb && ev[ind_obs_j] == last_ev) {
 
-              ## One of the candidates is the true position, so their densities
-              ## are summed (weighted), not multiplied. The state is deliberately
-              ## NOT updated: the ambiguous event is the last one, so nothing is
-              ## propagated past it and every candidate is evaluated against the
-              ## same release-conditioned prediction. That keeps the mixture
-              ## exact -- there is no Gaussian-mixture posterior to collapse.
-              ##
-              ## RTMB's c() coerces every argument with advector(), which
-              ## rejects NULL, so the first term has to seed the vector.
+              ## Densities are summed (weighted), not multiplied, and the state
+              ## is deliberately NOT updated -- see dev/code_notes.org,
+              ## "Ambiguous recapture locations".
+              ## RTMB's c() coerces with advector(), which rejects NULL, so the
+              ## first term has to seed the vector.
               term <- log(tag$prob[ind_obs_j]) + ld
               amb_lw <- if (is.null(amb_lw)) term else c(amb_lw, term)
               last_xy <- pred_xy
