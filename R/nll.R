@@ -60,6 +60,12 @@ nll <- function(par, dat) {
   ntags <- length(dat$tags)
   boundary_excess <- rep(0, ntags)
 
+  ## CTMC diagnostics; stay 0 for the KF (see the CTMC branch below)
+  ctmc_ngen <- 0
+  ctmc_nstep <- 0
+  ctmc_ngroup <- 0
+  ctmc_ngrouped <- 0
+
   ## Predicted observation distribution, one entry per tag row in split() order;
   ## pred_set is plain numeric because only non-AD code writes it. Layout and
   ## meaning: dev/code_notes.org, "Predicted vs observed positions".
@@ -302,195 +308,28 @@ nll <- function(par, dat) {
 
   } else if (dat$engine == 2) {  ## CTMC
 
-    time_mode <- ifelse(is.null(dat$dt) || is.na(dat$dt),
-                        "fill_gaps", "fixed_dt")
+    ## The engine lives in R/ctmc.R. ctx carries the tag-independent pieces the
+    ## generator is built from, so the per-tag and release-event passes share
+    ## one construction rather than two copies of it.
+    ctx <- list(dat = dat,
+                nc = nc,
+                xygrid = xygrid,
+                cs = cs,
+                nextTo = nextTo,
+                next_dist = next_dist,
+                kappa = kappa,
+                sdO = sdO,
+                habi = list(tax = habi_tax,
+                            dif = habi_dif,
+                            adv_x = habi_adv_x,
+                            adv_y = habi_adv_y))
 
-
-    if (identical(dat$ctmc_method, "expav")) {
-      mstar_template <- make_mstar_template(nextTo, ad = TRUE)
-    }
-
-    for (i in seq_len(ntags)) {
-
-      tag <- dat$tags[[i]]
-
-      ## ambiguous final observation -- see the KF branch above
-      ev <- .tag_events(tag)
-      last_ev <- max(ev)
-      amb <- sum(ev == last_ev) > 1L
-      amb_lw <- NULL
-
-      ## unique(): candidate positions may share a time
-      dt_min <- min(dat$min_dt, median(diff(sort(unique(tag$t)))))
-      if (time_mode == "fill_gaps" && (!is.finite(dt_min) || dt_min <= 0)) next()
-
-      out <- build_time(tag$t,
-                        mode = time_mode,
-                        dt_min = dt_min,
-                        dt = dat$dt,
-                        eps = 0.1)
-
-      ts <- out$ts
-      dts <- out$dts
-      nts <- out$nts
-      observed <- out$observed
-      if (length(observed) == 0) next()
-
-      ind_tag_type <- as.integer(tag$tag_type)
-
-      if (tag$use[1] == 0) next()
-
-      ## Distribution probability
-      last_dist <- rep(0, nc)
-      last_dist[tag$ic[1]] <- 1
-
-      if (nts < 2) stop("Something went wrong (nts < 2).")
-
-      ## Loop over time
-      for (t in 2:nts) {
-
-        dt <- dts[t-1]
-
-        ## Set to zero
-        if (identical(dat$ctmc_method, "expav")) {
-          Zstar <- Astar <- Dstar <- mstar_template
-          Zstar@x[] <- Astar@x[] <- Dstar@x[] <- 0
-        } else {
-          Zstar <- Astar <- Dstar <- RTMB::matrix(0, nc, nc)
-        }
-
-        ## taxis
-        if (dat$use_taxis) {
-          move <- kappa * habi_tax$grad(xygrid, ts[t-1]) * dt  ## distance
-          Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist, dat$drift_scheme)
-        }
-
-        ## advection
-        if (dat$use_advection) {
-          move <- cbind(habi_adv_x$val(xygrid, ts[t-1]),
-                        habi_adv_y$val(xygrid, ts[t-1])) * dt  ## distance
-          Astar <- fill_inst_mat(Astar, move, nextTo, next_dist, dat$drift_scheme)
-        }
-
-        ## diffusion
-        D <- exp(habi_dif$val(xygrid, ts[t-1])) ## distance^2 / time
-        hD <- D * dt  ## (distance^2)
-        for (k in 1:4) {
-          j <- k + 1
-          ind <- which(!is.na(nextTo[, j]))
-          Dstar[cbind(ind, nextTo[ind, j])] <- hD[ind] / next_dist[k]^2
-          ## (distance^2) / (distance) = distance
-        }
-
-        ## Movement rates
-        Mstar <- Zstar + Astar + Dstar
-
-        ## Mass balance
-        Mstar[cbind(1:nc, 1:nc)] <- 0
-        Mstar[cbind(1:nc, 1:nc)] <- -RTMB::rowSums(Mstar)
-
-        ## dist prob after move
-        if (identical(dat$ctmc_method, "expav")) {
-
-          pred_dist <- as.vector(RTMB::expAv(Mstar,
-                                     last_dist,
-                                     transpose = TRUE,
-                                     uniformization = TRUE,
-                                     rescale_freq = 1,
-                                     trace = FALSE))
-
-        } else {
-
-          M <- Matrix::expm(Mstar)
-          pred_dist <- as.vector(RTMB::matrix(last_dist, 1, nc) %*% M)
-
-        }
-
-        if (t %in% observed) {
-
-          ind_obs <- which(observed == t) + 1
-
-          ## multiple observation in same time
-          for (j in seq_along(ind_obs)) {
-            ind_obs_j <- ind_obs[j]
-            ind_tt <- ind_tag_type[ind_obs_j]
-
-            if (is.na(tag$ic[ind_obs_j]) || tag$use[ind_obs_j] == 0) {
-              last_dist <- pred_dist
-              next()
-            }
-
-            ## default
-            this_dist <- rep(0, nrow(xygrid))
-            this_dist[tag$ic[ind_obs_j]] <- 1
-
-            ## obs uncertainty
-            ## see the note in the KF branch: "all but the last observation" is
-            ## a comparison against the last observation event, not against the
-            ## number of integration time points
-            if ((dat$obs_var_type[ind_tt] == 1 && ev[ind_obs_j] != last_ev) ||
-                  dat$obs_var_type[ind_tt] == 2 ||
-                  dat$obs_var_type[ind_tt] == 3) {
-
-              xLo <- xygrid[,1] - cs[1] / 2
-              xUp <- xygrid[,1] + cs[1] / 2
-              yLo <- xygrid[,2] - cs[2] / 2
-              yUp <- xygrid[,2] + cs[2] / 2
-
-              xObs <- tag$x[ind_obs_j]
-              yObs <- tag$y[ind_obs_j]
-              if (dat$obs_var_type[ind_tt] == 3) {
-                sdx <- tag$sdx[ind_obs_j]
-                sdy <- tag$sdy[ind_obs_j]
-              } else {
-                sdx <- sdO[1,ind_tt]
-                sdy <- sdO[2,ind_tt]
-              }
-              px <- RTMB::pnorm(xUp, mean = xObs, sd = sdx) -
-                RTMB::pnorm(xLo, mean = xObs, sd = sdx)
-              py <- RTMB::pnorm(yUp, mean = yObs, sd = sdy) -
-                RTMB::pnorm(yLo, mean = yObs, sd = sdy)
-              pxy <- px * py
-              pxy <- pxy / sum(pxy)
-
-              if (all(!is.na(pxy))) {
-                this_dist <- pxy
-              }
-            }
-
-            update_dist <- pred_dist * this_dist
-
-            if (amb && ev[ind_obs_j] == last_ev) {
-
-              ## mixture over the candidate positions; no update, exactly as in
-              ## the KF branch (the ambiguous event is the last one)
-              term <- log(tag$prob[ind_obs_j]) + log(sum(update_dist))
-              amb_lw <- if (is.null(amb_lw)) term else c(amb_lw, term)
-              last_dist <- pred_dist
-
-            } else {
-
-              ## likelihood
-              loglik_tags[i] <- loglik_tags[i] + log(sum(update_dist))
-
-              ## update
-              if (isTRUE(dat$do_update[ind_tt])) {
-                last_dist <- update_dist / sum(update_dist)
-              } else {
-                last_dist <- pred_dist
-              }
-            }
-          }
-        } else {
-          last_dist <- pred_dist
-        }
-      }
-
-      ## log sum_k prob_k * density_k, accumulated stably (see .logsumexp_ad)
-      if (amb && !is.null(amb_lw)) {
-        loglik_tags[i] <- loglik_tags[i] + .logsumexp_ad(amb_lw)
-      }
-    }
+    ctmc_out <- .ctmc_loglik(ctx, loglik_tags)
+    loglik_tags <- ctmc_out$loglik_tags
+    ctmc_ngen <- ctmc_out$ngen
+    ctmc_nstep <- ctmc_out$nstep
+    ctmc_ngroup <- ctmc_out$ngroup
+    ctmc_ngrouped <- ctmc_out$ngrouped
 
   } else {
 
@@ -515,6 +354,13 @@ nll <- function(par, dat) {
   ## per tag: summed distance by which predicted positions were moved back to
   ## the edge of the covariate field (KF, conf$kf_boundary = "clamp")
   REPORT(boundary_excess)
+
+  ## CTMC only: generators actually built against propagation steps taken. The
+  ## first is the cache working, and both are 0 for the KF.
+  REPORT(ctmc_ngen)
+  REPORT(ctmc_nstep)
+  REPORT(ctmc_ngroup)
+  REPORT(ctmc_ngrouped)
 
   ## predicted observation distribution per tag row (KF only; see above)
   REPORT(pred_x)

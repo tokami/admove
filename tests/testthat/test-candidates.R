@@ -451,28 +451,3 @@ test_that("simulated candidate sets build and obey the mixture bound", {
   expect_lte(as.numeric(o_mix$fn(o_mix$par)),
              as.numeric(o_pick$fn(o_pick$par)) - sum(log(w_kept)) + 1e-8)
 })
-
-
-test_that("use_release_events keeps merged recoveries sequential, not ambiguous", {
-
-  ## Three physical tags sharing a release event are pooled into one tag. Their
-  ## recoveries are SUCCESSIVE observations of the pooled tag; if they kept the
-  ## event id they carried individually (all 2) the likelihood would read them
-  ## as mutually exclusive candidate positions for one recovery.
-  grid <- create_grid(cellsize = 0.25, verbose = FALSE)
-
-  tg <- data.frame(id = c("a", "a", "b", "b", "c", "c"),
-                   t = c(0, 0.4, 0, 0.5, 0, 0.6),
-                   x = c(0.2, 0.5, 0.2, 0.6, 0.2, 0.7),
-                   y = c(0.2, 0.4, 0.2, 0.5, 0.2, 0.3),
-                   tag_type = rep("c", 6))
-
-  tags <- suppressMessages(check_tags(tg, grid, verbose = FALSE))
-  expect_equal(tags$event, c(1, 2, 1, 2, 1, 2))
-
-  out <- use_release_events(tags, grid, seq(0, 1, by = 0.1))
-
-  expect_equal(nrow(out), 4L)
-  expect_equal(out$event, 1:4)
-  expect_equal(out$prob, rep(1, 4))
-})

@@ -172,6 +172,19 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   ## bound. See dev/code_notes.org, "Why =expav= is the default".
   conf$ctmc_method <- "expav"
 
+  ## CTMC time lattice and release-event grouping
+  ## "auto"  = lattice aligned to the covariate/spline slice boundaries, and
+  ##           tags that are never updated share one forward pass per release
+  ##           event (default)
+  ## "align" = aligned lattice, one pass per tag. Only for bisecting a
+  ##           discrepancy: it isolates the lattice from the grouping.
+  ## "off"   = the per-tag lattice anchored at each tag's own release, i.e. the
+  ##           behaviour before the release-event work. Steps can then span two
+  ##           covariate slices and are evaluated with the slice their start
+  ##           falls in, so "off" and "align" differ; see
+  ##           dev/code_notes.org, "The aligned CTMC lattice".
+  conf$ctmc_groups <- "auto"
+
   ## Discretisation of the drift term (taxis + advection) in the generator
   ## "upwind"  = first-order upstream; off-diagonal rates are always >= 0, so
   ##             the CTMC generator is always valid (default; robust).
@@ -318,6 +331,13 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   if (!is.character(conf$smooth_method) || length(conf$smooth_method) != 1L ||
         !conf$smooth_method %in% c("rtmb", "natural", "poly")) {
     stop("'conf$smooth_method' must be one of \"rtmb\", \"natural\" or \"poly\".",
+         call. = FALSE)
+  }
+
+  ## Validate the CTMC lattice / grouping mode
+  if (!is.character(conf$ctmc_groups) || length(conf$ctmc_groups) != 1L ||
+        !conf$ctmc_groups %in% c("auto", "align", "off")) {
+    stop("'conf$ctmc_groups' must be one of \"auto\", \"align\" or \"off\".",
          call. = FALSE)
   }
 

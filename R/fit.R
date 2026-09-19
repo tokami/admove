@@ -156,6 +156,23 @@ admove <- function(dat,
   obs_var_type_int <- .get_obs_var_type_integer(conf$obs_var_type)
   conf <- .check_seasonal_lengths(conf, dat)
 
+  ## release-event grouping (CTMC only), checked before anything expensive
+  ## happens so that a wrong object fails immediately
+  if (!is.null(dat$release_events)) {
+    if (!inherits(dat$release_events, "admove_release_events")) {
+      stop("'dat$release_events' must be an object of class ",
+           "'admove_release_events', as returned by set_release_events().",
+           call. = FALSE)
+    }
+    if (verbose && engine_int != 2L) {
+      message("dat$release_events is ignored by the Kalman filter: release ",
+              "grouping is a CTMC-only optimisation (conf$engine = \"ctmc\").")
+    } else if (verbose && identical(conf$ctmc_groups, "off")) {
+      message("dat$release_events is ignored because conf$ctmc_groups = ",
+              "\"off\".")
+    }
+  }
+
   ## knot matrices must line up with the covariate fields and the spline arrays
   .check_knots_dims(dat, par)
 
@@ -205,6 +222,15 @@ admove <- function(dat,
   if (engine_int == 2L) {
     if (is.null(dat$grid)) stop("No grid provided! CTMC (engine = \"ctmc\") requires a grid (dat$grid). See create_grid()!")
     if (!any(colnames(dat$tags) == "ic")) stop("Tags are not matched to the grid cells (column tags$ic is missing). Run check_tags()!")
+
+    ## conf$ctmc_groups is validated here as well as in check_conf(), because
+    ## admove() does not call check_conf()
+    if (!is.null(conf$ctmc_groups) &&
+          (!is.character(conf$ctmc_groups) || length(conf$ctmc_groups) != 1L ||
+             !conf$ctmc_groups %in% c("auto", "align", "off"))) {
+      stop("'conf$ctmc_groups' must be one of \"auto\", \"align\" or \"off\".",
+           call. = FALSE)
+    }
 
     if (verbose && identical(conf$drift_scheme, "central")) {
       message("Using central-difference drift scheme (conf$drift_scheme). ",

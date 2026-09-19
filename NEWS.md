@@ -1,3 +1,43 @@
+# admove (development version)
+
+## New features
+
+* The CTMC engine now caches the generator and groups tags into **release
+  events**. Tags that are never updated (mark-recapture, by default) are a pure
+  forecast from their release cell, so tags released together share one forward
+  pass instead of repeating an identical one each. On 300 Indian Ocean
+  yellowfin tags this halves the integration steps (2826 to 1415), takes tape
+  building from 30.1 s to 20.3 s and tape memory from 0.64 GB to 0.42 GB.
+  Archival and mark-resight tags are updated at each observation and diverge
+  immediately, so they keep the per-tag pass; the split is per tag, and a model
+  may mix both.
+
+* `set_release_events()` configures that grouping. It is optional: the default
+  `conf$ctmc_groups = "auto"` already groups exactly, on the release cell and
+  release time. Use it to widen the grouping with `t_tol`/`dist_tol`, or to
+  restrict `tag_types`. Non-zero tolerances are an approximation and warn,
+  naming the number of merges and the largest displacement applied.
+
+* `conf$ctmc_groups` selects the CTMC time lattice and grouping: `"auto"`
+  (default), `"align"` (aligned lattice, one pass per tag, for isolating a
+  discrepancy) and `"off"` (the previous per-tag lattice).
+
+## Breaking changes
+
+* **CTMC likelihood values change.** Two independent causes. The generator is
+  now built once per covariate slice and scaled by the step, which is exact but
+  re-associates the arithmetic (~3.6e-15 per entry). And with `"align"`/`"auto"`
+  the lattice carries the covariate and spline slice boundaries, so no step
+  spans two slices — a finer discretisation, converging to the old result as
+  `min_dt` shrinks (measured 1.4e-2, 8.4e-6, 4.9e-9, 1.8e-15 at `min_dt` 0.8,
+  0.4, 0.2, 0.1). Set `conf$ctmc_groups = "off"` to reproduce the old lattice.
+  A `conf` saved before this setting existed defaults to `"auto"`.
+
+* `use_release_events()` is removed. It regrouped tags at the data level, one
+  pseudo-tag per release event, which pooled the per-tag likelihoods and moved
+  releases to cell centres. The engine now groups internally without altering
+  the data, keeping `loglik_tags` per tag. Use `set_release_events()`.
+
 # admove 0.1.5
 
 ## New features

@@ -778,6 +778,42 @@ build_time <- function(t_obs,
   list(ts = ts, dts = dts, nts = length(ts), observed = observed)
 }
 
+## Time grid of one track with additional grid points at given breaks (the CTMC
+## uses the covariate and spline slice boundaries, so that no step spans two
+## slices and the generator is exactly constant within a step). Returns the same
+## structure as build_time(); `observed` indexes the sorted observation times
+## (without the first one) in `ts`.
+##
+## Recomputing `observed` at the end is load-bearing: build_time() matches
+## observations against the times it was handed, which here include the inserted
+## breaks, so without this an inserted break is taken for an observation.
+##
+## Kept identical in name, signature and body to the copy on the effort branch,
+## so the two cannot drift and the branches merge without a conflict.
+.build_time_breaks <- function(t_obs, mode, dt_min, dt, eps, breaks = NULL) {
+
+  t_sorted <- sort(as.numeric(t_obs))
+  if (mode == "fixed_dt" || length(breaks) == 0) {
+    return(build_time(t_sorted, mode = mode, dt_min = dt_min, dt = dt, eps = eps))
+  }
+
+  tol <- 1e-9 * max(1, abs(t_sorted))
+  t0 <- t_sorted[1]
+  t1 <- t_sorted[length(t_sorted)]
+  br <- breaks[breaks > t0 + tol & breaks < t1 - tol]
+  if (length(br) > 0) {
+    near <- vapply(br, function(b) any(abs(t_sorted - b) <= tol), logical(1))
+    br <- br[!near]
+  }
+
+  out <- build_time(sort(unique(c(t_sorted, br))), mode = mode,
+                    dt_min = dt_min, dt = dt, eps = eps)
+  out$observed <- vapply(t_sorted[-1], function(to) which.min(abs(out$ts - to)),
+                         integer(1))
+  out
+}
+
+
 ##' Continuous-time Markov chain generator matrices
 ##'
 ##' @description

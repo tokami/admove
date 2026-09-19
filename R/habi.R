@@ -104,6 +104,22 @@
   if (is.null(seasonal_cov)) seasonal_cov <- rep(FALSE, ncov)
   if (is.null(seasonal_spline)) seasonal_spline <- rep(FALSE, ncov)
 
+  ## The covariate and spline slice indices val() and grad() select on, as one
+  ## vector. The CTMC generator depends on t only through these, so they are
+  ## its cache key -- derived here rather than from the breakpoints so that the
+  ## key cannot drift from what val()/grad() actually read. See
+  ## dev/code_notes.org, "Caching the CTMC generator".
+  slice <- function(t){
+    k <- integer(2L * ncov)
+    for(i in 1:ncov){
+      k[i] <- t2index(t, time_cov[[i]], period = seasonal_period,
+                      seasonal = seasonal_cov[i])
+      k[ncov + i] <- t2index(t, time_spline[[i]], period = seasonal_period,
+                             seasonal = seasonal_spline[i])
+    }
+    return(k)
+  }
+
   val <- function(xy, t){
     h <- rep(0, nrow(xy))
     for(i in 1:ncov){
@@ -165,7 +181,8 @@
     val = val,
     grad = grad,
     valF = valF,
-    cov2val = cov2val
+    cov2val = cov2val,
+    slice = slice
   )
   return(res)
 }
