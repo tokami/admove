@@ -4,7 +4,7 @@
 \alias{add_sdreport}
 \title{Add an RTMB sdreport to a fitted admove model}
 \usage{
-add_sdreport(fit, save_covariance = FALSE, ad_hessian = TRUE)
+add_sdreport(fit, save_covariance = FALSE, ad_hessian = TRUE, ...)
 }
 \arguments{
 \item{fit}{A fitted model object of class \code{"admove"}, as returned by
@@ -18,6 +18,13 @@ matrix is removed to reduce memory use.}
 from \code{obj$he()} is supplied to \code{\link[RTMB:sdreport]{RTMB::sdreport()}} instead of letting
 it difference the gradient numerically. See Details. Set to \code{FALSE}
 to restore the \code{\link[RTMB:sdreport]{RTMB::sdreport()}} default behaviour.}
+
+\item{...}{Further arguments passed to \code{\link[RTMB:sdreport]{RTMB::sdreport()}}, e.g.
+\code{skip.delta.method} or \code{getReportCovariance}. Note that neither
+of those reduces memory use here -- see Details. Matched after
+\code{save_covariance} and \code{ad_hessian}, so an abbreviated name that
+matches one of those is taken as that argument, not passed on. See Details
+for when this matters.}
 }
 \value{
 An updated object of class \code{"admove"} with sdreport results added.
@@ -63,4 +70,42 @@ genuine problems: an indefinite Hessian is still reported via
 optimum, \code{obj$he()} returns \code{NaN} too. If \code{obj$he()} is
 unavailable or fails, the function silently falls back to the
 \code{\link[RTMB:sdreport]{RTMB::sdreport()}} default.
+
+Both steps re-tape the whole likelihood -- \code{obj$he()} builds an ADHess
+tape and the delta method an \code{ADreport} tape -- and on a large model
+that is where the memory goes, spent \emph{after} the fit itself has succeeded.
+The two are not equal, and the cheap-looking one is not the expensive one.
+Measured on a CTMC fit of the Indian Ocean yellowfin tags
+(\code{ctmc_method = "expav"}, 133 grid cells, \code{min_dt = 1}, 120 tags
+= 1045 integration sub-steps, baseline 0.44 GB), peak memory was
+
+\tabular{lrr}{
+fit only (\code{do_sdreport = FALSE}) \tab 1.37 GB \tab -- \cr
+\code{+ sdreport(ad_hessian = FALSE)} \tab 1.56 GB \tab 30.1 s \cr
+\code{+ sdreport()} (default) \tab 3.01 GB \tab 30.0 s \cr
+\code{+ sdreport(skip.delta.method = TRUE)} \tab 3.01 GB \tab 29.2 s
+}
+
+i.e. \code{obj$he()} accounts for essentially all of it (+1.47 GB) and the
+delta method for almost none (+0.19 GB). Peak grows linearly in the number
+of sub-steps: ~0.9 MB each for the fit alone, ~1.1 MB with
+\code{ad_hessian = FALSE}, ~2.5 MB with the default.
+
+So \code{skip.delta.method = TRUE} does \emph{not} save memory here, despite
+being the obvious candidate: \code{RTMB:::sdreport_patch()} builds the
+\code{ADreport} tape on its first line, before the flag is consulted, and
+the flag only skips the sweeps over it. Where the default does not fit, the
+levers that work are
+
+\itemize{
+\item \code{ad_hessian = FALSE} -- roughly halves peak memory and keeps
+the full sdreport output, but lands on exactly the gradient-differencing
+path described above, so check the result rather than trusting it;
+\item \code{do_sdreport = FALSE} in \code{\link[=admove]{admove()}}, then the parameter
+standard errors from \code{stats::optimHess(fit$opt$par, fit$obj$fn)} on
+the objective alone. Lowest memory of all, needs no second tape, and the
+step is yours to choose (\code{control = list(ndeps = ...)}); the
+default \code{1e-3} can land inside the objective's own numerical noise.
+You lose the \code{ADREPORT}ed preference-curve uncertainty.
+}
 }

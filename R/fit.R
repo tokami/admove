@@ -63,6 +63,13 @@
 ##'   positions come from [tag_predictions()] instead.
 ##' @param save_covariance Logical; if \code{TRUE}, the covariance matrix from
 ##'   [RTMB::sdreport()] is retained. This may substantially increase memory use.
+##' @param ad_hessian Logical; if \code{TRUE} (default), the exact AD Hessian
+##'   from \code{obj$he()} is used for the uncertainty step. Forwarded to
+##'   [add_sdreport()], where the accuracy and memory trade-off is documented:
+##'   \code{FALSE} roughly halves the peak memory of a large fit, at the cost of
+##'   TMB's fixed-step gradient differencing. Note that \code{...} goes to
+##'   [RTMB::MakeADFun()], not to [RTMB::sdreport()], so sdreport arguments have
+##'   to be given to [add_sdreport()] directly with \code{do_sdreport = FALSE}.
 ##' @param dbg Logical; if \code{TRUE}, the function is run in debugging mode.
 ##'   Default is \code{FALSE}.
 ##' @param control An optional named list of control settings passed to the
@@ -108,6 +115,7 @@ admove <- function(dat,
                    do_report = TRUE,
                    do_tag_dist = FALSE,
                    save_covariance = FALSE,
+                   ad_hessian = TRUE,
                    dbg = FALSE,
                    control = NULL,
                    verbose = TRUE,
@@ -339,7 +347,7 @@ admove <- function(dat,
 
     if(verbose) message(paste0("Estimating uncertainty."))
 
-    res <- add_sdreport(res, save_covariance)
+    res <- add_sdreport(res, save_covariance, ad_hessian)
 
     if(verbose) message(paste0("SDreporting done (",
                                   res$times[which(names(res$times) == "sdreport")],
@@ -412,6 +420,12 @@ admove <- function(dat,
 ##'   from \code{obj$he()} is supplied to [RTMB::sdreport()] instead of letting
 ##'   it difference the gradient numerically. See Details. Set to \code{FALSE}
 ##'   to restore the [RTMB::sdreport()] default behaviour.
+##' @param ... Further arguments passed to [RTMB::sdreport()], e.g.
+##'   \code{skip.delta.method} or \code{getReportCovariance}. Note that neither
+##'   of those reduces memory use here -- see Details. Matched after
+##'   \code{save_covariance} and \code{ad_hessian}, so an abbreviated name that
+##'   matches one of those is taken as that argument, not passed on. See Details
+##'   for when this matters.
 ##'
 ##' @details
 ##' This function adds three components to the fitted object:
@@ -450,11 +464,49 @@ admove <- function(dat,
 ##' unavailable or fails, the function silently falls back to the
 ##' [RTMB::sdreport()] default.
 ##'
+##' Both steps re-tape the whole likelihood -- \code{obj$he()} builds an ADHess
+##' tape and the delta method an \code{ADreport} tape -- and on a large model
+##' that is where the memory goes, spent *after* the fit itself has succeeded.
+##' The two are not equal, and the cheap-looking one is not the expensive one.
+##' Measured on a CTMC fit of the Indian Ocean yellowfin tags
+##' (\code{ctmc_method = "expav"}, 133 grid cells, \code{min_dt = 1}, 120 tags
+##' = 1045 integration sub-steps, baseline 0.44 GB), peak memory was
+##'
+##' \tabular{lrr}{
+##'   fit only (\code{do_sdreport = FALSE}) \tab 1.37 GB \tab -- \cr
+##'   \code{+ sdreport(ad_hessian = FALSE)} \tab 1.56 GB \tab 30.1 s \cr
+##'   \code{+ sdreport()} (default) \tab 3.01 GB \tab 30.0 s \cr
+##'   \code{+ sdreport(skip.delta.method = TRUE)} \tab 3.01 GB \tab 29.2 s
+##' }
+##'
+##' i.e. \code{obj$he()} accounts for essentially all of it (+1.47 GB) and the
+##' delta method for almost none (+0.19 GB). Peak grows linearly in the number
+##' of sub-steps: ~0.9 MB each for the fit alone, ~1.1 MB with
+##' \code{ad_hessian = FALSE}, ~2.5 MB with the default.
+##'
+##' So \code{skip.delta.method = TRUE} does *not* save memory here, despite
+##' being the obvious candidate: \code{RTMB:::sdreport_patch()} builds the
+##' \code{ADreport} tape on its first line, before the flag is consulted, and
+##' the flag only skips the sweeps over it. Where the default does not fit, the
+##' levers that work are
+##'
+##' \itemize{
+##'   \item \code{ad_hessian = FALSE} -- roughly halves peak memory and keeps
+##'     the full sdreport output, but lands on exactly the gradient-differencing
+##'     path described above, so check the result rather than trusting it;
+##'   \item \code{do_sdreport = FALSE} in [admove()], then the parameter
+##'     standard errors from \code{stats::optimHess(fit$opt$par, fit$obj$fn)} on
+##'     the objective alone. Lowest memory of all, needs no second tape, and the
+##'     step is yours to choose (\code{control = list(ndeps = ...)}); the
+##'     default \code{1e-3} can land inside the objective's own numerical noise.
+##'     You lose the \code{ADREPORT}ed preference-curve uncertainty.
+##' }
+##'
 ##' @return
 ##' An updated object of class \code{"admove"} with sdreport results added.
 ##'
 ##' @export
-add_sdreport <- function(fit, save_covariance = FALSE, ad_hessian = TRUE) {
+add_sdreport <- function(fit, save_covariance = FALSE, ad_hessian = TRUE, ...) {
 
   .check_class(fit, "admove")
 
@@ -464,9 +516,9 @@ add_sdreport <- function(fit, save_covariance = FALSE, ad_hessian = TRUE) {
 
   t1 <- Sys.time()
   if (is.null(hess)) {
-    sdrep <- RTMB::sdreport(obj = fit$obj)
+    sdrep <- RTMB::sdreport(obj = fit$obj, ...)
   } else {
-    sdrep <- RTMB::sdreport(obj = fit$obj, hessian.fixed = hess)
+    sdrep <- RTMB::sdreport(obj = fit$obj, hessian.fixed = hess, ...)
   }
   t2 <- Sys.time()
 

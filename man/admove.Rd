@@ -20,6 +20,7 @@ admove(
   do_report = TRUE,
   do_tag_dist = FALSE,
   save_covariance = FALSE,
+  ad_hessian = TRUE,
   dbg = FALSE,
   control = NULL,
   verbose = TRUE,
@@ -94,6 +95,14 @@ positions come from \code{\link[=tag_predictions]{tag_predictions()}} instead.}
 
 \item{save_covariance}{Logical; if \code{TRUE}, the covariance matrix from
 \code{\link[RTMB:sdreport]{RTMB::sdreport()}} is retained. This may substantially increase memory use.}
+
+\item{ad_hessian}{Logical; if \code{TRUE} (default), the exact AD Hessian
+from \code{obj$he()} is used for the uncertainty step. Forwarded to
+\code{\link[=add_sdreport]{add_sdreport()}}, where the accuracy and memory trade-off is documented:
+\code{FALSE} roughly halves the peak memory of a large fit, at the cost of
+TMB's fixed-step gradient differencing. Note that \code{...} goes to
+\code{\link[RTMB:MakeADFun]{RTMB::MakeADFun()}}, not to \code{\link[RTMB:sdreport]{RTMB::sdreport()}}, so sdreport arguments have
+to be given to \code{\link[=add_sdreport]{add_sdreport()}} directly with \code{do_sdreport = FALSE}.}
 
 \item{dbg}{Logical; if \code{TRUE}, the function is run in debugging mode.
 Default is \code{FALSE}.}
