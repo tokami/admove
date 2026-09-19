@@ -36,11 +36,20 @@ discretisation scheme, and default seasonal settings for covariates and
 spline effects.
 
 \code{ctmc_method} selects how the matrix exponential of the CTMC generator is
-computed: \code{"expm"} (the default) uses \code{\link[Matrix:expm]{Matrix::expm()}}, \code{"expav"} uses
-\code{\link[RTMB:expAv]{RTMB::expAv()}} with uniformization. Both are given as strings; the former
+computed: \code{"expav"} (the default) uses \code{\link[RTMB:expAv]{RTMB::expAv()}} with uniformization,
+\code{"expm"} uses \code{\link[Matrix:expm]{Matrix::expm()}}. Both are given as strings; the former
 numbers (\code{0} and \code{1}) are rejected with a message naming their replacement,
 because a \code{1} written for the old numbering would otherwise silently select
 the other method.
+
+\code{"expav"} is the default because it is the only one that scales. RTMB has no
+\code{expm} atomic, so \code{\link[Matrix:expm]{Matrix::expm()}} on an AD matrix records the entire dense
+scaling-and-squaring algorithm on the tape -- tens of millions of nodes per
+sub-step on a grid of a hundred-odd cells, with nothing reused between tags.
+\code{"expav"} forms only \eqn{e^{M^\top}\pi} from sparse matrix-vector products
+and never densifies anything. Use \code{"expm"} only on small problems, or to
+check \code{"expav"} against an independent route. See \code{dev/code_notes.org},
+"Uniformization for the CTMC".
 
 \code{drift_scheme} selects how the drift term (taxis \emph{and} advection) is
 discretised on the grid when assembling the generator. \code{"upwind"} (the

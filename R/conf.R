@@ -24,11 +24,20 @@
 ##' spline effects.
 ##'
 ##' `ctmc_method` selects how the matrix exponential of the CTMC generator is
-##' computed: `"expm"` (the default) uses [Matrix::expm()], `"expav"` uses
-##' [RTMB::expAv()] with uniformization. Both are given as strings; the former
+##' computed: `"expav"` (the default) uses [RTMB::expAv()] with uniformization,
+##' `"expm"` uses [Matrix::expm()]. Both are given as strings; the former
 ##' numbers (`0` and `1`) are rejected with a message naming their replacement,
 ##' because a `1` written for the old numbering would otherwise silently select
 ##' the other method.
+##'
+##' `"expav"` is the default because it is the only one that scales. RTMB has no
+##' `expm` atomic, so [Matrix::expm()] on an AD matrix records the entire dense
+##' scaling-and-squaring algorithm on the tape -- tens of millions of nodes per
+##' sub-step on a grid of a hundred-odd cells, with nothing reused between tags.
+##' `"expav"` forms only \eqn{e^{M^\top}\pi} from sparse matrix-vector products
+##' and never densifies anything. Use `"expm"` only on small problems, or to
+##' check `"expav"` against an independent route. See `dev/code_notes.org`,
+##' "Uniformization for the CTMC".
 ##'
 ##' `drift_scheme` selects how the drift term (taxis *and* advection) is
 ##' discretised on the grid when assembling the generator. `"upwind"` (the
@@ -156,9 +165,12 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   conf$engine <- "kf"
 
   ## CTMC matrix-exponential method (see .check_ctmc_method())
+  ## "expav" = RTMB::expAv with uniformization (default)
   ## "expm"  = Matrix::expm
-  ## "expav" = RTMB::expAv with uniformization
-  conf$ctmc_method <- "expm"
+  ## Do not make "expm" the default again: RTMB has no expm atomic, so
+  ## Matrix::expm() tapes the whole dense algorithm and the tape grows without
+  ## bound. See dev/code_notes.org, "Why =expav= is the default".
+  conf$ctmc_method <- "expav"
 
   ## Discretisation of the drift term (taxis + advection) in the generator
   ## "upwind"  = first-order upstream; off-diagonal rates are always >= 0, so

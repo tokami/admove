@@ -129,7 +129,7 @@ test_that("default_conf sets sensible default variance options", {
   expect_equal(conf$obs_var_type, rep("none", 3))
   expect_equal(conf$do_update, c(TRUE,TRUE,FALSE))
   expect_equal(conf$engine, "kf")
-  expect_equal(conf$ctmc_method, "expm")
+  expect_equal(conf$ctmc_method, "expav")
 })
 
 
