@@ -159,29 +159,34 @@ grid <- create_grid(xrange = c(2000000, 5000000),
 ```
 
 
-In this case, it might be nicer to work in km:
+In this case, it might be nicer to work in km. With `units = "km"` the grid is
+stored in km, and `xrange`, `yrange` and `cellsize` are then given in km as
+well, even though the projection itself stays in metres:
 
 ```{r, fig.alt = "Albers in km"}
-grid <- create_grid(xrange = c(2000000, 5000000),
-                    yrange = c(1500000, 5000000),
-                    cellsize = 500000,
+grid <- create_grid(xrange = c(2000, 5000),
+                    yrange = c(1500, 5000),
+                    cellsize = 500,
                     crs = albers_crs,
                     units = "km",
                     plot = TRUE,
                     plot_land = TRUE)
 ```
 
-Or using an even smaller, custom scaling than m to km:
+Or using an even smaller, custom scaling than m to km, here 1000 km per unit:
 
 ```{r, fig.alt = "Albers with custom units"}
-grid <- create_grid(xrange = c(2000000, 5000000),
-                    yrange = c(1500000, 5000000),
-                    cellsize = 500000,
+grid <- create_grid(xrange = c(2, 5),
+                    yrange = c(1.5, 5),
+                    cellsize = 0.5,
                     crs = albers_crs,
                     crs_scale = 1e-6,
                     plot = TRUE,
                     plot_land = TRUE)
 ```
+
+The CRS can be given in any form `sf::st_crs()` understands (EPSG code, WKT or
+PROJ string, or an `sf::crs` object); the result is the same.
 
 ## CRS units and stored units are two different things
 
@@ -191,9 +196,9 @@ keeps reporting a metre CRS even when `units_space()` says km, and the two are
 linked by `crs_scale()`:
 
 ```{r}
-grid <- create_grid(xrange = c(2000000, 5000000),
-                    yrange = c(1500000, 5000000),
-                    cellsize = 500000,
+grid <- create_grid(xrange = c(2000, 5000),
+                    yrange = c(1500, 5000),
+                    cellsize = 500,
                     crs = albers_crs,
                     units = "km")
 

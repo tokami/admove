@@ -27,6 +27,22 @@
   composite form `"metre_x_1e-06"` that `.in_m()` already understood, rather
   than taking the CRS's own unit.
 
+* `create_grid()` without `x`: `xrange`, `yrange` and `cellsize` are now always
+  given in the stored units declared by `units` (or `crs_scale`), and the form
+  of `crs` no longer matters. Previously an `sf::crs` object made the grid be
+  built in the CRS unit and then rescaled, so `create_grid(xrange = c(-400,
+  4700), cellsize = 500, crs = sf::st_crs(aeqd_m), units = "km")` gave a grid
+  spanning -0.4 to 5.1 km (1000 times too small, with no land in view), while
+  the same CRS as a PROJ string gave the intended -400 to 5100 km. Scripts that
+  passed metre ranges with `units = "km"` and an `sf::crs` must now pass km
+  ranges, as in the updated spatial-grids vignette.
+
+* `create_grid()` with `x`: an explicit `xrange` / `yrange` now takes precedence
+  over the extent of `x` for tags, `sf` and raster inputs too, as it already
+  did for grids, covariates and data objects. Tags used to override the
+  supplied range with their bounding box. With tags, a message reports how many
+  tag positions fall outside the supplied range.
+
 ## New features
 
 * `print()` method for `admove_sref`, and `summary()` of an `admove_grid` now

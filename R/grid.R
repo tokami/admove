@@ -20,9 +20,13 @@
 ##'   directions. If \code{NULL}, a default value is derived from the spatial
 ##'   extent.
 ##' @param xrange Numeric vector of length 2 giving the range of the x
-##'   dimension of the spatial domain. Ignored if extracted from \code{x}.
+##'   dimension of the spatial domain. If \code{x} is supplied as well,
+##'   \code{xrange} takes precedence over the extent of \code{x} and is given in
+##'   the stored units of \code{x}.
 ##' @param yrange Numeric vector of length 2 giving the range of the y
-##'   dimension of the spatial domain. Ignored if extracted from \code{x}.
+##'   dimension of the spatial domain. If \code{x} is supplied as well,
+##'   \code{yrange} takes precedence over the extent of \code{x} and is given in
+##'   the stored units of \code{x}.
 ##' @param select Controls which cells are retained in the grid. If
 ##'   \code{FALSE} (default), all eligible cells are kept. If \code{TRUE} or an
 ##'   integer value, cells can be selected interactively. If a numeric vector of
@@ -34,11 +38,17 @@
 ##'   lies in water. Uses the bundled Natural Earth 1:110m land polygons and
 ##'   requires a CRS in the spatial reference of the grid (see
 ##'   \code{\link{add_sref}}) and the \pkg{sf} package.
-##' @param crs Optional coordinate reference system for the grid.
-##' @param units Optional spatial units for the grid, for example
-##'   \code{"degree"}, \code{"m"}, or \code{"km"}.
-##' @param crs_scale Optional scaling between CRS units and the numeric units
-##'   used in the grid.
+##' @param crs Optional coordinate reference system for the grid, as an EPSG
+##'   code, a WKT or PROJ string, or an \code{sf::crs} object (all equivalent).
+##'   Ignored if \code{x} carries its own spatial reference.
+##' @param units Optional spatial units in which the grid is stored, for
+##'   example \code{"degree"}, \code{"m"}, or \code{"km"}. Without \code{x},
+##'   \code{xrange}, \code{yrange} and \code{cellsize} are given in these
+##'   units, which may differ from the unit of \code{crs}: a metre-based
+##'   projection with \code{units = "km"} takes ranges in km. Defaults to the
+##'   unit of \code{crs}.
+##' @param crs_scale Optional scaling between CRS units and the stored units,
+##'   an alternative to \code{units} (see \code{\link{create_sref}}).
 ##' @param plot_land Logical; if \code{TRUE}, land masses are added to plots,
 ##'   where supported.
 ##' @param auto_layout Logical; if \code{TRUE}, plotting methods may adjust
@@ -94,23 +104,16 @@ create_grid <- function(x = NULL,
   use_raster <- FALSE
   use_grid <- FALSE
   is_na <- NULL
-  crs0 <- crs
-  units0 <- units
-  crs_scale0 <- crs_scale
   xcen_cov <- NULL
   ycen_cov <- NULL
 
-  if (!is.null(crs) && !all(is.na(crs))) {
-    units_try <- try(crs$units_gdal, silent = TRUE)
-    if (!inherits(units_try, "try-error")) {
-      units <- units_try
-    } ## else if (verbose) message("Both crs and units specified! They should align.")
-  }
-
-  ## no crs_scale: create_sref() derives it from the CRS unit and 'units',
-  ## which is exactly what is read back on the next line
-  sref <- create_sref(crs, units)
-  crs_scale <- sref$crs_scale
+  ## Without 'x', xrange / yrange / cellsize are in the stored units that
+  ## 'units' (or 'crs_scale') declare, not in the unit of 'crs': the grid is
+  ## built from those numbers as they are. Swapping 'units' for the CRS unit
+  ## here used to make an sf::crs input build the grid in metres and then shrink
+  ## it by 1000 when units = "km", while a proj string of the same CRS did not.
+  ## See dev/code_notes.org, "Spatial reference: CRS units vs stored units".
+  sref <- create_sref(crs, units, crs_scale)
 
   ## helper: map points -> NA-grid cell indices
   cell_index <- function(x, y, x0, y0, cellsize) {
@@ -236,8 +239,10 @@ create_grid <- function(x = NULL,
 
   } else if (!is.null(x) && (inherits(x, "admove_tags"))) {
 
-    xr <- range(x[,"x"], na.rm = TRUE)
-    yr <- range(x[,"y"], na.rm = TRUE)
+    ## an explicit xrange / yrange takes precedence over the tag extent, as for
+    ## the other kinds of 'x'
+    xr <- if (is.null(xrange0)) range(x[,"x"], na.rm = TRUE) else xrange
+    yr <- if (is.null(yrange0)) range(x[,"y"], na.rm = TRUE) else yrange
 
     sref <- sref(x)
 
@@ -249,11 +254,24 @@ create_grid <- function(x = NULL,
     ## because tag-to-cell assignment (cut(), left-open/right-closed intervals)
     ## would otherwise drop a tag sitting exactly on the lower grid edge, and the
     ## whole-cell expansion keeps xrange/yrange aligned with the xgr/ygr breaks
-    ## constructed below.
-    nx <- ceiling(diff(xr) / cellsize[1] - 1e-9) + 2L
-    ny <- ceiling(diff(yr) / cellsize[2] - 1e-9) + 2L
-    xrange <- xr[1] - cellsize[1] + c(0, nx) * cellsize[1]
-    yrange <- yr[1] - cellsize[2] + c(0, ny) * cellsize[2]
+    ## constructed below. A user-supplied range is taken as is.
+    if (is.null(xrange0)) {
+      nx <- ceiling(diff(xr) / cellsize[1] - 1e-9) + 2L
+      xrange <- xr[1] - cellsize[1] + c(0, nx) * cellsize[1]
+    }
+    if (is.null(yrange0)) {
+      ny <- ceiling(diff(yr) / cellsize[2] - 1e-9) + 2L
+      yrange <- yr[1] - cellsize[2] + c(0, ny) * cellsize[2]
+    }
+
+    if (isTRUE(verbose) && (!is.null(xrange0) || !is.null(yrange0))) {
+      n_out <- sum(x[,"x"] < xrange[1] | x[,"x"] > xrange[2] |
+                     x[,"y"] < yrange[1] | x[,"y"] > yrange[2], na.rm = TRUE)
+      if (n_out > 0) {
+        message(n_out, " of ", nrow(x), " tag positions lie outside the ",
+                "supplied xrange / yrange.")
+      }
+    }
 
   } else if (!is.null(x) && (inherits(x, "sf") || inherits(x, "sfc"))) {
 
@@ -263,8 +281,8 @@ create_grid <- function(x = NULL,
 
     ## dimensions
     bb <- sf::st_bbox(x)
-    xrange <- unname(c(bb["xmin"], bb["xmax"]))
-    yrange <- unname(c(bb["ymin"], bb["ymax"]))
+    if (is.null(xrange0)) xrange <- unname(c(bb["xmin"], bb["xmax"]))
+    if (is.null(yrange0)) yrange <- unname(c(bb["ymin"], bb["ymax"]))
 
     if (is.null(cellsize0)) cellsize <- c(diff(xrange) / 10, diff(yrange) / 10)
 
@@ -283,8 +301,8 @@ create_grid <- function(x = NULL,
 
     ## dimensions
     bb <- raster::bbox(x)
-    xrange <- c(bb[1,1], bb[1,2])
-    yrange <- c(bb[2,1], bb[2,2])
+    if (is.null(xrange0)) xrange <- c(bb[1,1], bb[1,2])
+    if (is.null(yrange0)) yrange <- c(bb[2,1], bb[2,2])
 
     if (is.null(cellsize0)) cellsize <- c(diff(xrange) / 10, diff(yrange) / 10)
 
@@ -525,23 +543,7 @@ create_grid <- function(x = NULL,
 
   ## Return
   res <- .add_class(res, "admove_grid")
-  res <- add_sref(res, sref)
-
-  if (!is.null(units0) && units0 != units) {
-    res <- scale_sref(res, units = units0)
-  } else if (!is.null(crs_scale0) && crs_scale0 != crs_scale) {
-    res <- scale_sref(res, scale = crs_scale0)
-  }
-
-
-  ## if (!is.null(crs_scale0) && crs_scale0 != crs_scale(res)) {
-  ##     res <- change_units(res, crs_scale)
-  ## } else if (!is.null(units0) && units0 != units(res)) {
-  ##   crs_scale <- try(guess_crs_scale(crs(res), units0), silent = TRUE)
-  ##   if(!inherits(crs_scale, "try-error")) {
-  ##     res <- change_units(res, crs_scale)
-  ##   } else if (verbose) message("Couldn't change the units.")
-  ## }
+  res <- add_sref(res, sref, verbose = FALSE)
 
   if (plot) plot(res, plot_land = plot_land, auto_layout = auto_layout)
 
