@@ -244,7 +244,8 @@ plot_land <- local({
   crops <- lapply(lon_windows, function(w) {
     if (w[2L] <= w[1L]) return(NULL)
     box <- .lonlat_box(w[1L], w[2L], ymin, ymax, crs = sf::st_crs(land_p))
-    cr <- try(suppressWarnings(sf::st_intersection(land_p, box)), silent = TRUE)
+    cr <- try(suppressMessages(suppressWarnings(sf::st_intersection(land_p, box))),
+              silent = TRUE)
     if (inherits(cr, "try-error")) {
       failed <<- TRUE
       return(NULL)
