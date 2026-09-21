@@ -111,3 +111,27 @@ test_that("setup_data accepts tags combined with list() as well as c()", {
   expect_identical(dat_list, dat_c)
   expect_error(.setup(as.data.frame(dtags)), "must be an 'admove_tags' object")
 })
+
+
+test_that("get_recaptured_tags() splits recaptured and never-recaptured tags", {
+
+  w <- data.frame(id = c("a", "b", "c"),
+                  t0 = c(0, 0, 0), t1 = c(1, NA, 2),
+                  x0 = c(0, 1, 2), x1 = c(1, NA, 3),
+                  y0 = c(0, 1, 2), y1 = c(1, NA, 3))
+  tags <- suppressMessages(
+    prep_ctags(w, names = c(id = "id", t0 = "t0", t1 = "t1", x0 = "x0",
+                            x1 = "x1", y0 = "y0", y1 = "y1"),
+               verbose = FALSE))
+
+  rec <- get_recaptured_tags(tags)
+  expect_setequal(unique(rec$id), c("a", "c"))
+  expect_equal(nrow(rec), 4L)
+  expect_s3_class(rec, "admove_tags")
+  expect_identical(sref(rec), sref(tags))
+  expect_identical(tref(rec), tref(tags))
+
+  non <- get_recaptured_tags(tags, invert = TRUE)
+  expect_identical(unique(non$id), "b")
+  expect_equal(nrow(non), 2L)
+})

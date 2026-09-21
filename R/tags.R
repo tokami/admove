@@ -1711,6 +1711,61 @@ get_stags <- function(x) {
 }
 
 
+##' Extract recaptured tags
+##'
+##' @description
+##' `get_recaptured_tags()` keeps the tags that were observed at least once
+##' after release, i.e. that have a row other than the release with complete
+##' time and position. [prep_ctags()] keeps tags that were never recaptured,
+##' with `NA` in the recapture row; [check_tags()] (called by [setup_data()])
+##' removes them before fitting. Use this function to get the same tags
+##' earlier, e.g. for plotting, or with `invert = TRUE` for the tags that were
+##' never recaptured.
+##'
+##' @param x An `admove_tags` object, or an object containing tags
+##'   (`admove_data`, `admove_sim` or `admove`).
+##' @param invert Logical; if `TRUE`, return the tags that were never
+##'   recaptured instead. Default: `FALSE`.
+##'
+##' @return
+##' An `admove_tags` object with all rows of the selected tags, keeping the
+##' spatial and temporal reference of the input.
+##'
+##' @details
+##' The first row of each tag is its release. A tag counts as recaptured when
+##' any later row has non-missing `t`, `x` and `y`; this also applies to
+##' data-storage and mark-resight tags (observed at least once after release).
+##'
+##' @examples
+##' ctags <- skjepo$sim$tags
+##' rec <- get_recaptured_tags(ctags)
+##' length(unique(rec$id))
+##'
+##' @export
+get_recaptured_tags <- function(x, invert = FALSE) {
+
+  if (inherits(x, "admove")) {
+    tags <- x$dat$tags
+  } else if (inherits(x, c("admove_data", "admove_sim"))) {
+    tags <- x$tags
+  } else {
+    tags <- x
+    .check_class(tags, "admove_tags")
+  }
+
+  complete <- !is.na(tags$t) & !is.na(tags$x) & !is.na(tags$y)
+  release <- !duplicated(tags$id)
+  rec_ids <- unique(tags$id[complete & !release])
+  keep <- (tags$id %in% rec_ids) != isTRUE(invert)
+
+  out <- tags[keep, , drop = FALSE]
+  ## `[.data.frame` drops the reference attributes
+  attr(out, "sref") <- attr(tags, "sref")
+  attr(out, "tref") <- attr(tags, "tref")
+  out
+}
+
+
 
 
 ##' Group tags by release events
