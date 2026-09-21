@@ -186,6 +186,16 @@ dtags <- add_sref(dtags, sref_target, transform_crs = TRUE)
 dtags <- add_tref(dtags, tref_target, shift_origin = TRUE)
 ```
 
+Note that the projection is in metres (`+units=m`) while `units = "km"` asks for
+the coordinates to be *stored* in km. These are two different things and are
+meant to differ here: `crs()` keeps describing the projection, `units_space()`
+describes the numbers, and `crs_scale()` (0.001) links them. Printing the
+spatial reference shows all three:
+
+```{r, eval=TRUE, echo=TRUE}
+sref_target
+```
+
 Now, the tags have the required space and time reference information:
 
 ```{r, eval=TRUE, echo=TRUE}

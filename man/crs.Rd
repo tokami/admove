@@ -38,6 +38,24 @@ string, EPSG code, or another \pkg{sf}-compatible CRS specification.
 Generic function to extract the coordinate reference system (CRS) from a
 supported object.
 }
+\details{
+\code{crs()} returns the CRS of the \emph{unscaled} coordinates and deliberately does
+\strong{not} reflect \code{\link[=units_space]{units_space()}}. Stored coordinates are CRS coordinates times
+\code{\link[=crs_scale]{crs_scale()}}, so the two are complementary rather than redundant: a
+metre-based projection whose coordinates are stored in km keeps a metre CRS
+and \code{crs_scale = 0.001}. Everything that hands the CRS to \pkg{sf} divides
+the stored coordinates by \code{crs_scale} first, so a CRS rewritten to the stored
+unit would convert twice.
+
+\if{html}{\out{<div class="sourceCode r">}}\preformatted{crs_aeqd <- paste("+proj=aeqd +lat_0=40 +lon_0=-6 +x_0=0 +y_0=0",
+                  "+datum=WGS84 +units=m +no_defs")
+sp <- create_sref(crs = crs_aeqd, units = "km")
+sf::st_crs(crs(sp))$units_gdal   ## "metre"  -- the projection
+units_space(sp)                  ## "km"     -- the stored numbers
+crs_scale(sp)                    ## 0.001    -- links the two
+}\if{html}{\out{</div>}}
+}
 \seealso{
-\code{\link[sf:st_crs]{sf::st_crs()}}
+\code{\link[sf:st_crs]{sf::st_crs()}}, \code{\link[=units_space]{units_space()}}, \code{\link[=crs_scale]{crs_scale()}}, \code{\link[=scale_sref]{scale_sref()}},
+\code{\link[=create_sref]{create_sref()}}
 }

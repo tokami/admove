@@ -1,3 +1,54 @@
+# admove 0.1.7
+
+## Behaviour changes
+
+* `units_space(x) <- `, `crs(x) <- ` and `crs_scale(x) <- ` now **error** on
+  objects that carry coordinates (`admove_grid`, `admove_cov`, `admove_tags`,
+  `admove_data`). They used to overwrite a single field of the spatial
+  reference, leaving the other two fields *and the coordinates themselves*
+  stale, e.g. `units_space(grid) <- "km"` relabelled a metre grid as km while
+  `crs_scale` stayed 1, and nothing downstream noticed. The error names the
+  function that moves everything together: `scale_sref()`, `add_sref()` or
+  `transform_sref()`.
+
+  On a bare `admove_sref`, which has no coordinates, the same replacement
+  functions now recompute the dependent fields instead of desynchronising:
+  `units_space(sp) <- "km"` on a metre CRS sets `crs_scale` to 0.001.
+
+* `create_sref()` no longer overrides an explicitly supplied `crs_scale`. Its
+  default is now `NULL`, meaning "derive from the CRS unit and `units`";
+  `units` and `crs_scale` are two views of the same thing, so supplying either
+  one is enough and the other follows. Supplying both keeps both, with a
+  warning when they disagree. Previously `create_sref(32631, units = "m",
+  crs_scale = 0.001)` silently returned `crs_scale = 1`, which also discarded
+  the value `add_sref()` and `transform_sref()` had just derived.
+
+  Supplying a `crs_scale` without `units` now labels the units with the
+  composite form `"metre_x_1e-06"` that `.in_m()` already understood, rather
+  than taking the CRS's own unit.
+
+## New features
+
+* `print()` method for `admove_sref`, and `summary()` of an `admove_grid` now
+  shows the full spatial reference. Both make explicit that the CRS unit and
+  the stored-coordinate unit are allowed to differ:
+
+  ```
+  crs:           Azimuthal Equidistant [custom]
+  datum:         World Geodetic System 1984
+  crs units:     metre
+  stored units:  km
+  crs scale:     1 metre = 0.001 km
+  ```
+
+  `crs()` continues to return the CRS of the *unscaled* coordinates and
+  deliberately does not reflect `units_space()`, stored coordinates are CRS
+  coordinates times `crs_scale`, and everything that hands a coordinate to sf
+  divides by `crs_scale` first. See `?crs`.
+
+## Bug fixes
+
+
 # admove 0.1.5
 
 ## New features

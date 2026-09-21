@@ -107,7 +107,9 @@ create_grid <- function(x = NULL,
     } ## else if (verbose) message("Both crs and units specified! They should align.")
   }
 
-  sref <- create_sref(crs, units, 1)
+  ## no crs_scale: create_sref() derives it from the CRS unit and 'units',
+  ## which is exactly what is read back on the next line
+  sref <- create_sref(crs, units)
   crs_scale <- sref$crs_scale
 
   ## helper: map points -> NA-grid cell indices
@@ -611,10 +613,7 @@ summarise_grid <- function(object, ...) {
   dims <- dim.admove_grid(grid)
   n_na <- sum(is.na(grid$celltable))
 
-  units <- try(units_space(grid), silent = TRUE)
-  if (is.null(units) || is.na(units) || units == "" || inherits(units, "try-error")) units <- "not specified"
-
-  labw <- 10
+  labw <- 14
 
   cat("<admove_grid>\n")
   cat(sprintf(paste0("  %-", labw, "s %s\n"), "cells:",
@@ -630,8 +629,16 @@ summarise_grid <- function(object, ...) {
               paste0("[",bb[3], ", ", bb[4],"]")))
   cat(sprintf(paste0("  %-", labw, "s %s\n"), "NAs:",
               n_na))
-  cat(sprintf(paste0("  %-", labw, "s %s\n"), "units:",
-              units))
+
+  ## crs and stored units are two different things; .format_sref_short() shows
+  ## both plus the factor linking them
+  spinfo <- try(sref(grid), silent = TRUE)
+  if (inherits(spinfo, "admove_sref")) {
+    cat(.format_sref_short(spinfo, labw = labw), sep = "\n")
+    cat("\n")
+  } else {
+    cat(sprintf(paste0("  %-", labw, "s %s\n"), "crs:", "not specified"))
+  }
 
   invisible(grid)
 }

@@ -31,8 +31,20 @@ crs_scale(x) <- value
 \item{value}{A numeric scaling factor.}
 }
 \value{
-\code{x} with updated CRS scaling information.
+\code{x} with updated CRS scaling information and a matching
+\code{\link[=units_space]{units_space()}} label.
 }
 \description{
 Replacement function for \code{\link[=crs_scale]{crs_scale()}}.
+}
+\details{
+Only defined for \code{\link[=create_sref]{create_sref()}} objects, where the other fields are
+recomputed so the spatial reference stays self-consistent. On objects that
+carry coordinates (\code{admove_grid}, \code{admove_cov}, \code{admove_tags},
+\code{admove_data}) this errors, because changing the metadata alone would leave
+the coordinates stale: use \code{\link[=add_sref]{add_sref()}}, \code{\link[=scale_sref]{scale_sref()}} or
+\code{\link[=transform_sref]{transform_sref()}}, which move the coordinates too.
+}
+\seealso{
+\code{\link[=scale_sref]{scale_sref()}}, \code{\link[=add_sref]{add_sref()}}
 }

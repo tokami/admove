@@ -67,7 +67,26 @@ sref.default <- function(x, ...) {
 ##' is stored in the corresponding spatial reference object, for example a WKT
 ##' string, EPSG code, or another \pkg{sf}-compatible CRS specification.
 ##'
-##' @seealso [sf::st_crs()]
+##' @details
+##' `crs()` returns the CRS of the *unscaled* coordinates and deliberately does
+##' **not** reflect [units_space()]. Stored coordinates are CRS coordinates times
+##' [crs_scale()], so the two are complementary rather than redundant: a
+##' metre-based projection whose coordinates are stored in km keeps a metre CRS
+##' and `crs_scale = 0.001`. Everything that hands the CRS to \pkg{sf} divides
+##' the stored coordinates by `crs_scale` first, so a CRS rewritten to the stored
+##' unit would convert twice.
+##'
+##' ```r
+##' crs_aeqd <- paste("+proj=aeqd +lat_0=40 +lon_0=-6 +x_0=0 +y_0=0",
+##'                   "+datum=WGS84 +units=m +no_defs")
+##' sp <- create_sref(crs = crs_aeqd, units = "km")
+##' sf::st_crs(crs(sp))$units_gdal   ## "metre"  -- the projection
+##' units_space(sp)                  ## "km"     -- the stored numbers
+##' crs_scale(sp)                    ## 0.001    -- links the two
+##' ```
+##'
+##' @seealso [sf::st_crs()], [units_space()], [crs_scale()], [scale_sref()],
+##'   [create_sref()]
 ##'
 ##' @name crs
 ##' @export
@@ -112,6 +131,16 @@ crs.admove_data <- function(x, ...) sref(x)$crs
 ##'
 ##' @return `x` with updated CRS information.
 ##'
+##' @details
+##' Only defined for [create_sref()] objects, where the other fields are
+##' recomputed so the spatial reference stays self-consistent. On objects that
+##' carry coordinates (`admove_grid`, `admove_cov`, `admove_tags`,
+##' `admove_data`) this errors, because changing the metadata alone would leave
+##' the coordinates stale: use [add_sref()], [scale_sref()] or
+##' [transform_sref()], which move the coordinates too.
+##'
+##' @seealso [transform_sref()], [add_sref()]
+##'
 ##' @name crs-set
 ##' @export
 `crs<-` <- function(x, value) UseMethod("crs<-")
@@ -119,53 +148,48 @@ crs.admove_data <- function(x, ...) sref(x)$crs
 ##' @rdname crs-set
 ##' @export
 `crs<-.default` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs")
 }
 
 ##' @rdname crs-set
 ##' @export
 `crs<-.admove_sref` <- function(x, value) {
-  x$crs <- value
-  x
+
+  ## keep the stored-unit label only while it still means the same thing, i.e.
+  ## while the new CRS has the same native unit as the old one; otherwise let
+  ## create_sref() re-infer it, as add_sref() does on a CRS change
+  units <- NA_character_
+  if (!.is_na_scalar(x$units) &&
+        identical(.infer_sref_units(x$crs, verbose = FALSE),
+                  .infer_sref_units(value, verbose = FALSE))) {
+    units <- x$units
+  }
+
+  create_sref(crs = value, units = units)
 }
 
 ##' @rdname crs-set
 ##' @export
 `crs<-.admove_grid` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs")
 }
 
 ##' @rdname crs-set
 ##' @export
 `crs<-.admove_cov` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs")
 }
 
 ##' @rdname crs-set
 ##' @export
 `crs<-.admove_tags` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs")
 }
 
 ##' @rdname crs-set
 ##' @export
 `crs<-.admove_data` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs")
 }
 
 
@@ -225,7 +249,17 @@ units_space.admove_data <- function(x, ...) sref(x)$units
 ##' @param x An object to modify.
 ##' @param value A character string describing the spatial units.
 ##'
-##' @return `x` with updated spatial units.
+##' @return `x` with updated spatial units and a matching [crs_scale()].
+##'
+##' @details
+##' Only defined for [create_sref()] objects, where the other fields are
+##' recomputed so the spatial reference stays self-consistent. On objects that
+##' carry coordinates (`admove_grid`, `admove_cov`, `admove_tags`,
+##' `admove_data`) this errors, because changing the metadata alone would leave
+##' the coordinates stale: use [add_sref()], [scale_sref()] or
+##' [transform_sref()], which move the coordinates too.
+##'
+##' @seealso [scale_sref()], [add_sref()]
 ##'
 ##' @name units_space-set
 ##' @export
@@ -234,53 +268,37 @@ units_space.admove_data <- function(x, ...) sref(x)$units
 ##' @rdname units_space-set
 ##' @export
 `units_space<-.default` <- function(x, value) {
-  sp <- sref(x)
-  sp$units <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("units_space", value)
 }
 
 ##' @rdname units_space-set
 ##' @export
 `units_space<-.admove_sref` <- function(x, value) {
-  x$units <- value
-  x
+  create_sref(crs = x$crs, units = value)
 }
 
 ##' @rdname units_space-set
 ##' @export
 `units_space<-.admove_grid` <- function(x, value) {
-  sp <- sref(x)
-  sp$units <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("units_space", value)
 }
 
 ##' @rdname units_space-set
 ##' @export
 `units_space<-.admove_cov` <- function(x, value) {
-  sp <- sref(x)
-  sp$units <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("units_space", value)
 }
 
 ##' @rdname units_space-set
 ##' @export
 `units_space<-.admove_tags` <- function(x, value) {
-  sp <- sref(x)
-  sp$units <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("units_space", value)
 }
 
 ##' @rdname units_space-set
 ##' @export
 `units_space<-.admove_data` <- function(x, value) {
-  sp <- sref(x)
-  sp$units <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("units_space", value)
 }
 
 
@@ -340,7 +358,18 @@ crs_scale.admove_data <- function(x, ...) sref(x)$crs_scale
 ##' @param x An object to modify.
 ##' @param value A numeric scaling factor.
 ##'
-##' @return `x` with updated CRS scaling information.
+##' @return `x` with updated CRS scaling information and a matching
+##'   [units_space()] label.
+##'
+##' @details
+##' Only defined for [create_sref()] objects, where the other fields are
+##' recomputed so the spatial reference stays self-consistent. On objects that
+##' carry coordinates (`admove_grid`, `admove_cov`, `admove_tags`,
+##' `admove_data`) this errors, because changing the metadata alone would leave
+##' the coordinates stale: use [add_sref()], [scale_sref()] or
+##' [transform_sref()], which move the coordinates too.
+##'
+##' @seealso [scale_sref()], [add_sref()]
 ##'
 ##' @name crs_scale-set
 ##' @export
@@ -349,53 +378,37 @@ crs_scale.admove_data <- function(x, ...) sref(x)$crs_scale
 ##' @rdname crs_scale-set
 ##' @export
 `crs_scale<-.default` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs_scale <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs_scale", value)
 }
 
 ##' @rdname crs_scale-set
 ##' @export
 `crs_scale<-.admove_sref` <- function(x, value) {
-  x$crs_scale <- value
-  x
+  create_sref(crs = x$crs, crs_scale = value)
 }
 
 ##' @rdname crs_scale-set
 ##' @export
 `crs_scale<-.admove_grid` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs_scale <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs_scale", value)
 }
 
 ##' @rdname crs_scale-set
 ##' @export
 `crs_scale<-.admove_cov` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs_scale <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs_scale", value)
 }
 
 ##' @rdname crs_scale-set
 ##' @export
 `crs_scale<-.admove_tags` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs_scale <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs_scale", value)
 }
 
 ##' @rdname crs_scale-set
 ##' @export
 `crs_scale<-.admove_data` <- function(x, value) {
-  sp <- sref(x)
-  sp$crs_scale <- value
-  sref(x) <- sp
-  x
+  .stop_sref_setter("crs_scale", value)
 }
 
 

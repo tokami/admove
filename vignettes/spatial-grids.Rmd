@@ -183,6 +183,44 @@ grid <- create_grid(xrange = c(2000000, 5000000),
                     plot_land = TRUE)
 ```
 
+## CRS units and stored units are two different things
+
+The projection stays exactly as given — Albers in metres — while `units` and
+`crs_scale` describe the numbers actually stored in the grid. `crs()` therefore
+keeps reporting a metre CRS even when `units_space()` says km, and the two are
+linked by `crs_scale()`:
+
+```{r}
+grid <- create_grid(xrange = c(2000000, 5000000),
+                    yrange = c(1500000, 5000000),
+                    cellsize = 500000,
+                    crs = albers_crs,
+                    units = "km")
+
+sref(grid)
+```
+
+This is deliberate. Stored coordinates are CRS coordinates times `crs_scale`, so
+everything that hands a coordinate back to **sf** or **terra** divides by
+`crs_scale` first; a CRS rewritten to the stored unit would convert twice.
+Working in km (or any other convenient scaling) therefore keeps the model
+coordinates and the estimated movement rates at a manageable magnitude without
+touching the projection itself.
+
+Because the three fields describe one relation, they have to move together.
+`scale_sref()`, `add_sref()` and `transform_sref()` do that — they rescale or
+reproject the coordinates as well as the metadata. Assigning to a single field
+of an object that carries coordinates is refused:
+
+```{r, error = TRUE}
+units_space(grid) <- "m"
+```
+
+```{r}
+grid <- scale_sref(grid, units = "m")
+c(units = units_space(grid), scale = crs_scale(grid))
+```
+
 # Selecting grid cells
 
 Another useful functionality of `create_grid()` is that it allows to manually

@@ -31,8 +31,19 @@ units_space(x) <- value
 \item{value}{A character string describing the spatial units.}
 }
 \value{
-\code{x} with updated spatial units.
+\code{x} with updated spatial units and a matching \code{\link[=crs_scale]{crs_scale()}}.
 }
 \description{
 Replacement function for \code{\link[=units_space]{units_space()}}.
+}
+\details{
+Only defined for \code{\link[=create_sref]{create_sref()}} objects, where the other fields are
+recomputed so the spatial reference stays self-consistent. On objects that
+carry coordinates (\code{admove_grid}, \code{admove_cov}, \code{admove_tags},
+\code{admove_data}) this errors, because changing the metadata alone would leave
+the coordinates stale: use \code{\link[=add_sref]{add_sref()}}, \code{\link[=scale_sref]{scale_sref()}} or
+\code{\link[=transform_sref]{transform_sref()}}, which move the coordinates too.
+}
+\seealso{
+\code{\link[=scale_sref]{scale_sref()}}, \code{\link[=add_sref]{add_sref()}}
 }
