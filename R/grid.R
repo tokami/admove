@@ -236,8 +236,8 @@ create_grid <- function(x = NULL,
 
   } else if (!is.null(x) && (inherits(x, "admove_tags"))) {
 
-    xr <- range(x[,"x"])
-    yr <- range(x[,"y"])
+    xr <- range(x[,"x"], na.rm = TRUE)
+    yr <- range(x[,"y"], na.rm = TRUE)
 
     sref <- sref(x)
 
