@@ -135,3 +135,22 @@ test_that("get_recaptured_tags() splits recaptured and never-recaptured tags", {
   expect_identical(unique(non$id), "b")
   expect_equal(nrow(non), 2L)
 })
+
+
+test_that("subsetting admove_tags keeps sref and tref", {
+
+  tags <- skjepo$sim$tags
+
+  for (sub in list(tags[1:5, ],
+                   tags[, c("t", "x", "y", "id", "tag_type")],
+                   tags[tags$tag_type == "c", ],
+                   get_ctags(tags),
+                   get_dtags(tags))) {
+    expect_s3_class(sub, "admove_tags")
+    expect_identical(sref(sub), sref(tags))
+    expect_identical(tref(sub), tref(tags))
+  }
+
+  ## a single column is still a plain vector
+  expect_identical(tags[, "x"], tags$x)
+})

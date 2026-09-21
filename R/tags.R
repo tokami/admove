@@ -1758,11 +1758,7 @@ get_recaptured_tags <- function(x, invert = FALSE) {
   rec_ids <- unique(tags$id[complete & !release])
   keep <- (tags$id %in% rec_ids) != isTRUE(invert)
 
-  out <- tags[keep, , drop = FALSE]
-  ## `[.data.frame` drops the reference attributes
-  attr(out, "sref") <- attr(tags, "sref")
-  attr(out, "tref") <- attr(tags, "tref")
-  out
+  tags[keep, , drop = FALSE]
 }
 
 
@@ -2435,6 +2431,32 @@ prep_ctags <- function(x,
 ##' @export
 plot.admove_tags <- function(x, ...) {
   plot_tags(x, ...)
+}
+
+##' Subset tagging data
+##'
+##' @description
+##' Subsetting an `admove_tags` object with `[` works as for a data frame and
+##' keeps the spatial and temporal reference (`sref`, `tref`) whenever the
+##' result is still a data frame, e.g. `tags[tags$tag_type == "c", ]` or
+##' `tags[, c("t", "x", "y", "id", "tag_type")]`. Extracting a single column,
+##' `tags[, "x"]`, returns the plain vector.
+##'
+##' @param x An object of class `admove_tags`.
+##' @param ... Row and column indices and `drop`, as for a data frame.
+##'
+##' @return
+##' An `admove_tags` object, or a vector when a single column is extracted.
+##'
+##' @name subset-admove_tags
+##' @export
+`[.admove_tags` <- function(x, ...) {
+  out <- NextMethod()
+  if (is.data.frame(out)) {
+    attr(out, "sref") <- attr(x, "sref")
+    attr(out, "tref") <- attr(x, "tref")
+  }
+  out
 }
 
 ##' @rdname combine_tags
