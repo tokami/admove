@@ -340,8 +340,10 @@ plot_land <- local({
 ##'   panels are arranged using [n2mfrow()]. Default is `TRUE`.
 ##' @param add Logical; if `TRUE`, taxis arrows are added to an existing plot.
 ##'   If `FALSE` (default), a new plot is created.
-##' @param xlab Label for the x-axis. Default is `"x"`.
-##' @param ylab Label for the y-axis. Default is `"y"`.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param xaxt A character specifying the x-axis type, passed to [plot()].
 ##'   Default is `"s"`.
 ##' @param yaxt A character specifying the y-axis type, passed to [plot()].
@@ -381,12 +383,16 @@ plot_taxis <- function(x,
                        image_bg = TRUE,
                        auto_layout = TRUE,
                        add = FALSE,
-                       xlab = "x",
-                       ylab = "y",
+                       xlab = NULL,
+                       ylab = NULL,
                        xaxt = "s",
                        yaxt = "s",
                        bg = NULL,
                        ...) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
 
   if (inherits(x, "admove")) {
     if (is.null(select)) select <- 1:length(x$dat$pred$time)
@@ -678,8 +684,10 @@ plot_taxis <- function(x,
 ##'   panels are arranged using [n2mfrow()]. Default is `TRUE`.
 ##' @param add Logical; if `TRUE`, advection arrows are added to an existing plot.
 ##'   If `FALSE` (default), a new plot is created.
-##' @param xlab Label for the x-axis. Default is `"x"`.
-##' @param ylab Label for the y-axis. Default is `"y"`.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param xaxt A character specifying the x-axis type, passed to [plot()].
 ##'   Default is `"s"`.
 ##' @param yaxt A character specifying the y-axis type, passed to [plot()].
@@ -718,12 +726,16 @@ plot_advection <- function(x,
                            image_bg = TRUE,
                            auto_layout = TRUE,
                            add = FALSE,
-                           xlab = "x",
-                           ylab = "y",
+                           xlab = NULL,
+                           ylab = NULL,
                            xaxt = "s",
                            yaxt = "s",
                            bg = NULL,
                            ...) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
 
   if (inherits(x, "admove")) {
     if (is.null(select)) select <- 1:length(x$dat$pred$time)
@@ -1049,8 +1061,10 @@ plot_advection <- function(x,
 ##'   restored automatically. Default: `TRUE`.
 ##' @param add Logical; if `TRUE`, diffusion is added to an existing plot. If
 ##'   `FALSE` (default), a new plot is created.
-##' @param xlab Label for the x-axis. Default: `"x"`.
-##' @param ylab Label for the y-axis. Default: `"y"`.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param xaxt A character specifying the x-axis type, passed to [plot()].
 ##'   Default: `"s"`.
 ##' @param yaxt A character specifying the y-axis type, passed to [plot()].
@@ -1080,12 +1094,16 @@ plot_diffusion <- function(x,
                            image_bg = TRUE,
                            auto_layout = TRUE,
                            add = FALSE,
-                           xlab = "x",
-                           ylab = "y",
+                           xlab = NULL,
+                           ylab = NULL,
                            xaxt = "s",
                            yaxt = "s",
                            bg = NULL,
                            ...) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
@@ -1866,8 +1884,10 @@ plot_compare <- function(fit, ...,
 ##'   `FALSE`.
 ##' @param plot_contour Logical; if `TRUE`, contour lines are added on top of
 ##'   the predicted density image. Default is `FALSE`.
-##' @param xlab Label for the x-axis. Default is `"x"`.
-##' @param ylab Label for the y-axis. Default is `"y"`.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param asp Target aspect ratio passed to [grDevices::n2mfrow()] when a
 ##'   single tag is displayed, controlling the shape of the time-step panel
 ##'   grid (larger values favour more columns). Ignored when several tags are
@@ -1888,9 +1908,13 @@ plot_tag_dist <- function(x,
                           n_time_steps = 6L,
                           plot_land = FALSE,
                           plot_contour = FALSE,
-                          xlab = "x",
-                          ylab = "y",
+                          xlab = NULL,
+                          ylab = NULL,
                           asp = 1) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
 
   if (is.null(x$tag_dist))
     stop("No precomputed tag distributions found in this object.\n",
@@ -2565,8 +2589,10 @@ plot_pref_func <- function(x,
 ##'   automatically. Default is `TRUE`.
 ##' @param add Logical; if `TRUE`, the preference surface is added to an
 ##'   existing plot. If `FALSE` (default), a new plot is created.
-##' @param xlab Label for the x-axis. Default is `"x"`.
-##' @param ylab Label for the y-axis. Default is `"y"`.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param bg Optional background colour for the plotting device. If `NULL`
 ##'   (default), the current background setting is used.
 ##' @param asp Positive numeric value giving the target aspect ratio
@@ -2602,11 +2628,15 @@ plot_pref_grid <- function(x,
                            plot_land = FALSE,
                            auto_layout = TRUE,
                            add = FALSE,
-                           xlab = "x",
-                           ylab = "y",
+                           xlab = NULL,
+                           ylab = NULL,
                            bg = NULL,
                            asp = 2,
                            ...) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
 
   main0 <- main
   select.y0 <- select.y
@@ -3166,6 +3196,21 @@ plot_tag_resid <- function(x,
 .axis_lab <- function(lab, units) {
   if (is.null(units) || length(units) != 1L || is.na(units)) return(lab)
   paste0(lab, " [", units, "]")
+}
+
+
+## Default map axis labels, c(xlab, ylab), with the spatial units of x (a fit,
+## simulation, data, grid, covariate or tag object): "x [km]", or "lon [°]" for
+## degrees. Plain "x"/"y" when the units cannot be read.
+.map_labs <- function(x) {
+  obj <- if (inherits(x, c("admove", "admove_sim"))) x$dat else x
+  u <- tryCatch(units_space(obj), error = function(e) NULL)
+  ## a plain list of covariates carries the units on its elements
+  if (is.null(u) && is.list(obj) && length(obj)) {
+    u <- tryCatch(units_space(obj[[1]]), error = function(e) NULL)
+  }
+  if (identical(u, "degree")) return(c("lon [°]", "lat [°]"))
+  c(.axis_lab("x", u), .axis_lab("y", u))
 }
 
 

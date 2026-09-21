@@ -12,8 +12,8 @@ plot_tag_dist(
   n_time_steps = 6L,
   plot_land = FALSE,
   plot_contour = FALSE,
-  xlab = "x",
-  ylab = "y",
+  xlab = NULL,
+  ylab = NULL,
   asp = 1
 )
 }
@@ -38,9 +38,11 @@ selected tags.}
 \item{plot_contour}{Logical; if \code{TRUE}, contour lines are added on top of
 the predicted density image. Default is \code{FALSE}.}
 
-\item{xlab}{Label for the x-axis. Default is \code{"x"}.}
+\item{xlab}{Label for the x-axis. If \code{NULL} (default), \code{"x"} with the
+spatial units in brackets, e.g. \code{"x [km]"} (\code{"lon [°]"} for degrees).}
 
-\item{ylab}{Label for the y-axis. Default is \code{"y"}.}
+\item{ylab}{Label for the y-axis. If \code{NULL} (default), \code{"y"} with the
+spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).}
 
 \item{asp}{Target aspect ratio passed to \code{\link[grDevices:n2mfrow]{grDevices::n2mfrow()}} when a
 single tag is displayed, controlling the shape of the time-step panel

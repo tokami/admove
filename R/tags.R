@@ -1852,8 +1852,10 @@ use_release_events <- function(x, grid, time_cont,
 ##' @param xlim Optional x-axis limits.
 ##' @param ylim Optional y-axis limits.
 ##' @param add Logical; if `TRUE`, add to an existing plot. Default: `FALSE`.
-##' @param xlab Label for the x-axis. Default: `"x"`.
-##' @param ylab Label for the y-axis. Default: `"y"`.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param leg_pos Position of the legend. Default: `"topright"`.
 ##' @param labels Logical; if `TRUE`, label observations by time instead of
 ##'   plotting intermediate points. Default: `FALSE`.
@@ -1862,6 +1864,11 @@ use_release_events <- function(x, grid, time_cont,
 ##'   Default: `TRUE`.
 ##' @param by_tag Logical; if `TRUE`, create separate panels for individual tags.
 ##'   Default: `FALSE`.
+##' @param show Character vector naming the elements to draw: any of
+##'   `"release"` (release positions), `"recovery"` (recovery or final
+##'   observation positions) and `"path"` (trajectories, intermediate
+##'   observations and release-recovery segments). Legend entries of elements
+##'   not drawn are dropped. Default: all three.
 ##' @param col Character vector of length 1 to 3 giving colours for tag paths,
 ##'   release positions, and recovery or final observation positions.
 ##' @param pch Integer vector of length 1 to 3 giving plotting symbols for
@@ -1886,6 +1893,14 @@ use_release_events <- function(x, grid, time_cont,
 ##' @examples
 ##' plot_tags(skjepo$sim$tags)
 ##'
+##' ## release and recovery positions in separate panels
+##' op <- par(mfrow = c(1, 2))
+##' plot_tags(skjepo$sim$tags, show = "release", main = "Release",
+##'           by_tag_type = FALSE, auto_layout = FALSE)
+##' plot_tags(skjepo$sim$tags, show = "recovery", main = "Recovery",
+##'           by_tag_type = FALSE, auto_layout = FALSE)
+##' par(op)
+##'
 ##' @name plot_tags
 ##' @export
 plot_tags <- function(x,
@@ -1895,17 +1910,27 @@ plot_tags <- function(x,
                       xlim = NULL,
                       ylim = NULL,
                       add = FALSE,
-                      xlab = "x",
-                      ylab = "y",
+                      xlab = NULL,
+                      ylab = NULL,
                       leg_pos = "topright",
                       labels = FALSE,
                       bg = NULL,
                       by_tag_type = TRUE,
                       by_tag = FALSE,
+                      show = c("release", "recovery", "path"),
                       col = c(adjustcolor("grey60",0.3), .admove_cols(2)),
                       pch = c(1,0,16),
                       cex = 0.8,
                       ...) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
+
+  show <- match.arg(show, several.ok = TRUE)
+  show_release <- "release" %in% show
+  show_recovery <- "recovery" %in% show
+  show_path <- "path" %in% show
 
   pchin <- pch
   pch0 <- c(1,0,16)
@@ -1933,17 +1958,59 @@ plot_tags <- function(x,
     tref <- tref(tags)
   }
 
-  if (inherits(tags, "data.frame")) {
-    tags <- split(tags, tags$id)
+  if (!inherits(tags, "data.frame")) {
+    tags <- do.call(rbind, tags)
   }
 
+  ## Work on the long table with per-tag bookkeeping done vectorised: splitting
+  ## the data frame into one data frame per tag costs minutes for tens of
+  ## thousands of tags. Tags are drawn in the order split() would give.
+  idf <- factor(tags$id)
+  o <- order(as.integer(idf))
+  ti <- as.integer(idf)[o]  ## tag index of each row, 1..ntag, non-decreasing
+  ntag <- nlevels(idf)
+  tt <- .subset2(tags, 1L)[o]
+  tx <- .subset2(tags, 2L)[o]
+  ty <- .subset2(tags, 3L)[o]
+  first_row <- which(!duplicated(ti))
+  last_row <- which(!duplicated(ti, fromLast = TRUE))
+  nrow_tag <- tabulate(ti, ntag)
+  tag_type_int <- .get_tag_type_integer(tags$tag_type[o][first_row])
+
+  ## Rows of the final observation event, as .tag_events(): events are numbered
+  ## by first appearance within a tag, so the last event is the one that
+  ## appears last.
+  if (is.null(tags[["event"]])) {
+    is_last <- seq_along(ti) %in% last_row
+  } else {
+    key <- paste(ti, tags[["event"]][o], sep = "\r")
+    ev_new <- !duplicated(key)
+    ev_ord <- cumsum(ev_new)[match(key, key)]
+    is_last <- ev_ord == cumsum(ev_new)[last_row][ti]
+  }
+  ## The final observation may be ambiguous: several candidate positions, one
+  ## of which is the true recovery. Represent the tag by its most likely
+  ## candidate (first one on ties) and draw the alternatives as a fan.
+  cand <- which(is_last)
+  cand_prob <- .na_zero(tags[["prob"]][o][cand])
+  if (length(cand_prob) != length(cand)) cand_prob <- rep(0, length(cand))
+  oc <- order(ti[cand], -cand_prob, cand)
+  best <- oc[!duplicated(ti[cand][oc])]
+  end_row <- cand[best]
+  n_cand <- tabulate(ti[cand], ntag)
+  fan <- n_cand[ti[cand]] >= 2L
+  fan_row <- cand[fan]
+  fan_pr <- cand_prob[fan]
+  fan_max <- cand_prob[best][ti[fan_row]]
+  fan_pr <- ifelse(fan_max <= 0, 1, fan_pr / fan_max)
+
   if (is.null(xlim)) {
-    xlims <- range(sapply(tags, function(x) range(x[,2], na.rm = TRUE)))
+    xlims <- range(tx, na.rm = TRUE)
   } else {
     xlims <- xlim
   }
   if (is.null(ylim)) {
-    ylims <- range(sapply(tags, function(x) range(x[,3], na.rm = TRUE)))
+    ylims <- range(ty, na.rm = TRUE)
   } else {
     ylims <- ylim
   }
@@ -1970,7 +2037,8 @@ plot_tags <- function(x,
                      "Mark-recapture tags",
                      "Acoustic tags")
 
-  plot_one <- function(tags) {
+  ## sel: logical per tag, the tags drawn in this panel
+  plot_one <- function(sel) {
 
     if(!add){
       if(!is.null(bg)){
@@ -1988,67 +2056,66 @@ plot_tags <- function(x,
     if (plot_land) {
       plot_land(sref)
     }
-    ## The final observation may be ambiguous: several candidate positions, one
-    ## of which is the true recovery. Represent the tag by its most likely
-    ## candidate and draw the alternatives as a fan below.
-    .last_rows <- function(z) {
-      ev <- .tag_events(z)
-      which(ev == max(ev))
+    st <- first_row[sel]
+    en <- end_row[sel]
+    if (show_release) {
+      points(tx[st], ty[st],
+             col = cols[2], pch = pch[1])
     }
-    .best_row <- function(z) {
-      k <- .last_rows(z)
-      if (length(k) == 1L) return(k)
-      k[which.max(.na_zero(z[["prob"]][k]))]
-    }
-    start_pos <- do.call(rbind, lapply(tags, function(x) as.numeric(x[1, c(2,3)])))
-    end_pos <- do.call(rbind, lapply(tags, function(x) as.numeric(x[.best_row(x), c(2,3)])))
-    points(start_pos[,1], start_pos[,2],
-           col = cols[2], pch = pch[1])
-    points(end_pos[,1], end_pos[,2],
-           col = cols[3], pch = pch[2])
-    tmp <- sapply(tags, function(x) .get_tag_type_integer(x$tag_type)[1])
-    idx1 <- which(tmp %in% c(1,2,4))
-    idx2 <- which(tmp %in% c(3))
-    ## tmp <- sapply(tags, nrow) > 2
-    ## idx1 <- as.integer(which(tmp))
-    ## idx2 <- as.integer(which(!tmp))
-    for (i in idx1) {
-      lines(tags[[i]][,2], tags[[i]][,3],
-            col = cols[1], ty = "b", pch = NA)
-      if (labels) {
-        text(tags[[i]][,2], tags[[i]][,3],
-             labels = sprintf("%.2f", tags[[i]][,1]),
-             col = cols[1], pch = pch[3], cex = cex)
-      } else {
-        points(tags[[i]][-c(1,nrow(tags[[i]])),2],
-               tags[[i]][-c(1,nrow(tags[[i]])),3],
-               col = cols[1], pch = pch[3], cex = cex)
-      }
+    if (show_recovery) {
+      points(tx[en], ty[en],
+             col = cols[3], pch = pch[2])
     }
 
-    if (length(idx2)) {
-      ## index start_pos by idx2 as well -- it is only harmless when every tag
-      ## in the panel happens to be a mark-recapture tag
-      segments(as.numeric(start_pos[idx2,1]), as.numeric(start_pos[idx2,2]),
-               as.numeric(end_pos[idx2,1]), as.numeric(end_pos[idx2,2]),
-               col = cols[1])
+    if (show_path) {
+      ## trajectories: few tags, so a per-tag loop over plain vectors is fine
+      traj <- sel & tag_type_int %in% c(1,2,4)
+      rows <- which(traj[ti])
+      if (length(rows)) {
+        g <- ti[rows]
+        xs <- split(tx[rows], g)
+        ys <- split(ty[rows], g)
+        ts <- split(tt[rows], g)
+        for (i in seq_along(xs)) {
+          lines(xs[[i]], ys[[i]],
+                col = cols[1], ty = "b", pch = NA)
+          if (labels) {
+            text(xs[[i]], ys[[i]],
+                 labels = sprintf("%.2f", ts[[i]]),
+                 col = cols[1], pch = pch[3], cex = cex)
+          } else {
+            nr <- length(xs[[i]])
+            points(xs[[i]][-c(1,nr)], ys[[i]][-c(1,nr)],
+                   col = cols[1], pch = pch[3], cex = cex)
+          }
+        }
+      }
+
+      segm <- sel & tag_type_int == 3
+      if (any(segm)) {
+        segments(tx[first_row[segm]], ty[first_row[segm]],
+                 tx[end_row[segm]], ty[end_row[segm]],
+                 col = cols[1])
+      }
     }
 
     ## fan out the alternative recapture positions, shaded by probability
-    for (i in seq_along(tags)) {
-      k <- .last_rows(tags[[i]])
-      if (length(k) < 2L) next()
-      pr <- .na_zero(tags[[i]][["prob"]][k])
-      if (max(pr) <= 0) pr <- rep(1, length(k))
-      pr <- pr / max(pr)
-      for (m in seq_along(k)) {
-        segments(start_pos[i,1], start_pos[i,2],
-                 as.numeric(tags[[i]][k[m], 2]), as.numeric(tags[[i]][k[m], 3]),
-                 col = adjustcolor(cols[3], alpha.f = max(0.15, pr[m])),
-                 lty = 3, lwd = 0.5 + 1.5 * pr[m])
+    k <- which(sel[ti[fan_row]])
+    if (length(k)) {
+      fr <- fan_row[k]
+      pr <- fan_pr[k]
+      if (show_path) {
+        ## adjustcolor() takes a single alpha.f, so scale the alpha directly
+        cc <- grDevices::col2rgb(cols[3], alpha = TRUE) / 255
+        segments(tx[first_row[ti[fr]]], ty[first_row[ti[fr]]],
+                 tx[fr], ty[fr],
+                 col = grDevices::rgb(cc[1], cc[2], cc[3], cc[4] * pmax(0.15, pr)),
+                 lty = 3, lwd = 0.5 + 1.5 * pr)
       }
-      points(as.numeric(tags[[i]][k, 2]), as.numeric(tags[[i]][k, 3]),
-             col = cols[3], pch = pch[2], cex = cex * (0.5 + 0.8 * pr))
+      if (show_recovery) {
+        points(tx[fr], ty[fr],
+               col = cols[3], pch = pch[2], cex = cex * (0.5 + 0.8 * pr))
+      }
     }
 
   }
@@ -2057,8 +2124,8 @@ plot_tags <- function(x,
 
   if (by_tag) {
 
-    tag_types <- do.call(rbind,tags)$tag_type
-    n <- length(tags)
+    tag_types <- tag_type_int
+    n <- ntag
 
     mfrow <- n2mfrow(n, asp = 2)
     if(auto_layout && !add){
@@ -2069,7 +2136,7 @@ plot_tags <- function(x,
     }
     main <- ""
   } else if (by_tag_type) {
-    tag_types <- unique(do.call(rbind,tags)$tag_type)
+    tag_types <- unique(tag_type_int)
     n <- length(tag_types)
     mfrow <- n2mfrow(n, asp = 2)
     if(auto_layout && !add && n > 1){
@@ -2100,14 +2167,14 @@ plot_tags <- function(x,
     }
 
     if (by_tag) {
-      tags2 <- tags[i]
+      sel <- seq_len(ntag) == i
     } else if (by_tag_type) {
-      tags2 <- tags[which(sapply(tags, function(x) all(x$tag_type == tag_types[i])))]
+      sel <- tag_type_int == tag_types[i]
     } else {
-      tags2 <- tags
+      sel <- rep(TRUE, ntag)
     }
 
-    plot_one(tags2)
+    plot_one(sel)
 
     if (i == 1 || by_tag_type) {
       if (by_tag_type || by_tag) {
@@ -2115,33 +2182,33 @@ plot_tags <- function(x,
                   c("Release", "Resights", "Final resight"),
                   c("Release", "Recovery"),
                   c("Release", "Detection"))[[as.integer(tag_types[i])]]
-      pcho <- list(c(1,16,0),
-                   c(1,16,0),
-                   c(1,0),
-                   c(1,16))[[as.integer(tag_types[i])]]
-      colo <- list(cols[c(2,1,3)],
-                   cols[c(2,1,3)],
-                   cols[c(2,3)],
-                   cols[c(2,1)])[[as.integer(tag_types[i])]]
-      } else if (any(sapply(tags2, nrow) > 2)){
+      roleo <- list(c("release", "path", "recovery"),
+                    c("release", "path", "recovery"),
+                    c("release", "recovery"),
+                    c("release", "path"))[[as.integer(tag_types[i])]]
+      } else if (any(nrow_tag[sel] > 2)){
         labo <- c("Release", "Intermediate obs.", "Final obs.")
-        pcho <- c(1,16,0)
-        colo <- cols[c(2,1,3)]
+        roleo <- c("release", "path", "recovery")
       } else {
         labo <- c("Release", "Recovery")
-        pcho <- c(1,0)
-        colo <- cols[c(2,3)]
+        roleo <- c("release", "recovery")
       }
-      legend(leg_pos,
-             legend = labo,
-             pch = pcho,
-             col = colo,
-             bg = "white")
+      ## symbols and colours as drawn in plot_one()
+      pcho <- c(release = pch[1], path = pch[3], recovery = pch[2])[roleo]
+      colo <- c(release = cols[2], path = cols[1], recovery = cols[3])[roleo]
+      keep <- roleo %in% show
+      if (any(keep)) {
+        legend(leg_pos,
+               legend = labo[keep],
+               pch = pcho[keep],
+               col = colo[keep],
+               bg = "white")
+      }
     }
     box(lwd = 1.5)
     if (by_tag) {
       legend("topleft",
-             legend = round(tags2[[1]][1,1],3),
+             legend = round(tt[first_row[i]],3),
              cex = 0.8,
              pch = NA,
              bg = "white")

@@ -664,8 +664,10 @@ summarise_grid <- function(object, ...) {
 ##'   background.
 ##' @param auto_layout Logical; if \code{TRUE}, graphical parameters are set
 ##'   automatically and restored on exit.
-##' @param xlab Label for the x-axis.
-##' @param ylab Label for the y-axis.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param bg Optional background colour for the plotting device.
 ##' @param ... Additional arguments passed to [plot()].
 ##'
@@ -685,10 +687,14 @@ plot_grid <- function(x,
                       plot_land = FALSE,
                       plot_bg = TRUE,
                       auto_layout = TRUE,
-                      xlab = "x",
-                      ylab = "y",
+                      xlab = NULL,
+                      ylab = NULL,
                       bg = NULL,
                       ...) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
 
   if(inherits(x, "admove_sim") || inherits(x, "admove_data")){
     grid <- x$grid
