@@ -1034,7 +1034,7 @@ if (u == "quarter") {
 }
 
 
-.format_tref_short <- function(x, labw = 15) {
+.format_tref_short <- function(x, labw = 15, show_missing = FALSE) {
   stopifnot(inherits(x, "admove_tref"))
 
   ## Format origin nicely
@@ -1063,6 +1063,12 @@ if (u == "quarter") {
     period_txt <- as.character(x$period)
   }
 
+  if (show_missing) {
+    origin_txt <- origin_txt %||% "not specified"
+    units_txt <- units_txt %||% "not specified"
+    period_txt <- period_txt %||% "none"
+  }
+
   out <- c(
     if (!is.null(origin_txt))
       sprintf(paste0("  %-", labw, "s %s"), "origin:", origin_txt),
@@ -1073,4 +1079,27 @@ if (u == "quarter") {
   )
 
   out
+}
+
+
+##' Print an admove time reference
+##'
+##' Shows the origin, the units of the stored time axis and the seasonal period.
+##' Fields that are not set print as \code{not specified} (the period as
+##' \code{none}).
+##'
+##' @param x An \code{admove_tref} object.
+##' @param ... Further arguments (unused).
+##'
+##' @return \code{x}, invisibly.
+##'
+##' @examples
+##' create_tref(origin = as.Date("2025-01-01"), units = "month")
+##'
+##' @export
+print.admove_tref <- function(x, ...) {
+  cat("admove time reference\n")
+  cat(.format_tref_short(x, show_missing = TRUE), sep = "\n")
+  cat("\n")
+  invisible(x)
 }
