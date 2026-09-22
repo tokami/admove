@@ -1,4 +1,63 @@
-# admove (development version)
+# admove 0.1.7
+
+## Breaking changes
+
+* **CTMC likelihood values change.** Two independent causes. The generator is
+  now built once per covariate slice and scaled by the step, which is exact but
+  re-associates the arithmetic (~3.6e-15 per entry). And with `"align"`/`"auto"`
+  the lattice carries the covariate and spline slice boundaries, so no step
+  spans two slices — a finer discretisation, converging to the old result as
+  `min_dt` shrinks (measured 1.4e-2, 8.4e-6, 4.9e-9, 1.8e-15 at `min_dt` 0.8,
+  0.4, 0.2, 0.1). Set `conf$ctmc_groups = "off"` to reproduce the old lattice.
+  A `conf` saved before this setting existed defaults to `"auto"`.
+
+* `use_release_events()` is removed. It regrouped tags at the data level, one
+  pseudo-tag per release event, which pooled the per-tag likelihoods and moved
+  releases to cell centres. The engine now groups internally without altering
+  the data, keeping `loglik_tags` per tag. Use `set_release_events()`.
+
+## Behaviour changes
+
+* `units_space(x) <- `, `crs(x) <- ` and `crs_scale(x) <- ` now **error** on
+  objects that carry coordinates (`admove_grid`, `admove_cov`, `admove_tags`,
+  `admove_data`). They used to overwrite a single field of the spatial
+  reference, leaving the other two fields *and the coordinates themselves*
+  stale, e.g. `units_space(grid) <- "km"` relabelled a metre grid as km while
+  `crs_scale` stayed 1, and nothing downstream noticed. The error names the
+  function that moves everything together: `scale_sref()`, `add_sref()` or
+  `transform_sref()`.
+
+  On a bare `admove_sref`, which has no coordinates, the same replacement
+  functions now recompute the dependent fields instead of desynchronising:
+  `units_space(sp) <- "km"` on a metre CRS sets `crs_scale` to 0.001.
+
+* `create_sref()` no longer overrides an explicitly supplied `crs_scale`. Its
+  default is now `NULL`, meaning "derive from the CRS unit and `units`";
+  `units` and `crs_scale` are two views of the same thing, so supplying either
+  one is enough and the other follows. Supplying both keeps both, with a
+  warning when they disagree. Previously `create_sref(32631, units = "m",
+  crs_scale = 0.001)` silently returned `crs_scale = 1`, which also discarded
+  the value `add_sref()` and `transform_sref()` had just derived.
+
+  Supplying a `crs_scale` without `units` now labels the units with the
+  composite form `"metre_x_1e-06"` that `.in_m()` already understood, rather
+  than taking the CRS's own unit.
+
+* `create_grid()` without `x`: `xrange`, `yrange` and `cellsize` are now always
+  given in the stored units declared by `units` (or `crs_scale`), and the form
+  of `crs` no longer matters. Previously an `sf::crs` object made the grid be
+  built in the CRS unit and then rescaled, so `create_grid(xrange = c(-400,
+  4700), cellsize = 500, crs = sf::st_crs(aeqd_m), units = "km")` gave a grid
+  spanning -0.4 to 5.1 km (1000 times too small, with no land in view), while
+  the same CRS as a PROJ string gave the intended -400 to 5100 km. Scripts that
+  passed metre ranges with `units = "km"` and an `sf::crs` must now pass km
+  ranges, as in the updated spatial-grids vignette.
+
+* `create_grid()` with `x`: an explicit `xrange` / `yrange` now takes precedence
+  over the extent of `x` for tags, `sf` and raster inputs too, as it already
+  did for grids, covariates and data objects. Tags used to override the
+  supplied range with their bounding box. With tags, a message reports how many
+  tag positions fall outside the supplied range.
 
 ## New features
 
@@ -22,21 +81,25 @@
   (default), `"align"` (aligned lattice, one pass per tag, for isolating a
   discrepancy) and `"off"` (the previous per-tag lattice).
 
-## Breaking changes
+* `print()` method for `admove_sref`, and `summary()` of an `admove_grid` now
+  shows the full spatial reference. Both make explicit that the CRS unit and
+  the stored-coordinate unit are allowed to differ:
 
-* **CTMC likelihood values change.** Two independent causes. The generator is
-  now built once per covariate slice and scaled by the step, which is exact but
-  re-associates the arithmetic (~3.6e-15 per entry). And with `"align"`/`"auto"`
-  the lattice carries the covariate and spline slice boundaries, so no step
-  spans two slices — a finer discretisation, converging to the old result as
-  `min_dt` shrinks (measured 1.4e-2, 8.4e-6, 4.9e-9, 1.8e-15 at `min_dt` 0.8,
-  0.4, 0.2, 0.1). Set `conf$ctmc_groups = "off"` to reproduce the old lattice.
-  A `conf` saved before this setting existed defaults to `"auto"`.
+  ```
+  crs:           Azimuthal Equidistant [custom]
+  datum:         World Geodetic System 1984
+  crs units:     metre
+  stored units:  km
+  crs scale:     1 metre = 0.001 km
+  ```
 
-* `use_release_events()` is removed. It regrouped tags at the data level, one
-  pseudo-tag per release event, which pooled the per-tag likelihoods and moved
-  releases to cell centres. The engine now groups internally without altering
-  the data, keeping `loglik_tags` per tag. Use `set_release_events()`.
+  `crs()` continues to return the CRS of the *unscaled* coordinates and
+  deliberately does not reflect `units_space()`, stored coordinates are CRS
+  coordinates times `crs_scale`, and everything that hands a coordinate to sf
+  divides by `crs_scale` first. See `?crs`.
+
+## Bug fixes
+
 
 # admove 0.1.5
 

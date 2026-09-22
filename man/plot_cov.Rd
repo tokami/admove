@@ -14,8 +14,8 @@ plot_cov(
   labels = TRUE,
   plot_land = FALSE,
   auto_layout = TRUE,
-  xlab = "x",
-  ylab = "y",
+  xlab = NULL,
+  ylab = NULL,
   bg = NULL,
   plot_contour = TRUE,
   xlim = NULL,
@@ -56,9 +56,11 @@ the first time step, or the first element of \code{select}). Default: \code{1}.}
 \item{auto_layout}{Logical; if \code{TRUE}, plotting parameters are set
 automatically and restored afterwards. Default: \code{TRUE}.}
 
-\item{xlab}{Label for the x-axis. Default: \code{"x"}.}
+\item{xlab}{Label for the x-axis. If \code{NULL} (default), \code{"x"} with the
+spatial units in brackets, e.g. \code{"x [km]"} (\code{"lon [°]"} for degrees).}
 
-\item{ylab}{Label for the y-axis. Default: \code{"y"}.}
+\item{ylab}{Label for the y-axis. If \code{NULL} (default), \code{"y"} with the
+spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).}
 
 \item{bg}{Optional background colour for the plot. Default: \code{NULL}.}
 

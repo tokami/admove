@@ -35,10 +35,14 @@ directions. If \code{NULL}, a default value is derived from the spatial
 extent.}
 
 \item{xrange}{Numeric vector of length 2 giving the range of the x
-dimension of the spatial domain. Ignored if extracted from \code{x}.}
+dimension of the spatial domain. If \code{x} is supplied as well,
+\code{xrange} takes precedence over the extent of \code{x} and is given in
+the stored units of \code{x}.}
 
 \item{yrange}{Numeric vector of length 2 giving the range of the y
-dimension of the spatial domain. Ignored if extracted from \code{x}.}
+dimension of the spatial domain. If \code{x} is supplied as well,
+\code{yrange} takes precedence over the extent of \code{x} and is given in
+the stored units of \code{x}.}
 
 \item{select}{Controls which cells are retained in the grid. If
 \code{FALSE} (default), all eligible cells are kept. If \code{TRUE} or an
@@ -53,13 +57,19 @@ lies in water. Uses the bundled Natural Earth 1:110m land polygons and
 requires a CRS in the spatial reference of the grid (see
 \code{\link{add_sref}}) and the \pkg{sf} package.}
 
-\item{crs}{Optional coordinate reference system for the grid.}
+\item{crs}{Optional coordinate reference system for the grid, as an EPSG
+code, a WKT or PROJ string, or an \code{sf::crs} object (all equivalent).
+Ignored if \code{x} carries its own spatial reference.}
 
-\item{units}{Optional spatial units for the grid, for example
-\code{"degree"}, \code{"m"}, or \code{"km"}.}
+\item{units}{Optional spatial units in which the grid is stored, for
+example \code{"degree"}, \code{"m"}, or \code{"km"}. Without \code{x},
+\code{xrange}, \code{yrange} and \code{cellsize} are given in these
+units, which may differ from the unit of \code{crs}: a metre-based
+projection with \code{units = "km"} takes ranges in km. Defaults to the
+unit of \code{crs}.}
 
-\item{crs_scale}{Optional scaling between CRS units and the numeric units
-used in the grid.}
+\item{crs_scale}{Optional scaling between CRS units and the stored units,
+an alternative to \code{units} (see \code{\link{create_sref}}).}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added to plots,
 where supported.}

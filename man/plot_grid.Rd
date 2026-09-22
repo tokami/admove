@@ -13,8 +13,8 @@ plot_grid(
   plot_land = FALSE,
   plot_bg = TRUE,
   auto_layout = TRUE,
-  xlab = "x",
-  ylab = "y",
+  xlab = NULL,
+  ylab = NULL,
   bg = NULL,
   ...
 )
@@ -41,9 +41,11 @@ background.}
 \item{auto_layout}{Logical; if \code{TRUE}, graphical parameters are set
 automatically and restored on exit.}
 
-\item{xlab}{Label for the x-axis.}
+\item{xlab}{Label for the x-axis. If \code{NULL} (default), \code{"x"} with the
+spatial units in brackets, e.g. \code{"x [km]"} (\code{"lon [°]"} for degrees).}
 
-\item{ylab}{Label for the y-axis.}
+\item{ylab}{Label for the y-axis. If \code{NULL} (default), \code{"y"} with the
+spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).}
 
 \item{bg}{Optional background colour for the plotting device.}
 

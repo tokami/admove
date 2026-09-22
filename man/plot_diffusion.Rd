@@ -15,8 +15,8 @@ plot_diffusion(
   image_bg = TRUE,
   auto_layout = TRUE,
   add = FALSE,
-  xlab = "x",
-  ylab = "y",
+  xlab = NULL,
+  ylab = NULL,
   xaxt = "s",
   yaxt = "s",
   bg = NULL,
@@ -54,9 +54,11 @@ restored automatically. Default: \code{TRUE}.}
 \item{add}{Logical; if \code{TRUE}, diffusion is added to an existing plot. If
 \code{FALSE} (default), a new plot is created.}
 
-\item{xlab}{Label for the x-axis. Default: \code{"x"}.}
+\item{xlab}{Label for the x-axis. If \code{NULL} (default), \code{"x"} with the
+spatial units in brackets, e.g. \code{"x [km]"} (\code{"lon [°]"} for degrees).}
 
-\item{ylab}{Label for the y-axis. Default: \code{"y"}.}
+\item{ylab}{Label for the y-axis. If \code{NULL} (default), \code{"y"} with the
+spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).}
 
 \item{xaxt}{A character specifying the x-axis type, passed to \code{\link[=plot]{plot()}}.
 Default: \code{"s"}.}

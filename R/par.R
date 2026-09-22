@@ -35,38 +35,54 @@
 ##'
 ##' Because `kappa` has units of \eqn{[\text{distance}^2 / \text{time}]}, a
 ##' value of 1 is only appropriate when coordinates are already on a unit scale.
-##' The default is instead anchored on observed movement: a preference function
-##' with unit range over the tag-sampled covariate range \eqn{R} has
-##' \eqn{|dh/dcov| \approx 1/R}, so the drift accumulated over a time \eqn{T} is
-##' \eqn{\kappa (G/R) T}, with \eqn{G} the typical covariate gradient at the tag
-##' positions. Equating that to a characteristic displacement \eqn{L} gives
+##' The default instead balances the information the data carry about `alpha`
+##' against that about the diffusion. A unit change of one `alpha` coefficient
+##' changes the preference slope by about \eqn{1/\Delta k}, with \eqn{\Delta k}
+##' the spacing of the taxis knots, and so shifts the predicted position by
+##' \eqn{\kappa G T / \Delta k} over a time \eqn{T}, with \eqn{G} the covariate
+##' gradient. Against the diffusive spread \eqn{2 D T} per axis, that carries
+##' information \eqn{(\kappa G / \Delta k)^2 T / (2 D)}, while the log
+##' diffusion carries information of order one per step. Equating the two gives
 ##'
-##' \deqn{\kappa = L R / (G T),}
+##' \deqn{\kappa = \Delta k \sqrt{2 D_0 / T} / G,}
 ##'
-##' where \eqn{L} and \eqn{T} are the median displacement and the median time
-##' between successive observations, and \eqn{R} and \eqn{G} are evaluated at the
-##' tag positions and reduced across the `cov_taxis` covariates by their median.
-##' Only the tag types enabled in `conf` contribute, since `dat$tags` may still
-##' carry types that `conf` switches off.
+##' where \eqn{T} is the median time between successive observations, \eqn{D_0}
+##' the diffusion starting value (see below), and \eqn{G} the root mean square
+##' gradient at the tag positions (the information adds up \eqn{G^2}, so a few
+##' steep-gradient positions count for more than the median suggests). Without
+##' taxis knots, \eqn{\Delta k} falls back to the tag-sampled covariate range.
+##' Per covariate the values are reduced by their median across the `cov_taxis`
+##' covariates. Only the tag types enabled in `conf` contribute, since
+##' `dat$tags` may still carry types that `conf` switches off.
 ##'
-##' \eqn{L} and \eqn{T} are computed **per tag type** and the resulting
+##' \eqn{D_0} and \eqn{T} are computed **per tag type** and the resulting
 ##' \eqn{\kappa_{type}} combined by their geometric mean, rather than pooling all
 ##' steps into one median. Tag types differ in their step scale by construction
 ##' -- a mark-recapture tag contributes one net displacement over months, a
 ##' data-storage tag hundreds of daily increments -- so a median over the pooled
-##' steps takes \eqn{T} from whichever type has more steps and \eqn{L} from the
-##' mixture, and can land outside the range of the per-type values. The
+##' steps takes \eqn{T} from whichever type has more steps and \eqn{D_0} from
+##' the mixture, and can land outside the range of the per-type values. The
 ##' geometric mean is the natural average for a multiplicative scale factor and
 ##' always lies between them.
+##'
+##' The diffusion coefficients `beta` start at a flat diffusion
+##' \eqn{D_0 = \mathrm{median}(d^2 / \Delta t) / (4 \log 2)}, from the
+##' displacements \eqn{d} over the times \eqn{\Delta t} between successive
+##' observations: under the model \eqn{d^2 / \Delta t} is exponential with mean
+##' \eqn{4 D}. Drift and observation error bias it upwards. Starting at
+##' \eqn{D = 1} in data units instead can leave the optimizer stuck orders of
+##' magnitude away from the fitted diffusion, in particular when coordinates are
+##' in km or m.
 ##'
 ##' If the quantities above cannot be computed (no covariates, no tags, or a
 ##' covariate with no spatial variation), the function falls back to the earlier
 ##' rule `kappa = cellsize^2 / median_dt` and, failing that, to `kappa = 1`.
 ##'
-##' Override via `par$logKappa <- log(<value>)` after calling this function. The
-##' fit is insensitive to the exact value -- anything within roughly an order of
-##' magnitude gives the same optimum -- so this only needs to be in the right
-##' range, not finely tuned.
+##' Override via `par$logKappa <- log(<value>)` after calling this function.
+##' The value does not change the likelihood, but it does change the path of the
+##' optimizer: when the objective has several local optima in `alpha`, fits with
+##' different `kappa` can end in different ones. Compare their objective values
+##' rather than taking either at face value.
 ##'
 ##' @return
 ##' A named list of initial parameter values.
@@ -120,6 +136,29 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
                             ncol(knots_dif),
                             max_seasonal))
 
+  ## Start at a flat diffusion D0 matched to the observed displacements. The
+  ## smooths add up across covariates and default_map() frees the first knot of
+  ## covariate j0 only, so log(D0) goes on every knot of j0 and nowhere else;
+  ## a start at 0 (D = 1 in data units) can leave nlminb stuck at a diffusion
+  ## that is orders of magnitude off.
+  tags_use <- .get_tags_in_use(dat, conf)
+  D0_type <- .diffusion_by_tag_type(tags_use)
+  if (length(D0_type) > 0) {
+    D0 <- exp(mean(log(D0_type)))
+    j0 <- which.max(rep_len(.get_nsea(dat), ncol(knots_dif)))
+    par$beta[, j0, ] <- log(D0)
+    if (verbose) {
+      us <- tryCatch(units_space(dat), error = function(e) NA)
+      ut <- tryCatch(units_time(dat), error = function(e) NA)
+      unit_txt <- if (length(us) == 1L && length(ut) == 1L &&
+                        !is.na(us) && !is.na(ut)) {
+        paste0(" ", us, "^2/", ut)
+      } else ""
+      message("Diffusion started at ", signif(D0, 4), unit_txt,
+              " from the observed tag displacements.")
+    }
+  }
+
   ## Advection ----------------------------------------
 
   if (is.null(dat$cov)) {
@@ -136,12 +175,11 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 
   ## Taxis scaling -------------------------------------
   ## kappa is a pure scale factor (only kappa * alpha is identifiable), so its
-  ## job is to put alpha on an O(1) scale. Anchor it on observed movement,
-  ## kappa = L * R / (G * T), rather than on the integration step -- see the
-  ## @details section above. Only the tag types enabled in conf are used, only
-  ## the cov_taxis covariates enter the median across covariates, and the tag
-  ## types are reduced separately and then combined.
-  tags_use <- .get_tags_in_use(dat, conf)
+  ## job is to put alpha on an O(1) scale. Balance the information on alpha
+  ## against that on the diffusion, kappa = dk * sqrt(2 * D0 / T) / G. Only the
+  ## tag types enabled in conf are used, only the cov_taxis covariates enter the
+  ## median across covariates, and the tag types are reduced separately and then
+  ## combined. See dev/code_notes.org, "Starting values: kappa and diffusion".
   idx_tax <- .resolve_cov_taxis(cov_taxis, dat)
   steps <- .get_tag_steps(tags_use)
 
@@ -227,12 +265,12 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 }
 
 
-## kappa = L * R / (G * T) evaluated separately for each tag type present, named
-## by the tag type letter. Pooling the steps of different tag types would take T
-## from whichever type contributes the most steps (a handful of data-storage
-## tags sampled daily outnumber thousands of mark-recapture displacements) and L
-## from the mixture of both, giving a value that need not lie between the
-## per-type ones.
+## kappa = dk * sqrt(2 * D0 / T) / G evaluated separately for each tag type
+## present, named by the tag type letter. Pooling the steps of different tag
+## types would take T from whichever type contributes the most steps (a handful
+## of data-storage tags sampled daily outnumber thousands of mark-recapture
+## displacements) and D0 from the mixture of both, giving a value that need not
+## lie between the per-type ones.
 .kappa_by_tag_type <- function(dat, tags, idx) {
 
   out <- numeric(0)
@@ -242,25 +280,73 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
     return(out)
   }
 
-  for (ty in unique(as.character(tags$tag_type))) {
+  dk <- .knot_spacing(dat$knots_tax, idx)
+  D0_type <- .diffusion_by_tag_type(tags)
+
+  for (ty in names(D0_type)) {
 
     tt <- tags[as.character(tags$tag_type) == ty, , drop = FALSE]
 
     steps <- .get_tag_steps(tt)
-    if (is.null(steps)) next
-
     tl <- median(steps$dt[steps$dt > 0], na.rm = TRUE)
-    ll <- median(steps$dl[steps$dl > 0], na.rm = TRUE)
-    if (!is.finite(tl) || tl <= 0 || !is.finite(ll) || ll <= 0) next
+    if (!is.finite(tl) || tl <= 0) next
 
     cs_sum <- .cov_scales_at_tags(dat, tt, idx)
-    ki <- ll * cs_sum$range / (cs_sum$grad * tl)
+    ## no knot spacing (knots not set yet): one unit of alpha over the sampled
+    ## covariate range instead
+    step_cov <- ifelse(is.finite(dk) & dk > 0, dk, cs_sum$range)
+    ki <- step_cov * sqrt(2 * D0_type[[ty]] / tl) / cs_sum$grad_rms
     ki <- ki[is.finite(ki) & ki > 0]
     if (length(ki) > 0) out[ty] <- median(ki)
   }
 
   out
 }
+
+
+## Mean spacing of the taxis knots per covariate, following `idx`. NA where the
+## knots are missing or constant (a covariate without a taxis smooth).
+.knot_spacing <- function(knots, idx) {
+
+  out <- rep(NA_real_, length(idx))
+  if (is.null(knots)) return(out)
+  knots <- as.matrix(knots)
+
+  for (k in seq_along(idx)) {
+    if (idx[k] > ncol(knots)) next
+    kn <- knots[, idx[k]]
+    kn <- kn[is.finite(kn)]
+    if (length(kn) < 2) next
+    d <- diff(range(kn)) / (length(kn) - 1)
+    if (d > 0) out[k] <- d
+  }
+
+  out
+}
+
+
+## Flat diffusion matching the displacements, per tag type. Under the KF each
+## axis gains variance 2 * D * dt, so dl^2 / dt is exponential with mean 4 * D
+## and median 4 * D * log(2). The median keeps a few long, directed steps from
+## dominating; drift and observation error still bias D0 upwards, which is the
+## safe side for a starting value.
+.diffusion_by_tag_type <- function(tags) {
+
+  out <- numeric(0)
+  if (is.null(tags) || nrow(tags) == 0) return(out)
+
+  for (ty in unique(as.character(tags$tag_type))) {
+    steps <- .get_tag_steps(tags[as.character(tags$tag_type) == ty, , drop = FALSE])
+    if (is.null(steps)) next
+    ok <- is.finite(steps$dt) & steps$dt > 0 & is.finite(steps$dl)
+    if (!any(ok)) next
+    d0 <- median(steps$dl[ok]^2 / steps$dt[ok]) / (4 * log(2))
+    if (is.finite(d0) && d0 > 0) out[ty] <- d0
+  }
+
+  out
+}
+
 
 ## Subset the tags to the types enabled in conf. dat$tags may still carry types
 ## that conf switches off (check_tags() only drops them inside admove()), and
@@ -345,7 +431,7 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 
 
 ## Per covariate: the range of the values the tags actually sampled and the
-## median gradient magnitude at the tag positions. Uses nearest-cell lookup
+## median and root mean square gradient magnitude at the tag positions. Uses nearest-cell lookup
 ## rather than interpolation -- kappa only has to be right to within an order of
 ## magnitude, and this avoids building interpolators for every time slice.
 ## `idx` restricts the work to the covariates that carry the taxis; the returned
@@ -354,8 +440,11 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 
   rng <- rep(NA_real_, length(idx))
   grd <- rep(NA_real_, length(idx))
+  grd_rms <- rep(NA_real_, length(idx))
 
-  if (is.null(tags) || nrow(tags) == 0) return(list(range = rng, grad = grd))
+  if (is.null(tags) || nrow(tags) == 0) {
+    return(list(range = rng, grad = grd, grad_rms = grd_rms))
+  }
 
   for (k in seq_along(idx)) {
 
@@ -390,10 +479,13 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 
     if (any(is.finite(vals))) rng[k] <- diff(range(vals[is.finite(vals)]))
     gok <- gmag[is.finite(gmag) & gmag > 0]
-    if (length(gok) > 0) grd[k] <- median(gok)
+    if (length(gok) > 0) {
+      grd[k] <- median(gok)
+      grd_rms[k] <- sqrt(mean(gok^2))
+    }
   }
 
-  list(range = rng, grad = grd)
+  list(range = rng, grad = grd, grad_rms = grd_rms)
 }
 
 

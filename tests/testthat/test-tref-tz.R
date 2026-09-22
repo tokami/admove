@@ -108,3 +108,9 @@ test_that("an existing time reference can be rebuilt with create_tref", {
 
   expect_equal(create_tref(tref2$origin, tref2$units, tref2$period), tref2)
 })
+
+
+test_that("print.admove_tref shows origin, units and period", {
+  expect_snapshot(print(create_tref(origin = as.Date("2025-01-01"), units = "month")))
+  expect_snapshot(print(create_tref()))
+})

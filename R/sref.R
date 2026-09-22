@@ -13,22 +13,45 @@
 ##' display/model units} (e.g. km), while \code{crs} still defines the underlying
 ##' standard CRS (typically meters). The \code{crs_scale} links the two.
 ##'
+##' \code{units} may legitimately differ from the unit of \code{crs} itself: a
+##' metre-based projection whose coordinates are stored in km is the common case
+##' (\code{crs_scale = 0.001}). \code{\link{crs}} therefore keeps returning the
+##' CRS of the \emph{unscaled} coordinates and does not reflect \code{units}.
+##'
+##' \code{units} and \code{crs_scale} are two views of the same thing, so only
+##' one of them has to be given: the missing one is derived from the CRS unit.
+##' If both are given they are kept as supplied, with a warning when they
+##' disagree. Scalings without a unit name are labelled with the composite form
+##' \code{"metre_x_1e-06"}.
+##'
 ##' @param crs CRS specification. Can be WKT/PROJ string, EPSG integer, or an
 ##'   \code{sf::crs} input.
 ##' @param units Character string describing units of stored coordinates, e.g.
-##'   \code{"m"}, \code{"km"}, \code{"degree"}.
+##'   \code{"m"}, \code{"km"}, \code{"degree"}. If missing, derived from
+##'   \code{crs} and \code{crs_scale}.
 ##' @param crs_scale Numeric scalar conversion factor from CRS units to stored
 ##'   units. For example, if CRS is meters and stored coordinates are kilometers,
-##'   \code{crs_scale = 0.001}.
+##'   \code{crs_scale = 0.001}. If \code{NULL} (default), derived from the CRS
+##'   unit and \code{units}.
 ##'
 ##' @return An object of class \code{admove_sref}.
 ##'
+##' @seealso \code{\link{crs}}, \code{\link{units_space}},
+##'   \code{\link{crs_scale}}, \code{\link{scale_sref}}
+##'
 ##' @examples
-##' sp <- create_sref(crs = 32631, units = "km", crs_scale = 0.001)
-##' sp
+##' ## metre-based projection, coordinates stored in km
+##' create_sref(crs = 32631, units = "km")
+##'
+##' ## equivalently, by the scaling
+##' create_sref(crs = 32631, crs_scale = 0.001)
 ##'
 ##' @export
-create_sref <- function(crs = NA, units = NA_character_, crs_scale = 1) {
+## crs, units and crs_scale describe one relation (stored = crs_coord *
+## crs_scale) and crs deliberately keeps its own unit, so anything handing a
+## stored coordinate to sf/terra must divide by crs_scale first.
+## See dev/code_notes.org, "Spatial reference: CRS units vs stored units".
+create_sref <- function(crs = NA, units = NA_character_, crs_scale = NULL) {
 
   ## crs
   if (is.null(crs)) {
@@ -42,20 +65,38 @@ create_sref <- function(crs = NA, units = NA_character_, crs_scale = 1) {
     }
   } else crs_sf <- NA
 
-  ## units
+  ## unit of the CRS itself, which is not the unit of the stored coordinates
   if (!is.null(crs_sf) && !is.na(crs_sf) && !is.null(crs_sf$units_gdal)) {
     units_crs <- crs_sf$units_gdal
   } else units_crs <- NA
-  if (is.null(units) || is.na(units)) {
-    units <- units_crs
-  }
 
-  if (!is.na(units) && !is.na(units_crs)) {
-    crs_scale <- .in_m(units_crs) / .in_m(units)
+  units_given <- !(is.null(units) || .is_na_scalar(units))
+  crs_scale_given <- !(is.null(crs_scale) || length(crs_scale) == 0L ||
+                         .is_na_scalar(crs_scale))
+
+  ## 'units' and 'crs_scale' are two views of the same thing, so derive whichever
+  ## is missing rather than overriding what the caller passed: add_sref() and
+  ## transform_sref() hand their already-derived crs_scale straight to here, and
+  ## it must survive. See dev/code_notes.org, "Spatial reference: CRS units vs
+  ## stored units".
+  if (!units_given && !crs_scale_given) {
+    units <- units_crs
+  } else if (!units_given) {
+    units <- .units_from_scale(units_crs, crs_scale)
+  } else if (!crs_scale_given) {
+    if (!.is_na_scalar(units_crs)) crs_scale <- .in_m(units_crs) / .in_m(units)
+  } else {
+    implied <- .in_m(units_crs) / .in_m(units)
+    if (!is.na(implied) && is.finite(implied) &&
+          !isTRUE(all.equal(implied, crs_scale))) {
+      warning("'crs_scale' (", format(crs_scale), ") does not match 'units' (\"",
+              units, "\") for a CRS in ", units_crs, ", which implies ",
+              format(implied), ". Keeping the supplied 'crs_scale'.")
+    }
   }
 
   ## crs_scale
-  if (is.null(crs_scale) || is.na(crs_scale) || length(crs_scale) == 0) {
+  if (is.null(crs_scale) || length(crs_scale) == 0 || is.na(crs_scale)) {
     if ((!is.null(crs) && !is.na(crs)) || (!is.na(units) && !is.null(units))) {
       crs_scale <- 1
     } else {
@@ -82,10 +123,14 @@ validate_sref <- function(x) {
   if (!inherits(x, "admove_sref")) {
     stop("'x' must inherit from class 'admove_sref'.")
   }
-  ## if (!is.numeric(x$crs_scale) || length(x$crs_scale) != 1 ||
-  ##     is.na(x$crs_scale) || !is.finite(x$crs_scale) || x$crs_scale <= 0) {
-  ##   stop("'crs_scale' must be a single positive finite number.")
-  ## }
+  ## NA is allowed (an sref with neither crs nor units), anything else must be a
+  ## usable factor: a silently invalid crs_scale desynchronises every stored
+  ## coordinate from its CRS.
+  cs <- x$crs_scale
+  if (!is.null(cs) && length(cs) == 1L && !is.na(cs) &&
+        (!is.numeric(cs) || !is.finite(cs) || cs <= 0)) {
+    stop("'crs_scale' must be a single positive finite number.")
+  }
   x
 }
 
@@ -542,7 +587,6 @@ scale_sref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
 
   } else if (inherits(x, "admove_data")) {
 
-    browser()
     x$x <- x$x * scale
     x$y <- x$y * scale
 
@@ -558,7 +602,6 @@ scale_sref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
 
   ## update units label where possible
   u <- sp$units
-  eps <- 1e-10
 
   u_split <- strsplit(u, "_x_")[[1]]
   if (length(u_split) == 2) {
@@ -566,15 +609,7 @@ scale_sref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
     scale <- scale * as.numeric(u_split[2])  ## same as updated sp$crs_scale
   } else if (length(u_split) != 1) stop("Not sure what to do.")
 
-  if (isTRUE(abs(scale - 0.001) < eps) &&
-        u %in% c("meter", "metre", "m")) {
-    sp$units <- "km"
-  } else if (isTRUE(abs(scale - 1e3) < eps) &&
-               u %in% c("kilometer", "kilometre", "km")) {
-    sp$units <- "m"
-  } else if (isTRUE(abs(scale - 1) > eps)) {
-    sp$units <- paste0(u, "_x_", format(scale, scientific = TRUE))
-  }
+  sp$units <- .units_from_scale(u, scale)
 
   sref(x) <- sp
   x
@@ -625,6 +660,34 @@ sref_equal <- function(a, b, tol = 1e-12) {
 
 
 ## Internal functions -----------------------------------------------------------
+
+## crs(), units_space() and crs_scale() describe one relation together
+## (stored = crs_coord * crs_scale), so setting one field of an object that
+## carries coordinates would leave the other two, and the coordinates, stale.
+## add_sref() / scale_sref() / transform_sref() move all of them at once; the
+## replacement functions refuse instead of desynchronising silently.
+.stop_sref_setter <- function(field, value = NULL) {
+
+  units_target <- if (is.character(value) && length(value) == 1L) value else "km"
+
+  hint <- switch(
+    field,
+    crs = paste0("Use transform_sref() or add_sref(..., transform_crs = TRUE) ",
+                 "to adopt a new CRS while preserving the represented locations."),
+    units_space = paste0("Use scale_sref(x, units = \"", units_target,
+                         "\") to rescale the coordinates along with the ",
+                         "spatial reference."),
+    crs_scale = paste0("Use scale_sref(x, scale = ",
+                       if (is.numeric(value) && length(value) == 1L) format(value) else "<target>",
+                       " / crs_scale(x)) to rescale the coordinates along with ",
+                       "the spatial reference."),
+    "Use add_sref(), scale_sref() or transform_sref()."
+  )
+
+  stop("Changing '", field, "' on this object would desynchronise its stored ",
+       "coordinates from its spatial reference. ", hint, call. = FALSE)
+}
+
 
 ##' Guess a coordinate scaling factor from a spatial reference (sref)
 ##'
@@ -745,6 +808,36 @@ sref_equal <- function(a, b, tol = 1e-12) {
   if (u %in% c("nmi", "nauticalmile", "nautical_mile", "nmile")) res <- 1852
 
   res * res2
+}
+
+## Inverse of .in_m(): the label for a unit that is 'scale' relative to
+## 'units_base', i.e. stored = base_coord * scale. Used both with the CRS unit
+## and an absolute crs_scale (create_sref(), crs_scale<-) and with the current
+## stored unit and a relative rescaling (scale_sref()). Scalings without a unit
+## name get the composite "<unit>_x_<factor>" label that .in_m() parses back, so
+## .units_from_scale() and .in_m() must stay round-trip consistent.
+.units_from_scale <- function(units_base, scale) {
+
+  if (is.null(units_base) || .is_na_scalar(units_base) ||
+        is.null(scale) || length(scale) != 1L || is.na(scale) ||
+        !is.finite(scale) || scale <= 0) {
+    return(NA_character_)
+  }
+
+  eps <- 1e-10
+  u <- .normalise_unit(units_base)
+
+  if (isTRUE(abs(scale - 1) < eps)) return(units_base)
+
+  if (isTRUE(abs(scale - 1e-3) < eps) && u %in% c("m", "meter", "metre")) {
+    return("km")
+  }
+
+  if (isTRUE(abs(scale - 1e3) < eps) && u %in% c("km", "kilometer", "kilometre")) {
+    return("m")
+  }
+
+  paste0(u, "_x_", format(scale, scientific = TRUE))
 }
 
 
@@ -918,12 +1011,6 @@ sref_equal <- function(a, b, tol = 1e-12) {
 
 
 .extract_wkt_name <- function(wkt, key) {
-  m <- regexec(paste0(key, '\\["([^"]+)"'), wkt)
-  mm <- regmatches(wkt, m)[[1]]
-  if (length(mm) >= 2) mm[2] else NA_character_
-}
-
-.extract_wkt_name <- function(wkt, key) {
   if (is.null(wkt) || length(wkt) != 1L || is.na(wkt) || !nzchar(wkt)) {
     return(NA_character_)
   }
@@ -1090,4 +1177,28 @@ st_crs.admove_tags <- function(x, ...) {
     stop("Package 'sf' is required for st_crs(). Please install it.")
   }
   sf::st_crs(crs(x))
+}
+
+
+##' Print an admove spatial reference
+##'
+##' Shows the CRS together with its own unit, the unit of the stored coordinates
+##' and the factor linking them. These are deliberately allowed to differ: a
+##' metre-based projection whose coordinates are stored in km prints as
+##' \code{crs units: metre}, \code{stored units: km}, \code{1 metre = 0.001 km}.
+##'
+##' @param x An \code{admove_sref} object.
+##' @param ... Further arguments (unused).
+##'
+##' @return \code{x}, invisibly.
+##'
+##' @examples
+##' create_sref(crs = 32631, units = "km")
+##'
+##' @export
+print.admove_sref <- function(x, ...) {
+  cat("admove spatial reference\n")
+  cat(.format_sref_short(x), sep = "\n")
+  cat("\n")
+  invisible(x)
 }

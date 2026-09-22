@@ -435,8 +435,10 @@ prep_cov <- function(x,
 ##'   `FALSE`.
 ##' @param auto_layout Logical; if `TRUE`, plotting parameters are set
 ##'   automatically and restored afterwards. Default: `TRUE`.
-##' @param xlab Label for the x-axis. Default: `"x"`.
-##' @param ylab Label for the y-axis. Default: `"y"`.
+##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
+##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
+##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
+##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param bg Optional background colour for the plot. Default: `NULL`.
 ##' @param plot_contour Logical; if `TRUE`, add contour lines. Default:
 ##'   `TRUE`.
@@ -482,8 +484,8 @@ plot_cov <- function(x,
                      labels = TRUE,
                      plot_land = FALSE,
                      auto_layout = TRUE,
-                     xlab = "x",
-                     ylab = "y",
+                     xlab = NULL,
+                     ylab = NULL,
                      bg = NULL,
                      plot_contour = TRUE,
                      xlim = NULL,
@@ -495,6 +497,10 @@ plot_cov <- function(x,
                      land_col = grey(0.85),
                      land_border = grey(0.5),
                      ...) {
+
+  map_labs <- .map_labs(x)
+  if (is.null(xlab)) xlab <- map_labs[1]
+  if (is.null(ylab)) ylab <- map_labs[2]
 
   xlim0 <- xlim
   ylim0 <- ylim

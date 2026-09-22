@@ -13,13 +13,14 @@ plot_tags(
   xlim = NULL,
   ylim = NULL,
   add = FALSE,
-  xlab = "x",
-  ylab = "y",
+  xlab = NULL,
+  ylab = NULL,
   leg_pos = "topright",
   labels = FALSE,
   bg = NULL,
   by_tag_type = TRUE,
   by_tag = FALSE,
+  show = c("release", "recovery", "path"),
   col = c(adjustcolor("grey60", 0.3), .admove_cols(2)),
   pch = c(1, 0, 16),
   cex = 0.8,
@@ -45,9 +46,11 @@ automatically and restored afterwards. Default: \code{TRUE}.}
 
 \item{add}{Logical; if \code{TRUE}, add to an existing plot. Default: \code{FALSE}.}
 
-\item{xlab}{Label for the x-axis. Default: \code{"x"}.}
+\item{xlab}{Label for the x-axis. If \code{NULL} (default), \code{"x"} with the
+spatial units in brackets, e.g. \code{"x [km]"} (\code{"lon [°]"} for degrees).}
 
-\item{ylab}{Label for the y-axis. Default: \code{"y"}.}
+\item{ylab}{Label for the y-axis. If \code{NULL} (default), \code{"y"} with the
+spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).}
 
 \item{leg_pos}{Position of the legend. Default: \code{"topright"}.}
 
@@ -61,6 +64,12 @@ Default: \code{TRUE}.}
 
 \item{by_tag}{Logical; if \code{TRUE}, create separate panels for individual tags.
 Default: \code{FALSE}.}
+
+\item{show}{Character vector naming the elements to draw: any of
+\code{"release"} (release positions), \code{"recovery"} (recovery or final
+observation positions) and \code{"path"} (trajectories, intermediate
+observations and release-recovery segments). Legend entries of elements
+not drawn are dropped. Default: all three.}
 
 \item{col}{Character vector of length 1 to 3 giving colours for tag paths,
 release positions, and recovery or final observation positions.}
@@ -96,5 +105,13 @@ panel.
 }
 \examples{
 plot_tags(skjepo$sim$tags)
+
+## release and recovery positions in separate panels
+op <- par(mfrow = c(1, 2))
+plot_tags(skjepo$sim$tags, show = "release", main = "Release",
+          by_tag_type = FALSE, auto_layout = FALSE)
+plot_tags(skjepo$sim$tags, show = "recovery", main = "Recovery",
+          by_tag_type = FALSE, auto_layout = FALSE)
+par(op)
 
 }

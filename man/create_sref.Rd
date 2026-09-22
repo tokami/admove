@@ -4,18 +4,20 @@
 \alias{create_sref}
 \title{Spatial reference for admove objects}
 \usage{
-create_sref(crs = NA, units = NA_character_, crs_scale = 1)
+create_sref(crs = NA, units = NA_character_, crs_scale = NULL)
 }
 \arguments{
 \item{crs}{CRS specification. Can be WKT/PROJ string, EPSG integer, or an
 \code{sf::crs} input.}
 
 \item{units}{Character string describing units of stored coordinates, e.g.
-\code{"m"}, \code{"km"}, \code{"degree"}.}
+\code{"m"}, \code{"km"}, \code{"degree"}. If missing, derived from
+\code{crs} and \code{crs_scale}.}
 
 \item{crs_scale}{Numeric scalar conversion factor from CRS units to stored
 units. For example, if CRS is meters and stored coordinates are kilometers,
-\code{crs_scale = 0.001}.}
+\code{crs_scale = 0.001}. If \code{NULL} (default), derived from the CRS
+unit and \code{units}.}
 }
 \value{
 An object of class \code{admove_sref}.
@@ -33,9 +35,27 @@ throughout \pkg{admove}. It bundles:
 The intention is that \emph{objects store their coordinates in the chosen
 display/model units} (e.g. km), while \code{crs} still defines the underlying
 standard CRS (typically meters). The \code{crs_scale} links the two.
+
+\code{units} may legitimately differ from the unit of \code{crs} itself: a
+metre-based projection whose coordinates are stored in km is the common case
+(\code{crs_scale = 0.001}). \code{\link{crs}} therefore keeps returning the
+CRS of the \emph{unscaled} coordinates and does not reflect \code{units}.
+
+\code{units} and \code{crs_scale} are two views of the same thing, so only
+one of them has to be given: the missing one is derived from the CRS unit.
+If both are given they are kept as supplied, with a warning when they
+disagree. Scalings without a unit name are labelled with the composite form
+\code{"metre_x_1e-06"}.
 }
 \examples{
-sp <- create_sref(crs = 32631, units = "km", crs_scale = 0.001)
-sp
+## metre-based projection, coordinates stored in km
+create_sref(crs = 32631, units = "km")
 
+## equivalently, by the scaling
+create_sref(crs = 32631, crs_scale = 0.001)
+
+}
+\seealso{
+\code{\link{crs}}, \code{\link{units_space}},
+\code{\link{crs_scale}}, \code{\link{scale_sref}}
 }

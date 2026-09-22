@@ -18,8 +18,8 @@ plot_pref_grid(
   plot_land = FALSE,
   auto_layout = TRUE,
   add = FALSE,
-  xlab = "x",
-  ylab = "y",
+  xlab = NULL,
+  ylab = NULL,
   bg = NULL,
   asp = 2,
   ...
@@ -63,9 +63,11 @@ automatically. Default is \code{TRUE}.}
 \item{add}{Logical; if \code{TRUE}, the preference surface is added to an
 existing plot. If \code{FALSE} (default), a new plot is created.}
 
-\item{xlab}{Label for the x-axis. Default is \code{"x"}.}
+\item{xlab}{Label for the x-axis. If \code{NULL} (default), \code{"x"} with the
+spatial units in brackets, e.g. \code{"x [km]"} (\code{"lon [°]"} for degrees).}
 
-\item{ylab}{Label for the y-axis. Default is \code{"y"}.}
+\item{ylab}{Label for the y-axis. If \code{NULL} (default), \code{"y"} with the
+spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).}
 
 \item{bg}{Optional background colour for the plotting device. If \code{NULL}
 (default), the current background setting is used.}
