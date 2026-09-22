@@ -352,44 +352,10 @@ plot_compare(sim = skjepo$sim,
 # Advanced settings
 
 There are several advanced settings in *admove* that will be covered in future
-vignettes. However, this vignette highlights three important ones: (i) grouping
-tags into release events to speed up model fitting, (ii) using CTMC engine as an
-alternative to the KF engine, and (iii) map parameters to fix or exclude
-them during estimation.
-
-It is common for multiple tags to be released at the same location and time, in
-particular for mark-recapture tags. Grouping these tags into release events can
-significantly speed up the movement modeling, as the analysis is performed per
-event rather than per individual tag. The potential loss in accuracy is likely
-minimal and can be evaluated through sensitivity analyses, while the grouped
-approach is recommended for the baseline scenario due to its efficiency. The
-`use_release_event` function enables this grouping by assigning tags to release
-events based on a specified spatial grid and time vector.
-
-```{r}
-tags <- use_release_events(c(ctags, dtags),
-                           grid = create_grid(xrange = dat$xrange,
-                                              yrange = dat$yrange,
-                                              cellsize = 100),
-                           time_cont = seq(dat$trange[1],
-                                           dat$trange[2],
-                                           1/4))
-```
-
-The release time and position of the mark-recapture tags has now been
-overwritten to the values of the release events and the individual tags have
-been combined to the individual release events:
-
-```{r}
-ctags <- get_ctags(tags)
-
-str(split(ctags, ctags$id),1)
-```
-
-While the function could also identify release events for data-storage and
-mark-resight tags using the argument `tag_types = c("d","s","c")`, this might
-lead to unintended consequences when using the KF engine which includes an
-update step.
+vignettes. However, this vignette highlights three important ones: (i) using
+the CTMC engine as an alternative to the KF engine, (ii) grouping tags into
+release events to speed up the CTMC engine, and (iii) map parameters to fix or
+exclude them during estimation.
 
 By default, *admove* uses the Kalman filter approach as described in
 AUTHOR_PAPER. However, it also supports an alternative method based on
@@ -401,6 +367,42 @@ approach, simply set `engine = "ctmc"`.
 conf <- default_conf(dat)
 conf$engine <- "ctmc"
 ```
+
+It is common for multiple tags to be released at the same location and time, in
+particular for mark-recapture tags. The CTMC engine groups such tags into
+release events: tags released together share one forward pass through the
+likelihood instead of repeating an identical one each, which can speed up the
+fit considerably. This grouping is on by default (`conf$ctmc_groups = "auto"`)
+and exact, as it only groups tags released in the same grid cell at the same
+time. It does not alter the data, and the likelihood contribution of each tag
+is still reported separately. Only tags whose predicted position is never
+updated by an observation can be grouped, which with the default configuration
+are the mark-recapture tags; data-storage and mark-resight tags are updated at
+each observation and always keep their own pass.
+
+The grouping can be configured with `set_release_events()`, which stores it
+in the data list. Without further arguments it records the default, exact
+grouping of mark-recapture tags:
+
+```{r, eval=TRUE, echo=TRUE}
+dat_events <- set_release_events(dat)
+dat_events$release_events
+```
+
+The arguments `t_tol` and `dist_tol` widen the grouping to releases that are
+close but not identical in time and space, for example within half a month
+and 50 km:
+
+```{r, eval=FALSE, echo=TRUE}
+dat_events <- set_release_events(dat, t_tol = 0.5, dist_tol = 50)
+```
+
+Non-zero tolerances (`t_tol` in time units, `dist_tol` in spatial units) are an
+approximation, since releases that differ are treated as if they did not. The
+function therefore warns with the number of merged tags and the largest
+displacement applied, and the effect on the results can be evaluated through
+sensitivity analyses. Setting `conf$ctmc_groups = "off"` switches the grouping
+off.
 
 Lastly, it may be useful to map parameters, for example, to estimate a single
 value for both directions of passive advection. A list of default map
@@ -428,10 +430,11 @@ performed using `admove()`. The `plot_fit()` and `plot_compare()` functions
 allowed us to visualise results and compare estimated versus true movement and
 habitat preference patterns.
 
-Several advanced options were introduced, including grouping tags into release
-events (`get_release_event()`), switching between the two currently implemented
-engines for inferences: KF and CTMC engines (`engine` argument), and map
-parameters (`default_map()`) to simplify or constrain estimation.
+Several advanced options were introduced, including switching between the two
+currently implemented engines for inferences: KF and CTMC engines (`engine`
+argument), grouping tags into release events for the CTMC engine
+(`set_release_events()`), and map parameters (`default_map()`) to simplify or
+constrain estimation.
 
 This basic example provides a foundation for applying *admove* to real tagging
 data. More details about the methodology are described in AUTHOR_PAPER
