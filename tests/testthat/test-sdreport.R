@@ -45,9 +45,11 @@ test_that("the AD Hessian differs from TMB's default differencing, and is the ex
   ## This is the reason ad_hessian = TRUE exists. RTMB::sdreport() builds the
   ## Hessian with optimHess(par, obj$fn, obj$gr) at a *fixed absolute* step
   ## (ndeps, default 1e-3), which is far too coarse when the parameters sit on
-  ## a small scale. On small_fit() that route is ~59% off the exact Hessian in
-  ## its largest entry; the finite differences only converge to the AD value as
-  ## the step shrinks, which is what identifies the AD one as correct.
+  ## a small scale or the optimum is sharply curved. How far off it is depends on
+  ## the optimum: ~59% where small_fit() used to land (beta started at 0), 0.3%
+  ## at its current optimum. Either way the finite differences only converge to
+  ## the AD value as the step shrinks, which is what identifies the AD one as
+  ## correct.
   fit <- small_fit()
   p <- fit$opt$par
 
@@ -60,11 +62,11 @@ test_that("the AD Hessian differs from TMB's default differencing, and is the ex
   ## sdreport's own route, i.e. what ad_hessian = FALSE falls back to
   h_sdrep <- stats::optimHess(p, fit$obj$fn, fit$obj$gr,
                               control = list(ndeps = rep(1e-3, length(p))))
-  expect_gt(rel(h_sdrep), 0.1)
 
   ## differencing the objective converges to the AD Hessian as the step shrinks
   step <- function(nd) rel(stats::optimHess(p, fit$obj$fn,
                                             control = list(ndeps = rep(nd, length(p)))))
+  expect_gt(rel(h_sdrep), step(1e-4))
   expect_gt(step(1e-2), step(1e-4))
   expect_lt(step(1e-4), 0.1)
 })

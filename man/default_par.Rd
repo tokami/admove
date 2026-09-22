@@ -48,38 +48,54 @@ is well conditioned. It cannot change the fitted movement field.
 
 Because \code{kappa} has units of \eqn{[\text{distance}^2 / \text{time}]}, a
 value of 1 is only appropriate when coordinates are already on a unit scale.
-The default is instead anchored on observed movement: a preference function
-with unit range over the tag-sampled covariate range \eqn{R} has
-\eqn{|dh/dcov| \approx 1/R}, so the drift accumulated over a time \eqn{T} is
-\eqn{\kappa (G/R) T}, with \eqn{G} the typical covariate gradient at the tag
-positions. Equating that to a characteristic displacement \eqn{L} gives
+The default instead balances the information the data carry about \code{alpha}
+against that about the diffusion. A unit change of one \code{alpha} coefficient
+changes the preference slope by about \eqn{1/\Delta k}, with \eqn{\Delta k}
+the spacing of the taxis knots, and so shifts the predicted position by
+\eqn{\kappa G T / \Delta k} over a time \eqn{T}, with \eqn{G} the covariate
+gradient. Against the diffusive spread \eqn{2 D T} per axis, that carries
+information \eqn{(\kappa G / \Delta k)^2 T / (2 D)}, while the log
+diffusion carries information of order one per step. Equating the two gives
 
-\deqn{\kappa = L R / (G T),}
+\deqn{\kappa = \Delta k \sqrt{2 D_0 / T} / G,}
 
-where \eqn{L} and \eqn{T} are the median displacement and the median time
-between successive observations, and \eqn{R} and \eqn{G} are evaluated at the
-tag positions and reduced across the \code{cov_taxis} covariates by their median.
-Only the tag types enabled in \code{conf} contribute, since \code{dat$tags} may still
-carry types that \code{conf} switches off.
+where \eqn{T} is the median time between successive observations, \eqn{D_0}
+the diffusion starting value (see below), and \eqn{G} the root mean square
+gradient at the tag positions (the information adds up \eqn{G^2}, so a few
+steep-gradient positions count for more than the median suggests). Without
+taxis knots, \eqn{\Delta k} falls back to the tag-sampled covariate range.
+Per covariate the values are reduced by their median across the \code{cov_taxis}
+covariates. Only the tag types enabled in \code{conf} contribute, since
+\code{dat$tags} may still carry types that \code{conf} switches off.
 
-\eqn{L} and \eqn{T} are computed \strong{per tag type} and the resulting
+\eqn{D_0} and \eqn{T} are computed \strong{per tag type} and the resulting
 \eqn{\kappa_{type}} combined by their geometric mean, rather than pooling all
 steps into one median. Tag types differ in their step scale by construction
 -- a mark-recapture tag contributes one net displacement over months, a
 data-storage tag hundreds of daily increments -- so a median over the pooled
-steps takes \eqn{T} from whichever type has more steps and \eqn{L} from the
-mixture, and can land outside the range of the per-type values. The
+steps takes \eqn{T} from whichever type has more steps and \eqn{D_0} from
+the mixture, and can land outside the range of the per-type values. The
 geometric mean is the natural average for a multiplicative scale factor and
 always lies between them.
+
+The diffusion coefficients \code{beta} start at a flat diffusion
+\eqn{D_0 = \mathrm{median}(d^2 / \Delta t) / (4 \log 2)}, from the
+displacements \eqn{d} over the times \eqn{\Delta t} between successive
+observations: under the model \eqn{d^2 / \Delta t} is exponential with mean
+\eqn{4 D}. Drift and observation error bias it upwards. Starting at
+\eqn{D = 1} in data units instead can leave the optimizer stuck orders of
+magnitude away from the fitted diffusion, in particular when coordinates are
+in km or m.
 
 If the quantities above cannot be computed (no covariates, no tags, or a
 covariate with no spatial variation), the function falls back to the earlier
 rule \code{kappa = cellsize^2 / median_dt} and, failing that, to \code{kappa = 1}.
 
-Override via \verb{par$logKappa <- log(<value>)} after calling this function. The
-fit is insensitive to the exact value -- anything within roughly an order of
-magnitude gives the same optimum -- so this only needs to be in the right
-range, not finely tuned.
+Override via \verb{par$logKappa <- log(<value>)} after calling this function.
+The value does not change the likelihood, but it does change the path of the
+optimizer: when the objective has several local optima in \code{alpha}, fits with
+different \code{kappa} can end in different ones. Compare their objective values
+rather than taking either at face value.
 }
 \examples{
 par <- with(skjepo$sim, default_par(dat, conf))
