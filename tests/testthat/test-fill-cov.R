@@ -129,3 +129,37 @@ test_that("setup_data(fill_na = 1) keeps coastal grid cells", {
   expect_identical(d0$cov, build(fill_na = 0)$cov)
   expect_error(build(fill_na = -1), "fill_na")
 })
+
+
+test_that("fill_na = 'grid' fills until every grid cell is kept", {
+
+  ## covariate cells 4 times finer than the grid cells, NA over the upper
+  ## right grid cell: its centre lies between the second and third covariate
+  ## cell inside the gap, so it needs two rings
+  grid <- create_grid(cellsize = 0.5, verbose = FALSE)
+  fine <- create_grid(cellsize = 0.125, verbose = FALSE)
+  cov <- suppressMessages(sim_cov(fine, nt = 2))
+  cov[5:8, 5:8, ] <- NA
+  build <- function(...) suppressWarnings(suppressMessages(
+    setup_data(grid = grid, cov = cov, trange = c(0, 1), verbose = FALSE, ...)
+  ))
+
+  expect_equal(sum(!is.na(build(fill_na = 1)$grid$celltable)), 3)
+  dg <- build(fill_na = "grid")
+  expect_equal(sum(!is.na(dg$grid$celltable)), 4)
+  expect_equal(sum(is.na(dg$cov[[1]])), sum(is.na(build(fill_na = 2)$cov[[1]])))
+  expect_error(build(fill_na = "all"), "fill_na")
+
+  ## tags in a removed cell: the message names the covariate and the fix
+  tags <- prep_tags(data.frame(id = c(1, 1, 2, 2), t = c(0.2, 0.6, 0.2, 0.6),
+                               x = c(0.9, 0.3, 0.2, 0.3),
+                               y = c(0.9, 0.3, 0.2, 0.3)),
+                    tag_type = "d",
+                    names = c(t = "t", x = "x", y = "y", id = "id"),
+                    verbose = FALSE)
+  expect_message(
+    suppressWarnings(setup_data(grid = grid, cov = cov, tags = tags,
+                                trange = c(0, 1), fill_na = 1)),
+    "fill_na = \"grid\""
+  )
+})
