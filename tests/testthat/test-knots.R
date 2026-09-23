@@ -143,3 +143,110 @@ test_that("sim_data and sim_tags take the number of knots", {
   expect_equal(nrow(tags$dat$knots_tax), 5L)
   expect_equal(dim(tags$par_true$alpha)[1], 5L)
 })
+
+
+## Default knots from the covariate values at the tag observations
+
+tag_knot_dat <- function(tags = NULL, ...) {
+  d <- small_sim()$dat
+  if (is.null(tags)) tags <- d$tags
+  suppressWarnings(suppressMessages(
+    setup_data(grid = d$grid, cov = d$cov, tags = tags, trange = d$trange,
+               shift_tref = TRUE, verbose = FALSE, ...)
+  ))
+}
+
+wq <- function(x, w, p) admove:::.wquantile(x, w, p)
+
+
+test_that(".wquantile equals quantile() for equal weights", {
+
+  set.seed(2)
+  x <- rnorm(37)
+  p <- c(0, 0.05, 0.3, 0.5, 0.95, 1)
+  expect_equal(wq(x, NULL, p), unname(quantile(x, p)))
+  expect_equal(wq(x, rep(3, 37), p), unname(quantile(x, p)))
+  ## a heavier value pulls the quantiles towards it
+  expect_gt(wq(c(1, 2, 3), c(1, 1, 5), 0.5), 2)
+  expect_lt(wq(c(1, 2, 3), c(5, 1, 1), 0.5), 2)
+})
+
+
+test_that("default knots are quantiles of the covariate at the tags, per tag", {
+
+  dat <- tag_knot_dat()
+  vals <- cov_at_tags(dat)
+  w <- admove:::.tag_weights(dat$tags)
+
+  ## every tag has total weight one
+  expect_equal(as.numeric(tapply(w, dat$tags$id, sum)),
+               rep(1, length(unique(dat$tags$id))))
+  expect_equal(dat$knots_tax[, 1], wq(vals[[1]], w, c(0.05, 0.5, 0.95)))
+  expect_equal(dat$knots_dif[, 1], wq(vals[[1]], w, 0.5))
+  expect_equal(dat$knots_from, c(tax = "tags", dif = "tags"))
+
+  ## within the range the tags experienced, unlike the field quantiles
+  expect_true(all(dat$knots_tax >= min(vals[[1]], na.rm = TRUE) &
+                    dat$knots_tax <= max(vals[[1]], na.rm = TRUE)))
+
+  ## the likelihood can be built with these knots
+  conf <- default_conf(dat, verbose = FALSE)
+  par <- suppressMessages(default_par(dat, conf, verbose = FALSE))
+  expect_silent(admove:::.check_knots_dims(dat, par))
+})
+
+
+test_that("with only conventional tags, per-tag weights give plain quantiles", {
+
+  d <- small_sim()$dat
+  ctags <- d$tags[d$tags$tag_type == "c", ]
+  dat <- tag_knot_dat(tags = ctags)
+  vals <- cov_at_tags(dat)[[1]]
+
+  expect_equal(dat$knots_tax[, 1],
+               unname(quantile(vals, c(0.05, 0.5, 0.95), na.rm = TRUE)))
+})
+
+
+test_that("knots_from = 'cov' and missing tags give field quantiles", {
+
+  d <- small_sim()$dat
+  field <- unname(quantile(as.numeric(d$cov[[1]]), c(0.05, 0.5, 0.95),
+                           na.rm = TRUE))
+
+  dat <- tag_knot_dat(knots_from = "cov")
+  expect_equal(dat$knots_tax[, 1], field)
+  expect_equal(dat$knots_from, c(tax = "cov", dif = "cov"))
+
+  dat0 <- suppressWarnings(suppressMessages(
+    setup_data(grid = d$grid, cov = d$cov, trange = d$trange, verbose = FALSE)
+  ))
+  expect_equal(dat0$knots_tax[, 1], field)
+
+  ## a supplied knot matrix wins in either mode
+  knots <- matrix(c(22, 24, 26), 3, 1)
+  expect_equal(tag_knot_dat(knots_tax = knots)$knots_tax, knots)
+  expect_equal(tag_knot_dat(knots_tax = knots)$knots_from[["tax"]], "user")
+})
+
+
+test_that("cov_at_tags matches the tag rows and accepts sim and data objects", {
+
+  sim <- small_sim()
+  v <- cov_at_tags(sim)
+  expect_named(v, names(sim$dat$cov))
+  expect_length(v[[1]], nrow(sim$dat$tags))
+  expect_null(attr(v[[1]], "slice"))
+  expect_equal(v, cov_at_tags(sim$dat))
+  expect_error(cov_at_tags(list()), "admove_data")
+})
+
+
+test_that("candidate positions of an ambiguous recapture share one weight", {
+
+  tags <- data.frame(id = c("a", "a", "a", "b", "b"),
+                     event = c(1, 2, 2, 1, 2),
+                     prob = c(1, 0.25, 0.75, 1, 1))
+  expect_equal(admove:::.tag_weights(tags),
+               c(0.5, 0.125, 0.375, 0.5, 0.5))
+})

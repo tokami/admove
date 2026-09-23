@@ -25,15 +25,20 @@
 ##'   covariates.
 ##' @param knots_tax Optional matrix of spline knots for the taxis preference
 ##'   functions, with knots in rows and one column per covariate. If `NULL`,
-##'   `n_knots_tax` knots are placed at covariate quantiles.
+##'   `n_knots_tax` knots are placed at covariate quantiles (see `knots_from`).
 ##' @param knots_dif Optional matrix of spline knots for the diffusion
 ##'   preference functions, with knots in rows and one column per covariate. If
-##'   `NULL`, `n_knots_dif` knots are placed at covariate quantiles.
+##'   `NULL`, `n_knots_dif` knots are placed at covariate quantiles (see
+##'   `knots_from`).
 ##' @param n_knots_tax Number of default knots per covariate for the taxis
 ##'   preference functions. Default is `3`. Ignored if `knots_tax` is supplied.
 ##' @param n_knots_dif Number of default knots per covariate for the diffusion
 ##'   preference functions. Default is `1`, i.e. constant diffusion. Ignored if
 ##'   `knots_dif` is supplied.
+##' @param knots_from Where the default knots are taken from: `"tags"`
+##'   (default) uses the covariate values at the tag observations, `"cov"` the
+##'   whole covariate field. Without tags, the field is used either way. Ignored
+##'   for a knot matrix that is supplied.
 ##' @param sref Optional spatial reference to use as the target spatial
 ##'   reference for all inputs. If supplied, it should be coercible to an
 ##'   `admove_sref` object.
@@ -61,9 +66,17 @@
 ##' range of `c(0, 1)` is used.
 ##'
 ##' If spline knots are not supplied, default knots are placed at quantiles of
-##' the marginal covariate distributions: `n_knots_tax` knots per covariate for
-##' taxis (default three: the 5%, 50% and 95% quantiles) and `n_knots_dif` knots
-##' for diffusion (default one: the median, i.e. constant diffusion). Two knots
+##' the covariate values the tags experienced (`knots_from = "tags"`): each
+##' covariate is interpolated at the tag observations as in the likelihood, and
+##' each tag counts equally, however many observations it has, so a few
+##' archival tags do not set the knots for all tags. Knots from the whole field
+##' (`knots_from = "cov"`, or when there are no tags) often lie in parts of the
+##' covariate range no tag visits, where the preference function is not
+##' informed by the data. Use [cov_at_tags()] to inspect the values.
+##'
+##' The number of knots is `n_knots_tax` per covariate for taxis (default
+##' three: the 5%, 50% and 95% quantiles) and `n_knots_dif` for diffusion
+##' (default one: the median, i.e. constant diffusion). Two knots
 ##' are placed at the 25% and 75% quantiles, four at the 5%, 30%, 70% and 95%
 ##' quantiles, and five or more evenly between the 5% and 95% quantiles. One
 ##' knot gives a constant function and two knots a linear one (a natural cubic
@@ -138,6 +151,7 @@ setup_data <- function(grid = NULL,
                        knots_dif = NULL,
                        n_knots_tax = 3,
                        n_knots_dif = 1,
+                       knots_from = c("tags", "cov"),
                        sref = NULL,
                        tref = NULL,
                        transform_sref = FALSE,
@@ -146,6 +160,7 @@ setup_data <- function(grid = NULL,
 
   n_knots_tax <- .check_n_knots(n_knots_tax, "n_knots_tax")
   n_knots_dif <- .check_n_knots(n_knots_dif, "n_knots_dif")
+  knots_from <- match.arg(knots_from)
 
   res <- list()
 
@@ -383,21 +398,9 @@ setup_data <- function(grid = NULL,
   ## positions, matching how the likelihood accesses them (only time slices with
   ## t2index() > 0 are used), and drop the offending entries.
   if (!is.null(res$cov) && !is.null(res$tags) && nrow(res$tags) > 0) {
-    xr <- res$xrange_cov
-    yr <- res$yrange_cov
     bad <- rep(FALSE, nrow(res$tags))
-    for (i in seq_along(res$cov)) {
-      covi <- res$cov[[i]]
-      it <- as.integer(t2index(res$tags$t, res$time_cov[[i]]))
-      for (j in sort(unique(it[it > 0]))) {
-        rows <- which(it == j)
-        liv <- RTMB::interpol2Dfun(covi[,,j],
-                                   xlim = round(xr[i,], 5),
-                                   ylim = round(yr[i,], 5),
-                                   R = 1)
-        v <- liv(round(res$tags$x[rows], 5), round(res$tags$y[rows], 5))
-        bad[rows] <- bad[rows] | is.na(v)
-      }
+    for (v in .cov_at_tags(res)) {
+      bad <- bad | (is.na(v) & attr(v, "slice") > 0)
     }
     if (any(bad)) {
       bad_ids <- unique(res$tags$id[bad])
@@ -490,19 +493,45 @@ setup_data <- function(grid = NULL,
 
   res$knots_tax <- knots_tax
   res$knots_dif <- knots_dif
+  res$knots_from <- c(tax = "user", dif = "user")
 
-  cov_obs <- cov
-  if (is.null(res$knots_tax) && !is.null(cov)) {
-    res$knots_tax <- .default_knots(cov, n_knots_tax, "n_knots_tax")
-  } else {
-    .warn_duplicated_knots(res$knots_tax, "knots_tax")
+  ## Default knots from the covariate values at the tag observations, one
+  ## weight per tag; see dev/code_notes.org, "Default knot placement".
+  ## Computed after the pruning above, so dropped positions do not count.
+  if ((is.null(knots_tax) || is.null(knots_dif)) && !is.null(cov)) {
+    knot_vals <- lapply(cov, function(x) as.numeric(unclass(x)))
+    knot_w <- NULL
+    from <- "cov"
+    if (knots_from == "tags" && !is.null(res$tags) && nrow(res$tags) > 0) {
+      at_tags <- .cov_at_tags(res)
+      ok <- vapply(at_tags, function(v) any(is.finite(v)), logical(1))
+      if (verbose && any(!ok)) {
+        message("No tag observation lies within ",
+                .knot_cov_labels(cov, which(!ok)),
+                ", so its default knots are taken from the whole field.")
+      }
+      if (any(ok)) {
+        w <- .tag_weights(res$tags)
+        knot_w <- rep(list(NULL), length(cov))
+        knot_vals[ok] <- lapply(at_tags[ok], as.numeric)
+        knot_w[ok] <- list(w)
+        from <- "tags"
+      }
+    }
+    names(knot_vals) <- names(cov)
+    if (is.null(knots_tax)) {
+      res$knots_tax <- .default_knots(knot_vals, n_knots_tax, "n_knots_tax",
+                                      knot_w)
+      res$knots_from[["tax"]] <- from
+    }
+    if (is.null(knots_dif)) {
+      res$knots_dif <- .default_knots(knot_vals, n_knots_dif, "n_knots_dif",
+                                      knot_w)
+      res$knots_from[["dif"]] <- from
+    }
   }
-
-  if (is.null(res$knots_dif) && !is.null(cov)) {
-    res$knots_dif <- .default_knots(cov, n_knots_dif, "n_knots_dif")
-  } else {
-    .warn_duplicated_knots(res$knots_dif, "knots_dif")
-  }
+  if (!is.null(knots_tax)) .warn_duplicated_knots(res$knots_tax, "knots_tax")
+  if (!is.null(knots_dif)) .warn_duplicated_knots(res$knots_dif, "knots_dif")
 
 
   ## Prediction ---------------------------------------
@@ -566,8 +595,77 @@ summarise_data <- function(object, ...) {
   summarise_cov(dat$cov)
   cat("\n")
   summarise_tags(dat$tags)
+  .summarise_knots(dat)
 
   invisible(dat)
+}
+
+
+## Number of knots and where the defaults came from (older data objects do not
+## record the source).
+.summarise_knots <- function(dat) {
+
+  if (length(dat$knots_tax) == 0 && length(dat$knots_dif) == 0) {
+    return(invisible(NULL))
+  }
+  src <- c(tags = "covariate at tags", cov = "covariate field",
+           user = "supplied")
+  line <- function(knots, from) {
+    paste0(NROW(knots), " per covariate",
+           if (!is.null(from)) paste0(", ", src[[from]]))
+  }
+
+  cat("<knots>\n")
+  cat("  taxis:      ", line(dat$knots_tax, dat$knots_from[["tax"]]), "\n",
+      sep = "")
+  cat("  diffusion:  ", line(dat$knots_dif, dat$knots_from[["dif"]]), "\n",
+      sep = "")
+
+  invisible(NULL)
+}
+
+
+
+##' Covariate values at the tag observations
+##'
+##' @description
+##' Interpolate each covariate at the positions and times of the tag
+##' observations, in the same way as the likelihood does. Use it to see which
+##' part of the covariate range the tags actually experienced, e.g. to choose
+##' spline knots; by default, [setup_data()] places the knots at quantiles of
+##' these values.
+##'
+##' @param object An object of class `admove_data` (created by [setup_data()])
+##'   or an object containing one (`admove_sim` or `admove`).
+##'
+##' @return A named list with one numeric vector per covariate and one value per
+##'   row of the tag data (`dat$tags`). Values are `NA` where the observation
+##'   lies before the first time slice of the covariate (such observations are
+##'   not evaluated in the likelihood).
+##'
+##' @examples
+##' vals <- cov_at_tags(skjepo$sim)
+##' lapply(vals, quantile, probs = c(0.05, 0.5, 0.95), na.rm = TRUE)
+##'
+##' @export
+cov_at_tags <- function(object) {
+
+  if (inherits(object, "admove_sim") || inherits(object, "admove")) {
+    dat <- object$dat
+  } else if (inherits(object, "admove_data")) {
+    dat <- object
+  } else {
+    stop("Please provide an object of class 'admove_data' or an object ",
+         "containing such an object (e.g. admove_sim, admove).", call. = FALSE)
+  }
+  if (length(dat$cov) == 0 || is.null(dat$tags) || nrow(dat$tags) == 0) {
+    stop("The data contain no covariates or no tags.", call. = FALSE)
+  }
+
+  lapply(.cov_at_tags(dat), function(v) {
+    attr(v, "slice") <- NULL
+    v
+  })
 }
 
 
@@ -714,28 +812,101 @@ print.admove_data <- function(x, ...) {
 
 
 ## Default spline knots: `n` quantiles of each covariate, as a matrix with knots
-## in rows and one column per covariate. A covariate with too few distinct values
-## gives repeated knots, which the natural spline cannot pass through, so say
-## which covariate it is instead of failing later inside the likelihood.
-.default_knots <- function(cov, n, name) {
+## in rows and one column per covariate. `vals` is a list with one numeric
+## vector per covariate (the field or the values at the tags) and `w` an
+## optional list of matching weights (NULL entries: unweighted). A covariate
+## with too few distinct values gives repeated knots, which the natural spline
+## cannot pass through, so say which covariate it is instead of failing later
+## inside the likelihood.
+.default_knots <- function(vals, n, name, w = NULL) {
 
-  knots <- vapply(cov,
-                  function(x) as.numeric(stats::quantile(as.numeric(x),
-                                                         get_pretty_probs(n),
-                                                         na.rm = TRUE,
-                                                         names = FALSE)),
+  knots <- vapply(seq_along(vals),
+                  function(i) .wquantile(vals[[i]], w[[i]], get_pretty_probs(n)),
                   numeric(n))
-  knots <- matrix(knots, nrow = n, ncol = length(cov))
+  knots <- matrix(knots, nrow = n, ncol = length(vals))
 
   dup <- which(apply(knots, 2, function(k) any(duplicated(k))))
   if (length(dup) > 0) {
     warning("With ", name, " = ", n, ", some default knots coincide for ",
-            .knot_cov_labels(cov, dup), " (too few distinct covariate values). ",
+            .knot_cov_labels(vals, dup), " (too few distinct covariate values). ",
             "This will likely give an error! Use fewer knots or supply the ",
             "knot matrix directly.", call. = FALSE)
   }
 
   knots
+}
+
+
+## Weighted quantiles that equal stats::quantile(type = 7) for equal weights:
+## the sorted values sit at cumulative-weight positions running from 0 (first)
+## to 1 (last), and the quantiles are interpolated linearly between them.
+.wquantile <- function(x, w, probs) {
+
+  if (is.null(w)) w <- rep(1, length(x))
+  keep <- is.finite(x) & is.finite(w) & w > 0
+  x <- x[keep]
+  w <- w[keep]
+  if (length(x) == 0) return(rep(NA_real_, length(probs)))
+  if (length(x) == 1) return(rep(x, length(probs)))
+
+  o <- order(x)
+  x <- x[o]
+  w <- w[o]
+  n <- length(x)
+  pos <- cumsum(w) - w / 2 - w[1] / 2
+  pos <- pos / (sum(w) - w[1] / 2 - w[n] / 2)
+
+  stats::approx(pos, x, xout = probs, rule = 2, ties = "ordered")$y
+}
+
+
+## One weight per tag row so that every tag counts equally in the default
+## knots, however many observations it has. The candidate positions of an
+## ambiguous recapture (see check_tags()) share one observation's weight
+## according to their probabilities.
+.tag_weights <- function(tags) {
+
+  id <- as.character(tags$id)
+  if (all(c("event", "prob") %in% colnames(tags))) {
+    ev <- paste(id, tags$event)
+    n_obs <- tapply(ev, id, function(e) length(unique(e)))
+    tags$prob / as.numeric(n_obs[id])
+  } else {
+    1 / as.numeric(table(id)[id])
+  }
+}
+
+
+## Covariate values at the tag observations, interpolated exactly as the
+## likelihood does (RTMB::interpol2Dfun, R = 1, on the slice t2index() picks).
+## One vector per covariate, one value per row of `dat$tags`, with the slice
+## index as attribute "slice": NA where the covariate is NA (the NA pruning in
+## setup_data() relies on this) and where slice == 0 (tag time before the first
+## slice, never evaluated in the likelihood).
+.cov_at_tags <- function(dat) {
+
+  tags <- dat$tags
+  xr <- dat$xrange_cov
+  yr <- dat$yrange_cov
+
+  res <- lapply(seq_along(dat$cov), function(i) {
+    covi <- dat$cov[[i]]
+    it <- as.integer(t2index(tags$t, dat$time_cov[[i]]))
+    v <- rep(NA_real_, nrow(tags))
+    for (j in sort(unique(it[it > 0]))) {
+      rows <- which(it == j)
+      liv <- RTMB::interpol2Dfun(covi[,,j],
+                                 xlim = round(xr[i,], 5),
+                                 ylim = round(yr[i,], 5),
+                                 R = 1)
+      v[rows] <- liv(round(tags$x[rows], 5), round(tags$y[rows], 5))
+    }
+    attr(v, "slice") <- it
+    v
+  })
+  names(res) <- names(dat$cov)
+
+  res
 }
 
 

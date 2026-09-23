@@ -136,10 +136,12 @@ a one-cell buffer before covariates are simulated.}
 \item{knots_dif}{Optional knot locations for the diffusion component.}
 
 \item{n_knots_tax, n_knots_dif}{Optional number of default knots per
-covariate for the taxis and diffusion components, placed at covariate
-quantiles as in \code{\link[=setup_data]{setup_data()}}. Ignored if the corresponding knot matrix is
-supplied. If \code{NULL}, the knots of a supplied data object or model are
-kept, and otherwise the defaults of \code{\link[=setup_data]{setup_data()}} (3 and 1) are used.}
+covariate for the taxis and diffusion components, placed at quantiles of
+the whole covariate field (the tags do not exist yet when the knots are
+set, so not at the tags as in \code{\link[=setup_data]{setup_data()}}). Ignored if the corresponding
+knot matrix is supplied. If \code{NULL}, the knots of a supplied data
+object or model are kept, and otherwise the defaults of \code{\link[=setup_data]{setup_data()}} (3
+and 1) are used.}
 
 \item{release_events}{Optional data frame or matrix of release events. If
 \code{NULL}, release events are simulated internally using

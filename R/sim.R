@@ -66,10 +66,12 @@
 ##' @param knots_tax Optional knot locations for the taxis component.
 ##' @param knots_dif Optional knot locations for the diffusion component.
 ##' @param n_knots_tax,n_knots_dif Optional number of default knots per
-##'   covariate for the taxis and diffusion components, placed at covariate
-##'   quantiles as in [setup_data()]. Ignored if the corresponding knot matrix is
-##'   supplied. If \code{NULL}, the knots of a supplied data object or model are
-##'   kept, and otherwise the defaults of [setup_data()] (3 and 1) are used.
+##'   covariate for the taxis and diffusion components, placed at quantiles of
+##'   the whole covariate field (the tags do not exist yet when the knots are
+##'   set, so not at the tags as in [setup_data()]). Ignored if the corresponding
+##'   knot matrix is supplied. If \code{NULL}, the knots of a supplied data
+##'   object or model are kept, and otherwise the defaults of [setup_data()] (3
+##'   and 1) are used.
 ##' @param release_events Optional data frame or matrix of release events. If
 ##'   \code{NULL}, release events are simulated internally using
 ##'   [sim_release_events()].
@@ -799,10 +801,12 @@ sim_cov <- function(grid = NULL,
 ##' @param knots_tax Optional knot locations for the taxis component.
 ##' @param knots_dif Optional knot locations for the diffusion component.
 ##' @param n_knots_tax,n_knots_dif Optional number of default knots per
-##'   covariate for the taxis and diffusion components, placed at covariate
-##'   quantiles as in [setup_data()]. Ignored if the corresponding knot matrix is
-##'   supplied. If \code{NULL}, the knots of a supplied data object or model are
-##'   kept, and otherwise the defaults of [setup_data()] (3 and 1) are used.
+##'   covariate for the taxis and diffusion components, placed at quantiles of
+##'   the whole covariate field (the tags do not exist yet when the knots are
+##'   set, so not at the tags as in [setup_data()]). Ignored if the corresponding
+##'   knot matrix is supplied. If \code{NULL}, the knots of a supplied data
+##'   object or model are kept, and otherwise the defaults of [setup_data()] (3
+##'   and 1) are used.
 ##' @param funcs Optional named list of simulation functions. If \code{NULL},
 ##'   defaults are created with [default_sim_funcs()].
 ##' @param n_reject Maximum number of attempts to redraw the diffusion part of
