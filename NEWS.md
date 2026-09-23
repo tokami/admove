@@ -92,6 +92,17 @@
   (default), `"align"` (aligned lattice, one pass per tag, for isolating a
   discrepancy) and `"off"` (the previous per-tag lattice).
 
+* `fill_cov()` fills missing covariate cells (land, cloud or ice holes) ring
+  by ring from the neighbouring data, with Gaussian weights. By default only
+  the first ring is filled -- the cells touching data, e.g. the coastline --
+  which keeps coastal grid cells that `setup_data()` would otherwise drop
+  (important for the CTMC) and makes the covariate finite at the coast for
+  the Kalman filter, without inventing values deep inside land.
+  `n_rings = Inf` fills everything reachable. The filled cells are marked in
+  `attr(x, "filled")`. `setup_data(fill_na = )` applies it to all covariates
+  (default `0`, no filling).
+
+
 * `print()` method for `admove_sref`, and `summary()` of an `admove_grid` now
   shows the full spatial reference. Both make explicit that the CRS unit and
   the stored-coordinate unit are allowed to differ:
