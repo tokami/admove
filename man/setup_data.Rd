@@ -14,6 +14,7 @@ setup_data(
   n_knots_tax = 3,
   n_knots_dif = 1,
   knots_from = c("tags", "cov"),
+  fill_na = 0,
   sref = NULL,
   tref = NULL,
   transform_sref = FALSE,
@@ -59,6 +60,12 @@ preference functions. Default is \code{1}, i.e. constant diffusion. Ignored if
 (default) uses the covariate values at the tag observations, \code{"cov"} the
 whole covariate field. Without tags, the field is used either way. Ignored
 for a knot matrix that is supplied.}
+
+\item{fill_na}{Number of rings of missing covariate cells to fill next to
+non-missing cells with \code{\link[=fill_cov]{fill_cov()}} before the grid and the tags are
+checked against the covariates. \code{1} fills the cells touching data, e.g.
+the coastline, which keeps coastal grid cells; \code{Inf} fills every reachable
+cell. Default \code{0}: no filling.}
 
 \item{sref}{Optional spatial reference to use as the target spatial
 reference for all inputs. If supplied, it should be coercible to an

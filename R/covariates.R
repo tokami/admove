@@ -915,7 +915,191 @@ check_cov <- function(x, verbose = TRUE) {
 
 
 
+##' Fill missing covariate cells next to data
+##'
+##' @description
+##' Fill `NA` cells of a covariate (land, cloud or ice holes) ring by ring from
+##' the neighbouring non-missing cells. By default only the first ring is
+##' filled: the cells that touch a non-missing cell, diagonally included, e.g.
+##' the coastline but not the interior of land.
+##'
+##' @param x A covariate: an `admove_cov` object (see [prep_cov()]), a list of
+##'   them (`admove_cov_list`), or a plain `[x, y, time]` array or `[x, y]`
+##'   matrix.
+##' @param n_rings Number of rings to fill: a whole number of at least zero, or
+##'   `Inf` to fill every cell that can be reached from data. Default `1`. `0`
+##'   returns `x` unchanged.
+##' @param sd Bandwidth of the Gaussian weights in cells. Default `1`. Each
+##'   cell of a ring gets the weighted mean of the non-missing cells within
+##'   `max(1, ceiling(2 * sd))` cells, where cells filled in earlier rings count
+##'   as data.
+##' @param verbose Logical; if `TRUE` (default), report how many cells were
+##'   filled.
+##'
+##' @details
+##' Covariates are interpolated bilinearly in the likelihood, which gives `NaN`
+##' where the surrounding cells are missing. Filling one ring has two effects:
+##' \itemize{
+##'   \item [setup_data()] keeps grid cells whose centre lies in the ring. Those
+##'     are mostly coastal cells that are part water, part land, which the CTMC
+##'     would otherwise lose.
+##'   \item The covariate and its gradient become finite up to about one cell
+##'     into the gap, so a predicted mean of the Kalman filter can reach the
+##'     coast. A mean further inside a gap still gives `NaN`; fill more rings
+##'     for that (e.g. for conventional tags, whose mean is not updated between
+##'     release and recapture and can drift far).
+##' }
+##' Filled values are extrapolated from the water side, so they change the
+##' covariate gradients at the coast and thus the fit. The further a ring
+##' reaches into a gap, the less its values mean, which is why only one ring is
+##' filled by default.
+##'
+##' Distances use the cell sizes in the dimension names, so the weights also
+##' suit cells that are not square. Each time slice is filled separately; a
+##' slice without any data stays missing.
+##'
+##' @return `x` with the filled cells, keeping its class and attributes. For an
+##'   array or `admove_cov`, the attribute `"filled"` is a logical array marking
+##'   the filled cells (accumulated over repeated calls).
+##'
+##' @examples
+##' cov <- skjepo$sim$cov
+##' cov1 <- fill_cov(cov)
+##' c(sum(is.na(cov)), sum(is.na(cov1)))
+##'
+##' ## fill every reachable cell, with smoother values
+##' cov_all <- fill_cov(cov, n_rings = Inf, sd = 2)
+##'
+##' @seealso [setup_data()] (argument `fill_na`)
+##'
+##' @export
+fill_cov <- function(x, n_rings = 1, sd = 1, verbose = TRUE) {
+
+  n_rings <- .check_n_rings(n_rings, "n_rings")
+  if (!is.numeric(sd) || length(sd) != 1L || !is.finite(sd) || sd <= 0) {
+    stop("'sd' must be a single positive number.", call. = FALSE)
+  }
+  if (n_rings == 0) return(x)
+
+  if (is.list(x) && !is.array(x)) {
+    nms <- names(x)
+    for (i in seq_along(x)) {
+      lab <- if (is.null(nms) || nms[i] == "") paste0("covariate ", i) else
+        paste0("covariate '", nms[i], "'")
+      x[[i]] <- .fill_cov_one(x[[i]], n_rings, sd, verbose, lab)
+    }
+    return(x)
+  }
+
+  .fill_cov_one(x, n_rings, sd, verbose, "covariate")
+}
+
+
+
 ## Internal functions ---------------------------------------------------------------
+
+## Validate a number of rings for fill_cov(): a whole number >= 0 or Inf.
+.check_n_rings <- function(n, name) {
+
+  if (!is.numeric(n) || length(n) != 1L || is.na(n) || n < 0 ||
+        (is.finite(n) && n != round(n))) {
+    stop("'", name, "' must be a single whole number of at least 0, or Inf.",
+         call. = FALSE)
+  }
+
+  n
+}
+
+
+## Ring-wise fill of one covariate array; see fill_cov() and
+## dev/code_notes.org, "Filling covariate gaps". All time slices are shifted at
+## once, so the cost is one pass over the kernel offsets per ring. The window
+## must contain the 8 neighbours (w >= 1), or a ring cell could get den = 0.
+.fill_cov_one <- function(x, n_rings, sd, verbose, lab) {
+
+  d <- dim(x)
+  if (is.null(d) || !(length(d) %in% 2:3)) {
+    stop("Each covariate must be an [x, y, time] array or an [x, y] matrix.",
+         call. = FALSE)
+  }
+  nt <- if (length(d) == 3) d[3] else 1L
+  A <- array(as.numeric(unclass(x)), c(d[1], d[2], nt))
+
+  ## cell aspect ratio from the cell centres, for the distances in the weights
+  dn <- dimnames(x)
+  ry <- 1
+  if (!is.null(dn) && length(dn[[1]]) > 1 && length(dn[[2]]) > 1) {
+    dx <- abs(mean(diff(suppressWarnings(as.numeric(dn[[1]])))))
+    dy <- abs(mean(diff(suppressWarnings(as.numeric(dn[[2]])))))
+    if (is.finite(dx) && is.finite(dy) && dx > 0 && dy > 0) ry <- dy / dx
+  }
+
+  w <- max(1L, as.integer(ceiling(2 * sd)))
+  offs <- expand.grid(di = -w:w, dj = -w:w)
+  offs <- offs[offs$di != 0 | offs$dj != 0, ]
+  offs$wt <- exp(-0.5 * (offs$di^2 + (offs$dj * ry)^2) / sd^2)
+  queen <- abs(offs$di) <= 1 & abs(offs$dj) <= 1
+
+  ## out[i, j, ] = A[i + di, j + dj, ], NA beyond the edge
+  shift <- function(A, di, dj) {
+    out <- array(NA_real_, dim(A))
+    si <- seq_len(dim(A)[1]) + di
+    sj <- seq_len(dim(A)[2]) + dj
+    vi <- si >= 1 & si <= dim(A)[1]
+    vj <- sj >= 1 & sj <= dim(A)[2]
+    out[which(vi), which(vj), ] <- A[si[vi], sj[vj], , drop = FALSE]
+    out
+  }
+
+  n_na0 <- sum(is.na(A))
+  filled <- array(FALSE, dim(A))
+  k <- 0
+  while (k < n_rings) {
+    na <- is.na(A)
+    if (!any(na)) break
+    touch <- array(FALSE, dim(A))
+    for (o in which(queen)) {
+      touch <- touch | !is.na(shift(A, offs$di[o], offs$dj[o]))
+    }
+    ring <- na & touch
+    if (!any(ring)) break
+    ## weighted means at the ring cells only: a full-array pass per offset
+    ## made n_rings = Inf with a wide kernel take minutes
+    ix <- which(ring, arr.ind = TRUE)
+    num <- numeric(nrow(ix))
+    den <- numeric(nrow(ix))
+    for (o in seq_len(nrow(offs))) {
+      ii <- ix[, 1] + offs$di[o]
+      jj <- ix[, 2] + offs$dj[o]
+      inside <- ii >= 1 & ii <= dim(A)[1] & jj >= 1 & jj <= dim(A)[2]
+      v <- rep(NA_real_, nrow(ix))
+      v[inside] <- A[cbind(ii[inside], jj[inside], ix[inside, 3])]
+      ok <- !is.na(v)
+      num[ok] <- num[ok] + offs$wt[o] * v[ok]
+      den[ok] <- den[ok] + offs$wt[o]
+    }
+    A[ix] <- num / den
+    filled <- filled | ring
+    k <- k + 1
+  }
+
+  if (verbose) {
+    empty <- sum(apply(is.na(A), 3, all))
+    message(lab, ": filled ", sum(filled), " of ", n_na0, " NA cells (",
+            k, " ring", if (k == 1) "" else "s", "); ", sum(is.na(A)),
+            " remain NA",
+            if (empty > 0) paste0(", ", empty, " time slice(s) without any data"),
+            ".")
+  }
+
+  x[] <- A
+  dim(filled) <- d
+  dimnames(filled) <- dimnames(x)
+  prev <- attr(x, "filled")
+  if (!is.null(prev) && identical(dim(prev), d)) filled <- filled | prev
+  attr(x, "filled") <- filled
+  x
+}
 
 .get_cov_trange <- function(cov) {
 

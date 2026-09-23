@@ -39,6 +39,11 @@
 ##'   (default) uses the covariate values at the tag observations, `"cov"` the
 ##'   whole covariate field. Without tags, the field is used either way. Ignored
 ##'   for a knot matrix that is supplied.
+##' @param fill_na Number of rings of missing covariate cells to fill next to
+##'   non-missing cells with [fill_cov()] before the grid and the tags are
+##'   checked against the covariates. `1` fills the cells touching data, e.g.
+##'   the coastline, which keeps coastal grid cells; `Inf` fills every reachable
+##'   cell. Default `0`: no filling.
 ##' @param sref Optional spatial reference to use as the target spatial
 ##'   reference for all inputs. If supplied, it should be coercible to an
 ##'   `admove_sref` object.
@@ -152,6 +157,7 @@ setup_data <- function(grid = NULL,
                        n_knots_tax = 3,
                        n_knots_dif = 1,
                        knots_from = c("tags", "cov"),
+                       fill_na = 0,
                        sref = NULL,
                        tref = NULL,
                        transform_sref = FALSE,
@@ -161,6 +167,7 @@ setup_data <- function(grid = NULL,
   n_knots_tax <- .check_n_knots(n_knots_tax, "n_knots_tax")
   n_knots_dif <- .check_n_knots(n_knots_dif, "n_knots_dif")
   knots_from <- match.arg(knots_from)
+  fill_na <- .check_n_rings(fill_na, "fill_na")
 
   res <- list()
 
@@ -333,6 +340,9 @@ setup_data <- function(grid = NULL,
 
   ## Covariates --------------------------------------
   res$cov <- check_cov(cov, verbose)
+  if (!is.null(res$cov) && fill_na > 0) {
+    res$cov <- fill_cov(res$cov, n_rings = fill_na, verbose = verbose)
+  }
 
   if (!is.null(res$cov)) {
 
