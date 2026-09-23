@@ -42,8 +42,12 @@
 ##' @param fill_na Number of rings of missing covariate cells to fill next to
 ##'   non-missing cells with [fill_cov()] before the grid and the tags are
 ##'   checked against the covariates. `1` fills the cells touching data, e.g.
-##'   the coastline, which keeps coastal grid cells; `Inf` fills every reachable
-##'   cell. Default `0`: no filling.
+##'   the coastline; `Inf` fills every reachable cell. `"grid"` fills as many
+##'   rings as it takes to keep every grid cell, i.e. until the covariates can
+##'   be interpolated at all grid cell centres (one ring without a grid). This
+##'   matters when grid cells are larger than covariate cells: the centre of a
+##'   coastal grid cell can then lie several covariate cells inland. Default
+##'   `0`: no filling.
 ##' @param sref Optional spatial reference to use as the target spatial
 ##'   reference for all inputs. If supplied, it should be coercible to an
 ##'   `admove_sref` object.
@@ -167,7 +171,7 @@ setup_data <- function(grid = NULL,
   n_knots_tax <- .check_n_knots(n_knots_tax, "n_knots_tax")
   n_knots_dif <- .check_n_knots(n_knots_dif, "n_knots_dif")
   knots_from <- match.arg(knots_from)
-  fill_na <- .check_n_rings(fill_na, "fill_na")
+  if (!identical(fill_na, "grid")) fill_na <- .check_n_rings(fill_na, "fill_na")
 
   res <- list()
 
@@ -340,7 +344,10 @@ setup_data <- function(grid = NULL,
 
   ## Covariates --------------------------------------
   res$cov <- check_cov(cov, verbose)
-  if (!is.null(res$cov) && fill_na > 0) {
+  cells_cov_na <- NULL
+  if (!is.null(res$cov) && identical(fill_na, "grid")) {
+    res$cov <- .fill_cov_for_grid(res$cov, res$grid, verbose)
+  } else if (!is.null(res$cov) && fill_na > 0) {
     res$cov <- fill_cov(res$cov, n_rings = fill_na, verbose = verbose)
   }
 
@@ -353,28 +360,13 @@ setup_data <- function(grid = NULL,
 
     ## Check if any cov NA where needed for interpol given provided grid
     if (!is.null(grid)) {
-      xr <- xyranges_cov$xr
-      yr <- xyranges_cov$yr
-      ncov <- length(res$cov)
-      err <- NULL
-      for (i in seq_len(ncov)) {
-        covi <- res$cov[[i]]
-        for (j in seq_len(dim(covi)[3])) {
-          liv <- RTMB::interpol2Dfun(covi[,,j],
-                                     xlim = round(xr[i,],5),
-                                     ylim = round(yr[i,],5),
-                                     R = 1)
-          tmp <- liv(round(grid$xygrid[,1],5),
-                     round(grid$xygrid[,2],5))
-          ind <- which(is.na(tmp))
-          if (length(ind) > 0) {
-            err <- c(err, ind)
-          }
-        }
-      }
-      err <- sort(unique(err))
+      err <- .cov_na_cells(res$cov, res$grid, xyranges_cov$xr,
+                           xyranges_cov$yr)
 
       if (length(err) > 0) {
+        ## kept to explain the tags that check_tags() drops from these cells
+        grid_before_cov <- res$grid
+        cells_cov_na <- err
 
         message(length(err), " grid cell(s) removed because the covariate(s) can not be calculated there (lead to NA): ", .format_ids(err), ". Removing them in order to avoid problems during fitting later. \n")
 
@@ -398,7 +390,12 @@ setup_data <- function(grid = NULL,
   }
 
   ## Tags --------------------------------------------
-  if (!is.null(tags)) res$tags <- check_tags(tags, res$grid)
+  if (!is.null(tags)) {
+    if (verbose && length(cells_cov_na) > 0) {
+      .message_tags_in_cells(tags, grid_before_cov, cells_cov_na, fill_na)
+    }
+    res$tags <- check_tags(tags, res$grid)
+  }
 
   ## Remove tag positions on NA covariate cells -------
   ## check_tags() only guards against NA *grid* cells. A tag can still sit on
@@ -844,6 +841,86 @@ print.admove_data <- function(x, ...) {
   }
 
   knots
+}
+
+
+## Indices (rows of grid$xygrid) of the grid cells at whose centre a covariate
+## cannot be interpolated in some time slice. setup_data() removes these cells;
+## the same interpolation as in the likelihood decides.
+.cov_na_cells <- function(cov, grid, xr, yr) {
+
+  err <- NULL
+  for (i in seq_along(cov)) {
+    covi <- cov[[i]]
+    for (j in seq_len(dim(covi)[3])) {
+      liv <- RTMB::interpol2Dfun(covi[,,j],
+                                 xlim = round(xr[i,], 5),
+                                 ylim = round(yr[i,], 5),
+                                 R = 1)
+      tmp <- liv(round(grid$xygrid[,1], 5), round(grid$xygrid[,2], 5))
+      err <- c(err, which(is.na(tmp)))
+    }
+  }
+
+  sort(unique(err))
+}
+
+
+## setup_data(fill_na = "grid"): fill one ring at a time until no grid cell is
+## lost to a missing covariate, or nothing is left to fill.
+.fill_cov_for_grid <- function(cov, grid, verbose) {
+
+  n_na <- function(cov) sum(vapply(cov, function(x) sum(is.na(x)), numeric(1)))
+
+  if (is.null(grid)) {
+    if (verbose) message("fill_na = \"grid\" without a grid: filling one ring.")
+    return(fill_cov(cov, n_rings = 1, verbose = verbose))
+  }
+
+  xy <- .get_cov_xyrange(cov)
+  n0 <- n_na(cov)
+  k <- 0
+  repeat {
+    err <- .cov_na_cells(cov, grid, xy$xr, xy$yr)
+    if (length(err) == 0) break
+    before <- n_na(cov)
+    cov <- fill_cov(cov, n_rings = 1, verbose = FALSE)
+    if (n_na(cov) == before) break
+    k <- k + 1
+  }
+
+  if (verbose) {
+    message("fill_na = \"grid\": filled ", k, " ring", if (k == 1) "" else "s",
+            " (", n0 - n_na(cov), " of ", n0, " NA covariate cells)",
+            if (length(err) == 0) " so that no grid cell is lost" else
+              paste0("; ", length(err), " grid cell(s) have no covariate data ",
+                     "within reach"), ".")
+  }
+
+  cov
+}
+
+
+## Explain tag entries that check_tags() is about to drop because their grid
+## cell was just removed for a missing covariate (its message only says "NA
+## grid cell", which reads as if the input grid were masked there).
+.message_tags_in_cells <- function(tags, grid, cells, fill_na) {
+
+  ic <- grid$celltable[cbind(as.integer(cut(tags$x, grid$xgr)),
+                             as.integer(cut(tags$y, grid$ygr)))]
+  hit <- which(ic %in% cells)
+  if (length(hit) == 0) return(invisible(NULL))
+
+  ids <- unique(tags$id[hit])
+  hint <- if (identical(fill_na, "grid")) "" else
+    paste0(" Use setup_data(fill_na = \"grid\") to fill the covariate",
+           " until these cells are kept.")
+  message(length(hit), " tag entr", if (length(hit) == 1) "y lies" else "ies lie",
+          " in the grid cell(s) removed because a covariate is NA at the cell",
+          " centre (tag id", if (length(ids) == 1) "" else "s", ": ",
+          .format_ids(ids), "); they are dropped below.", hint)
+
+  invisible(NULL)
 }
 
 

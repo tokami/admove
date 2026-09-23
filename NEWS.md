@@ -100,7 +100,11 @@
   the Kalman filter, without inventing values deep inside land.
   `n_rings = Inf` fills everything reachable. The filled cells are marked in
   `attr(x, "filled")`. `setup_data(fill_na = )` applies it to all covariates
-  (default `0`, no filling).
+  (default `0`, no filling); `fill_na = "grid"` fills as many rings as it
+  takes to keep every grid cell, which matters when grid cells are larger than
+  covariate cells (e.g. 500 km grid on 110 km temperature in IOTC needs two).
+  When tag entries are dropped because their grid cell was removed for a
+  missing covariate, `setup_data()` now says so and points to `fill_na`.
 
 
 * `print()` method for `admove_sref`, and `summary()` of an `admove_grid` now

@@ -64,8 +64,12 @@ for a knot matrix that is supplied.}
 \item{fill_na}{Number of rings of missing covariate cells to fill next to
 non-missing cells with \code{\link[=fill_cov]{fill_cov()}} before the grid and the tags are
 checked against the covariates. \code{1} fills the cells touching data, e.g.
-the coastline, which keeps coastal grid cells; \code{Inf} fills every reachable
-cell. Default \code{0}: no filling.}
+the coastline; \code{Inf} fills every reachable cell. \code{"grid"} fills as many
+rings as it takes to keep every grid cell, i.e. until the covariates can
+be interpolated at all grid cell centres (one ring without a grid). This
+matters when grid cells are larger than covariate cells: the centre of a
+coastal grid cell can then lie several covariate cells inland. Default
+\code{0}: no filling.}
 
 \item{sref}{Optional spatial reference to use as the target spatial
 reference for all inputs. If supplied, it should be coercible to an
