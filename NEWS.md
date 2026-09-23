@@ -2,6 +2,17 @@
 
 ## Behaviour changes
 
+* `setup_data()` places default spline knots at quantiles of the covariate
+  values **at the tag observations** instead of the whole covariate field
+  (new argument `knots_from = c("tags", "cov")`). Each tag counts equally,
+  however many observations it has. Field knots often lie in parts of the
+  covariate range no tag visits (e.g. the cold half of the SST range in the
+  Indian Ocean), where the preference function is not informed by the data.
+  Use `knots_from = "cov"` to reproduce the knots of earlier analyses. Without
+  tags, and in `sim_data()`/`sim_tags()`, knots still come from the field.
+  The new `cov_at_tags()` returns the covariate values at the tag
+  observations, and `summarise_data()` reports where the knots came from.
+
 * `units_space(x) <- `, `crs(x) <- ` and `crs_scale(x) <- ` now **error** on
   objects that carry coordinates (`admove_grid`, `admove_cov`, `admove_tags`,
   `admove_data`). They used to overwrite a single field of the spatial

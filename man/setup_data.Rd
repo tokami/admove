@@ -13,6 +13,7 @@ setup_data(
   knots_dif = NULL,
   n_knots_tax = 3,
   n_knots_dif = 1,
+  knots_from = c("tags", "cov"),
   sref = NULL,
   tref = NULL,
   transform_sref = FALSE,
@@ -40,11 +41,12 @@ covariates.}
 
 \item{knots_tax}{Optional matrix of spline knots for the taxis preference
 functions, with knots in rows and one column per covariate. If \code{NULL},
-\code{n_knots_tax} knots are placed at covariate quantiles.}
+\code{n_knots_tax} knots are placed at covariate quantiles (see \code{knots_from}).}
 
 \item{knots_dif}{Optional matrix of spline knots for the diffusion
 preference functions, with knots in rows and one column per covariate. If
-\code{NULL}, \code{n_knots_dif} knots are placed at covariate quantiles.}
+\code{NULL}, \code{n_knots_dif} knots are placed at covariate quantiles (see
+\code{knots_from}).}
 
 \item{n_knots_tax}{Number of default knots per covariate for the taxis
 preference functions. Default is \code{3}. Ignored if \code{knots_tax} is supplied.}
@@ -52,6 +54,11 @@ preference functions. Default is \code{3}. Ignored if \code{knots_tax} is suppli
 \item{n_knots_dif}{Number of default knots per covariate for the diffusion
 preference functions. Default is \code{1}, i.e. constant diffusion. Ignored if
 \code{knots_dif} is supplied.}
+
+\item{knots_from}{Where the default knots are taken from: \code{"tags"}
+(default) uses the covariate values at the tag observations, \code{"cov"} the
+whole covariate field. Without tags, the field is used either way. Ignored
+for a knot matrix that is supplied.}
 
 \item{sref}{Optional spatial reference to use as the target spatial
 reference for all inputs. If supplied, it should be coercible to an
@@ -96,9 +103,17 @@ covariate time ranges. If no valid time range can be determined, a default
 range of \code{c(0, 1)} is used.
 
 If spline knots are not supplied, default knots are placed at quantiles of
-the marginal covariate distributions: \code{n_knots_tax} knots per covariate for
-taxis (default three: the 5\%, 50\% and 95\% quantiles) and \code{n_knots_dif} knots
-for diffusion (default one: the median, i.e. constant diffusion). Two knots
+the covariate values the tags experienced (\code{knots_from = "tags"}): each
+covariate is interpolated at the tag observations as in the likelihood, and
+each tag counts equally, however many observations it has, so a few
+archival tags do not set the knots for all tags. Knots from the whole field
+(\code{knots_from = "cov"}, or when there are no tags) often lie in parts of the
+covariate range no tag visits, where the preference function is not
+informed by the data. Use \code{\link[=cov_at_tags]{cov_at_tags()}} to inspect the values.
+
+The number of knots is \code{n_knots_tax} per covariate for taxis (default
+three: the 5\%, 50\% and 95\% quantiles) and \code{n_knots_dif} for diffusion
+(default one: the median, i.e. constant diffusion). Two knots
 are placed at the 25\% and 75\% quantiles, four at the 5\%, 30\%, 70\% and 95\%
 quantiles, and five or more evenly between the 5\% and 95\% quantiles. One
 knot gives a constant function and two knots a linear one (a natural cubic
