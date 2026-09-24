@@ -1037,12 +1037,17 @@ plot_advection <- function(x,
 ##' `plot_diffusion()` plots the diffusion component over the spatial prediction
 ##' grid for a fitted or simulated `admove` object.
 ##'
-##' For fitted `admove` objects, the function plots the mean predicted diffusion
-##' across prediction times. For `admove_sim` objects, diffusion is reconstructed
-##' from the simulated covariates and parameter values and then averaged over
-##' prediction times.
+##' For fitted `admove` objects, the function plots the predicted diffusion at
+##' the selected prediction times, or their average. For `admove_sim` objects,
+##' diffusion is reconstructed from the simulated covariates and parameter
+##' values.
 ##'
 ##' @param x An object of class `admove` or `admove_sim`.
+##' @param select Optional index vector specifying which prediction time steps to
+##'   plot. If `NULL` (default), all available prediction time steps are used.
+##' @param average Logical; if `TRUE` (default), diffusion is averaged over the
+##'   selected time steps (geometric mean for fitted objects, arithmetic mean for
+##'   simulated ones). If `FALSE`, one panel per selected time step is produced.
 ##' @param cor Optional scaling factor controlling the size of the diffusion
 ##'   symbols. If `NULL`, the largest circle is automatically scaled so that its
 ##'   diameter equals one grid cell width.
@@ -1050,7 +1055,8 @@ plot_advection <- function(x,
 ##' @param alpha Transparency value. Currently not used directly in the plotting
 ##'   call. Default: `0.5`.
 ##' @param lwd Line width used for the plotted symbols. Default: `1`.
-##' @param main Main title of the plot. Default: `"Diffusion"`.
+##' @param main Main title of the plot, or one title per panel. Default:
+##'   `"Diffusion"`.
 ##' @param plot_land Logical; if `TRUE`, land masses are added using
 ##'   [plot_land()]. Default: `FALSE`.
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of diffusion
@@ -1059,7 +1065,8 @@ plot_advection <- function(x,
 ##'   diffusion), since a flat raster carries no information; the constant value
 ##'   is stated above the panel instead.
 ##' @param auto_layout Logical; if `TRUE`, graphical parameters are set and
-##'   restored automatically. Default: `TRUE`.
+##'   restored automatically; multiple panels are arranged using [n2mfrow()].
+##'   Default: `TRUE`.
 ##' @param add Logical; if `TRUE`, diffusion is added to an existing plot. If
 ##'   `FALSE` (default), a new plot is created.
 ##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
@@ -1086,6 +1093,8 @@ plot_advection <- function(x,
 ##'
 ##' @export
 plot_diffusion <- function(x,
+                           select = NULL,
+                           average = TRUE,
                            cor = NULL,
                            col = "black",
                            alpha = 0.5,
@@ -1106,64 +1115,20 @@ plot_diffusion <- function(x,
   if (is.null(xlab)) xlab <- map_labs[1]
   if (is.null(ylab)) ylab <- map_labs[2]
 
-  if(auto_layout){
-    opar <- par(no.readonly = TRUE)
-    on.exit(suppressWarnings(graphics::par(opar)))
-    par(mfrow = c(1,1))
-  }
+  if (!inherits(x, c("admove", "admove_sim")))
+    stop("Don't know how to plot diffusion for this object. Only implemented yet for objects of class `admove` or `admove_sim`.")
+  if (is.null(select)) select <- seq_along(x$dat$pred$time)
 
   if (inherits(x, "admove")) {
 
-    if (!add) {
-      plot(NA,
-           xlim = x$dat$pred$grid$xrange,
-           ylim = x$dat$pred$grid$yrange,
-           xlab = xlab,
-           ylab = ylab,
-           xaxt = xaxt,
-           yaxt = yaxt,
-           main = main,
-           asp = 1,
-           ...)
-    }
+    if (is.null(x$pred$hD))
+      stop("No diffusion predictions in 'x'; run add_predictions() first.")
+    pgrid <- x$dat$pred$grid
+    ## average on the log scale (geometric mean over time)
+    logD <- x$pred$hD[, select, drop = FALSE]
+    D <- if (average) as.matrix(exp(rowMeans(logD))) else exp(logD)
 
-    dif.est <- exp(apply(x$pred$hD, 1, mean))
-    dif_const <- .is_constant_field(dif.est)
-
-    if (is.null(cor)) {
-      max_size <- max(sqrt(dif.est), na.rm = TRUE)
-      char_u <- graphics::par("cxy")[1]
-      cor <- if (is.finite(max_size) && max_size > 0 && is.finite(char_u) && char_u > 0)
-        (x$dat$pred$grid$cellsize[1] / char_u) / max_size else 1
-    }
-
-    ## a spatially constant D would colour every cell identically; state the
-    ## value instead of drawing a flat raster that reads as "no signal"
-    if (image_bg && !add && !dif_const) {
-      ig <- x$dat$pred$grid$igrid
-      z <- matrix(NA_real_, length(x$dat$pred$grid$xgr) - 1L,
-                  length(x$dat$pred$grid$ygr) - 1L)
-      z[cbind(ig$idx, ig$idy)] <- dif.est
-      image(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
-            col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
-            add = TRUE)
-    }
-
-    if (isTRUE(plot_land)) {
-      plot_land(sref = sref(x$dat$grid))
-    }
-
-    points(x$dat$pred$grid$xygrid[,1],
-           x$dat$pred$grid$xygrid[,2],
-           col = col,
-           lwd = lwd,
-           cex = sqrt(dif.est) * cor)
-
-    if (dif_const && !add) {
-      .add_const_note(dif.est[1L], "D")
-    }
-
-  } else if(inherits(x, "admove_sim")) {
+  } else {
 
     grid <- x$grid
     cov <- x$cov
@@ -1172,26 +1137,6 @@ plot_diffusion <- function(x,
     funcs <- NULL
 
     if(is.null(par)) stop("No parameters provided! Use par = list() to specify parameters for diffusion.")
-
-    if (!add) {
-      if(!is.null(bg)){
-        graphics::par(bg = bg)
-      }
-      plot(NA,
-           xlim = grid$xrange,
-           ylim = grid$yrange,
-           xlab = xlab,
-           ylab = ylab,
-           xaxt = xaxt,
-           yaxt = yaxt,
-           main = main,
-           asp = 1,
-           ...)
-      ## if(!is.null(bg)){
-      ##     usr <- par("usr")
-      ##     rect(usr[1], usr[3], usr[2], usr[4], col = bg, border = NA)
-      ## }
-    }
 
     par <- default_sim_par(par)
     cov <- .make_cov_list(cov)
@@ -1202,38 +1147,70 @@ plot_diffusion <- function(x,
     dat <- setup_data(cov = cov,
                       grid = grid,
                       trange = trange,
-                      ## trange = c(0,
-                      ##            max(sapply(cov,
-                      ##                       function(x) dim(x)[3]))),
                       knots_tax = dat$knots_tax,
                       knots_dif = dat$knots_dif,
                       verbose = FALSE)
 
     dat$pred$grid$xygrid <- x$dat$pred$grid$xygrid
     dat$pred$grid$igrid <- x$dat$pred$grid$igrid
+    pgrid <- dat$pred$grid
 
     conf <- default_conf(dat)
     funcs <- default_sim_funcs(dat, conf, par, funcs)
 
-    D.true <- sapply(dat$pred$time,
-                     function(t) apply(dat$pred$grid$xygrid, 1,
-                                       function(x) exp(funcs$dif(as.matrix(x),t)[1])))
-    dif_avg <- rowMeans(D.true)
-    dif_const <- .is_constant_field(dif_avg)
+    D <- sapply(dat$pred$time[select],
+                function(t) apply(pgrid$xygrid, 1,
+                                  function(x) exp(funcs$dif(as.matrix(x),t)[1])))
+    D <- if (average) as.matrix(rowMeans(as.matrix(D))) else as.matrix(D)
+  }
 
-    if (is.null(cor)) {
-      max_size <- max(sqrt(dif_avg), na.rm = TRUE)
-      char_u <- graphics::par("cxy")[1]
-      cor <- if (is.finite(max_size) && max_size > 0 && is.finite(char_u) && char_u > 0)
-        (dat$pred$grid$cellsize[1] / char_u) / max_size else 1
+  npanel <- ncol(D)
+  mains <- if (length(main) == npanel) main else rep(main[1L], npanel)
+
+  if(auto_layout){
+    opar <- par(no.readonly = TRUE)
+    on.exit(suppressWarnings(graphics::par(opar)))
+    par(mfrow = if (npanel == 1L || add) c(1, 1) else n2mfrow(npanel, asp = 2))
+  }
+
+  for (i in seq_len(npanel)) {
+
+    dif <- D[, i]
+    dif_const <- .is_constant_field(dif)
+
+    if (!add) {
+      if(!is.null(bg)){
+        graphics::par(bg = bg)
+      }
+      plot(NA,
+           xlim = pgrid$xrange,
+           ylim = pgrid$yrange,
+           xlab = xlab,
+           ylab = ylab,
+           xaxt = xaxt,
+           yaxt = yaxt,
+           main = mains[i],
+           asp = 1,
+           ...)
     }
 
+    ## one scale for all panels (so circle sizes compare across time steps);
+    ## needs an open plot for the character size, hence set in the first panel
+    if (is.null(cor)) {
+      max_size <- max(sqrt(D), na.rm = TRUE)
+      char_u <- graphics::par("cxy")[1]
+      cor <- if (is.finite(max_size) && max_size > 0 && is.finite(char_u) && char_u > 0)
+        (pgrid$cellsize[1] / char_u) / max_size else 1
+    }
+
+    ## a spatially constant D would colour every cell identically; state the
+    ## value instead of drawing a flat raster that reads as "no signal"
     if (image_bg && !add && !dif_const) {
-      ig <- dat$pred$grid$igrid
-      z <- matrix(NA_real_, length(dat$pred$grid$xgr) - 1L,
-                  length(dat$pred$grid$ygr) - 1L)
-      z[cbind(ig$idx, ig$idy)] <- dif_avg
-      image(dat$pred$grid$xgr, dat$pred$grid$ygr, z,
+      ig <- pgrid$igrid
+      z <- matrix(NA_real_, length(pgrid$xgr) - 1L,
+                  length(pgrid$ygr) - 1L)
+      z[cbind(ig$idx, ig$idy)] <- dif
+      image(pgrid$xgr, pgrid$ygr, z,
             col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
             add = TRUE)
     }
@@ -1242,18 +1219,18 @@ plot_diffusion <- function(x,
       plot_land(sref = sref(x$dat$grid))
     }
 
-    points(dat$pred$grid$xygrid[,1],
-           dat$pred$grid$xygrid[,2],
+    points(pgrid$xygrid[,1],
+           pgrid$xygrid[,2],
            col = col,
            lwd = lwd,
-           cex = sqrt(dif_avg) * cor)
+           cex = sqrt(dif) * cor)
 
     if (dif_const && !add) {
-      .add_const_note(dif_avg[1L], "D")
+      .add_const_note(dif[1L], "D")
     }
 
+    if(!add) box(lwd = 1.5)
   }
-  if(!add) box(lwd = 1.5)
 }
 
 
