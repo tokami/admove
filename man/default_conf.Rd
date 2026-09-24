@@ -51,6 +51,15 @@ and never densifies anything. Use \code{"expm"} only on small problems, or to
 check \code{"expav"} against an independent route. See \code{dev/code_notes.org},
 "Uniformization for the CTMC".
 
+\code{ctmc_nmax} caps the number of uniformization terms per \code{"expav"} step
+(passed as \code{Nmax} to \code{\link[RTMB:expAv]{RTMB::expAv()}}). \code{NULL}, the default, leaves RTMB's own
+cap of 2e9, i.e. no cap in practice. The term count grows with the largest
+exit rate on the \emph{whole} grid, so an optimiser trial step with a large
+diffusion or advection coefficient can retape at a huge term count and
+exhaust memory; a cap bounds that. A capped step loses probability mass and
+is rejected by the optimiser, but estimates that need more terms than the
+cap are wrong, so \code{\link[=admove]{admove()}} warns when the cap binds at the estimates.
+
 \code{drift_scheme} selects how the drift term (taxis \emph{and} advection) is
 discretised on the grid when assembling the generator. \code{"upwind"} (the
 default) is first-order upstream: off-diagonal rates are guaranteed

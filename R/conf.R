@@ -39,6 +39,15 @@
 ##' check `"expav"` against an independent route. See `dev/code_notes.org`,
 ##' "Uniformization for the CTMC".
 ##'
+##' `ctmc_nmax` caps the number of uniformization terms per `"expav"` step
+##' (passed as `Nmax` to [RTMB::expAv()]). `NULL`, the default, leaves RTMB's own
+##' cap of 2e9, i.e. no cap in practice. The term count grows with the largest
+##' exit rate on the *whole* grid, so an optimiser trial step with a large
+##' diffusion or advection coefficient can retape at a huge term count and
+##' exhaust memory; a cap bounds that. A capped step loses probability mass and
+##' is rejected by the optimiser, but estimates that need more terms than the
+##' cap are wrong, so [admove()] warns when the cap binds at the estimates.
+##'
 ##' `drift_scheme` selects how the drift term (taxis *and* advection) is
 ##' discretised on the grid when assembling the generator. `"upwind"` (the
 ##' default) is first-order upstream: off-diagonal rates are guaranteed
@@ -171,6 +180,10 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   ## Matrix::expm() tapes the whole dense algorithm and the tape grows without
   ## bound. See dev/code_notes.org, "Why =expav= is the default".
   conf$ctmc_method <- "expav"
+
+  ## Cap on the uniformization terms per "expav" step (NULL = RTMB's 2e9). Set
+  ## with list(NULL): conf$ctmc_nmax <- NULL would drop the element.
+  conf["ctmc_nmax"] <- list(NULL)
 
   ## CTMC time lattice and release-event grouping
   ## "auto"  = lattice aligned to the covariate/spline slice boundaries, and
@@ -347,6 +360,7 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   conf$obs_var_type <- .get_obs_var_type_name(conf$obs_var_type)
 
   .check_ctmc_method(conf$ctmc_method)
+  .check_ctmc_nmax(conf$ctmc_nmax)
 
   if (!is.character(conf$kf_boundary) || length(conf$kf_boundary) != 1L ||
         !conf$kf_boundary %in% c("clamp", "none")) {
@@ -648,6 +662,19 @@ set_seasons <- function(conf, dat, n, cov = NULL, verbose = TRUE) {
 
 
 ## The string the old numbering stood for, for the migration message.
+.check_ctmc_nmax <- function(ctmc_nmax) {
+
+  if (is.null(ctmc_nmax)) return(invisible(NULL))
+  if (!is.numeric(ctmc_nmax) || length(ctmc_nmax) != 1L ||
+        !is.finite(ctmc_nmax) || ctmc_nmax < 1 ||
+        ctmc_nmax != round(ctmc_nmax)) {
+    stop("'conf$ctmc_nmax' must be NULL or a single positive integer, not ",
+         deparse(ctmc_nmax), ".", call. = FALSE)
+  }
+  return(invisible(NULL))
+}
+
+
 .ctmc_method_from_number <- function(x) {
   if (length(x) == 1L && !is.na(x) && x == 0) return("expm")
   if (length(x) == 1L && !is.na(x) && x == 1) return("expav")

@@ -322,9 +322,12 @@ print.admove_release_events <- function(x, ...) {
 .ctmc_gen_cache <- function(ctx, template) {
 
   cache <- new.env(parent = emptyenv())
+  ## longest step taken with each slice's generator (plain numeric)
+  dtmax <- new.env(parent = emptyenv())
 
-  Qof <- function(t) {
+  Qof <- function(t, dt) {
     key <- .ctmc_slice_key(ctx$habi, t)
+    dtmax[[key]] <- max(dtmax[[key]], dt)
     Q <- cache[[key]]
     if (!is.null(Q)) return(Q)
     Q <- .ctmc_generator(ctx, t, template)
@@ -332,7 +335,43 @@ print.admove_release_events <- function(x, ...) {
     return(Q)
   }
 
-  list(Q = Qof, env = cache)
+  list(Q = Qof, env = cache, dtmax = dtmax)
+}
+
+
+## Exit rate times the longest step, per cell and cached slice. Its maximum is
+## the uniformization rate RTMB::expAv() derives its term count from (the
+## Gershgorin radius of dt * Q), so the post-fit check against conf$ctmc_nmax
+## in admove() reads it. See dev/code_notes.org, "Cost, and what makes it
+## expensive".
+.ctmc_exit <- function(ctx, gen) {
+
+  "c" <- RTMB::ADoverload("c")
+
+  nc <- ctx$nc
+  keys <- ls(gen$env)
+  if (length(keys) == 0) return(0)
+  ## a list first: RTMB's c() rejects NULL, so c(NULL, x) cannot accumulate
+  out <- lapply(keys, function(key) {
+    Q <- gen$env[[key]]
+    -Q[cbind(1:nc, 1:nc)] * gen$dtmax[[key]]
+  })
+  return(do.call(c, out))
+}
+
+
+## Warn when the terms expAv needs at rate rho (same rule as RTMB, tol = 1e-8)
+## reach the cap.
+.check_ctmc_nmax_binds <- function(rho, nmax) {
+  need <- stats::qpois(1e-8, rho, lower.tail = FALSE)
+  if (need >= nmax) {
+    warning("conf$ctmc_nmax = ", nmax, " binds at the estimates: the largest ",
+            "exit rate x step is ", signif(rho, 3), ", which needs ", need,
+            " uniformization terms. The matrix exponential is truncated, so ",
+            "the likelihood and the estimates are wrong; raise ctmc_nmax.",
+            call. = FALSE)
+  }
+  return(invisible(need))
 }
 
 
@@ -349,12 +388,28 @@ print.admove_release_events <- function(x, ...) {
 
   if (identical(ctx$dat$ctmc_method, "expav")) {
 
-    pred_dist <- as.vector(RTMB::expAv(Mstar,
-                               last_dist,
-                               transpose = TRUE,
-                               uniformization = TRUE,
-                               rescale_freq = 1,
-                               trace = FALSE))
+    ## ctmc_nmax caps the term count, which otherwise follows the stiffest cell
+    ## of the grid and can exhaust memory on one steep optimiser trial step. A
+    ## truncated series loses mass, so a capped step gets a worse nll and is
+    ## rejected; the cap is only safe if it does not bind at the estimates,
+    ## which admove() checks. See dev/code_notes.org, "Cost, and what makes it
+    ## expensive".
+    ## RTMB's own "reduced to 'Nmax'" warning is muffled: it fires once per
+    ## capped step, and the post-fit check is the one that matters.
+    nmax <- if (is.null(ctx$dat$ctmc_nmax)) 2e9 else ctx$dat$ctmc_nmax
+    pred_dist <- withCallingHandlers(
+      as.vector(RTMB::expAv(Mstar,
+                            last_dist,
+                            transpose = TRUE,
+                            uniformization = TRUE,
+                            rescale_freq = 1,
+                            Nmax = nmax,
+                            warn = FALSE,
+                            trace = FALSE)),
+      warning = function(w) {
+        if (grepl("reduced to 'Nmax'", conditionMessage(w), fixed = TRUE))
+          invokeRestart("muffleWarning")
+      })
 
   } else {
 
@@ -565,7 +620,7 @@ print.admove_release_events <- function(x, ...) {
     dt <- dts[t-1]
 
     ## dist prob after move
-    pred_dist <- .ctmc_step(ctx, gen$Q(ts[t-1]), dt, last_dist)
+    pred_dist <- .ctmc_step(ctx, gen$Q(ts[t-1], dt), dt, last_dist)
 
     if (t %in% observed) {
 
@@ -697,7 +752,7 @@ print.admove_release_events <- function(x, ...) {
   for (t in 2:nts) {
 
     ## dist prob after move
-    pred_dist <- .ctmc_step(ctx, gen$Q(ts[t-1]), dts[t-1], last_dist)
+    pred_dist <- .ctmc_step(ctx, gen$Q(ts[t-1], dts[t-1]), dts[t-1], last_dist)
 
     for (q in by_k[[t]]) {
 
@@ -804,6 +859,7 @@ print.admove_release_events <- function(x, ...) {
   }
 
   return(list(loglik_tags = loglik_tags,
+              exit = .ctmc_exit(ctx, gen),
               ngen = length(ls(gen$env)),
               nstep = ctx$counters$nstep,
               ngroup = ctx$counters$ngroup,

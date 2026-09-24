@@ -206,6 +206,7 @@ admove <- function(dat,
   .check_kappa_map(par, map, conf)
 
   .check_ctmc_method(conf$ctmc_method)
+  .check_ctmc_nmax(conf$ctmc_nmax)
 
   ## check that mapping in line with obs_var_type
   ind_t_use <- c(conf$use_dtags, conf$use_stags, conf$use_ctags)
@@ -404,6 +405,15 @@ admove <- function(dat,
   }
   if (length(res$boundary_tags) > 0) {
     warning(.boundary_warning(res$boundary_tags), call. = FALSE)
+  }
+
+  ## a ctmc_nmax cap that binds at the estimates truncates the exponential
+  ## there, not only on rejected trial steps
+  if (identical(engine_int, 2L) && identical(conf$ctmc_method, "expav") &&
+        !is.null(conf$ctmc_nmax)) {
+    exit <- if (do_report) res$rep$ctmc_exit else obj$report(opt$par)$ctmc_exit
+    res$ctmc_rho <- max(exit)
+    .check_ctmc_nmax_binds(res$ctmc_rho, conf$ctmc_nmax)
   }
 
   if (do_tag_dist) {

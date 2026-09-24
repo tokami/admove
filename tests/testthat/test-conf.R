@@ -25,6 +25,7 @@ test_that("default_conf returns expected names", {
       "do_update",
       "engine",
       "ctmc_method",
+      "ctmc_nmax",
       "ctmc_groups",
       "drift_scheme",
       "n_seasons",

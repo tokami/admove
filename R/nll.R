@@ -61,6 +61,7 @@ nll <- function(par, dat) {
   boundary_excess <- rep(0, ntags)
 
   ## CTMC diagnostics; stay 0 for the KF (see the CTMC branch below)
+  ctmc_exit <- 0
   ctmc_ngen <- 0
   ctmc_nstep <- 0
   ctmc_ngroup <- 0
@@ -326,6 +327,7 @@ nll <- function(par, dat) {
 
     ctmc_out <- .ctmc_loglik(ctx, loglik_tags)
     loglik_tags <- ctmc_out$loglik_tags
+    ctmc_exit <- ctmc_out$exit
     ctmc_ngen <- ctmc_out$ngen
     ctmc_nstep <- ctmc_out$nstep
     ctmc_ngroup <- ctmc_out$ngroup
@@ -357,6 +359,9 @@ nll <- function(par, dat) {
 
   ## CTMC only: generators actually built against propagation steps taken. The
   ## first is the cache working, and both are 0 for the KF.
+  ## CTMC only: exit rate x step per cell and slice; its max sets the expAv
+  ## term count (checked against conf$ctmc_nmax in admove())
+  REPORT(ctmc_exit)
   REPORT(ctmc_ngen)
   REPORT(ctmc_nstep)
   REPORT(ctmc_ngroup)
