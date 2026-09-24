@@ -46,8 +46,9 @@ call. Default: \code{0.5}.}
 
 \item{lwd}{Line width used for the plotted symbols. Default: \code{1}.}
 
-\item{main}{Main title of the plot, or one title per panel. Default:
-\code{"Diffusion"}.}
+\item{main}{Main title of the plot. Default: \code{"Diffusion"}. With several
+panels it is drawn once above them, and a vector with one entry per panel
+replaces the per-panel titles instead.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added using
 \code{\link[=plot_land]{plot_land()}}. Default: \code{FALSE}.}
@@ -100,4 +101,10 @@ Diffusion is represented by point sizes on the prediction grid, with larger
 symbols indicating higher diffusion. For fitted objects, diffusion is based
 on \code{x$pred$hD}. For simulated objects, diffusion is reconstructed from the
 simulation setup using \code{\link[=default_sim_funcs]{default_sim_funcs()}}.
+
+If \code{average = FALSE}, one panel per selected time step is produced, titled
+with its prediction time as a date at the resolution of the time units (e.g.
+\code{"Jan 2007"} for monthly units; \code{"t = 48.45"} if the time reference has no
+origin). The panels share their axes, the circle scale and the colour scale
+of diffusion, so they can be compared directly.
 }

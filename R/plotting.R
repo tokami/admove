@@ -331,7 +331,9 @@ plot_land <- local({
 ##' @param alpha Transparency value. Currently not used directly in the plotting
 ##'   call. Default is `0.5`.
 ##' @param lwd Line width of the arrows. Default is `1`.
-##' @param main Main title of the plot. Default is `"Taxis"`.
+##' @param main Main title of the plot. Default is `"Taxis"`. With several
+##'   panels it is drawn once above them, and a vector with one entry per panel
+##'   replaces the per-panel titles instead.
 ##' @param plot_land Logical; if `TRUE`, land masses are added using
 ##'   [plot_land()]. Default is `FALSE`.
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of taxis
@@ -360,7 +362,11 @@ plot_land <- local({
 ##' recomputed from the simulated covariates and parameter values.
 ##'
 ##' If `average = TRUE`, the mean taxis over the selected time steps is plotted.
-##' Otherwise, one panel per selected time step is produced unless `add = TRUE`.
+##' Otherwise, one panel per selected time step is produced unless `add = TRUE`,
+##' titled with its prediction time as a date at the resolution of the time
+##' units (e.g. `"Jan 2007"` for monthly units; `"t = 48.45"` if the time
+##' reference has no origin). The panels share their axes, the arrow scale and
+##' the colour scale of the magnitude, so they can be compared directly.
 ##'
 ##' The arrows show \eqn{\kappa \nabla h}, i.e. they include the taxis scaling
 ##' parameter `kappa`. Since only the product `kappa * alpha` is identifiable
@@ -415,13 +421,27 @@ plot_taxis <- function(x,
     nsea_plot <- 1L
   }
 
+  n_panels <- if (is_seasonal) nsea_plot
+              else if (average || length(select) == 1L) 1L
+              else length(select)
+
+  ## the panels of a fit share their limits: draw axes and axis labels only on
+  ## the outer panels and the main title once above the whole figure
+  shared <- auto_layout && !add && n_panels > 1L && inherits(x, "admove")
+  main_outer <- shared && length(main) != n_panels && nzchar(main[1L])
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(suppressWarnings(graphics::par(opar)))
-    n_panels <- if (is_seasonal) nsea_plot
-                else if (average || length(select) == 1L) 1L
-                else length(select)
-    par(mfrow = if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2))
+    mfrow <- if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2)
+    if (shared) {
+      par(mfrow = mfrow,
+          mar = c(0.3, 0.3, 1.4, 0.3),
+          oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
+          mgp = c(2, 0.5, 0),
+          tcl = -0.3)
+    } else {
+      par(mfrow = mfrow)
+    }
   }
 
   if (inherits(x, "admove")) {
@@ -453,12 +473,15 @@ plot_taxis <- function(x,
       tax.y <- tax.y[, select_sea, drop = FALSE]
 
       ## per-panel titles showing season time interval
+      sea_lab <- paste0("Season ", select_sea, " [",
+                        round(ts_breaks[select_sea], 2), ", ",
+                        round(ts_upper[select_sea], 2), ")")
       mains <- if (length(main) == nsea_plot) {
         main
+      } else if (shared) {
+        sea_lab
       } else {
-        paste0(main[1L], " (Season ", select_sea, " [",
-               round(ts_breaks[select_sea], 2), ", ",
-               round(ts_upper[select_sea], 2), "))")
+        paste0(main[1L], " (", sea_lab, ")")
       }
 
     } else {
@@ -474,7 +497,20 @@ plot_taxis <- function(x,
         tax.x <- x$pred$hTdx[,select]
         tax.y <- x$pred$hTdy[,select]
       }
-      mains <- rep(main[1L], ncol(as.matrix(tax.x)))
+      if (average) {
+        mains <- main[1L]
+      } else {
+        t_lab <- .time_labels(x$dat$pred$time[select], tref(x$dat))
+        mains <- if (length(select) > 1L && length(main) == length(select)) {
+          main
+        } else if (shared) {
+          t_lab
+        } else if (nzchar(main[1L])) {
+          paste0(main[1L], " (", t_lab, ")")
+        } else {
+          rep(main[1L], length(select))
+        }
+      }
     }
 
     if(!inherits(tax.x, "matrix")){
@@ -487,6 +523,12 @@ plot_taxis <- function(x,
     cor <- if (is.finite(max_mag) && max_mag > 0)
       x$dat$grid$cellsize[1] / max_mag else 1
   }
+
+    ## one colour scale for the magnitude in all panels, like the arrow lengths
+    zlim_mag <- suppressWarnings(range(sqrt(tax.x^2 + tax.y^2), na.rm = TRUE,
+                                       finite = TRUE))
+    if (!all(is.finite(zlim_mag)) || diff(zlim_mag) == 0) zlim_mag <- NULL
+    ncol_lay <- par("mfrow")[2L]
 
     for(i in 1:ncol(tax.x)){
 
@@ -507,38 +549,58 @@ plot_taxis <- function(x,
         plot(NA,
              xlim = x$dat$pred$grid$xrange,
              ylim = x$dat$pred$grid$yrange,
-             xlab = xlab,
-             ylab = ylab,
-             xaxt = xaxt,
-             yaxt = yaxt,
-             main = mains[i],
+             xlab = if (shared) "" else xlab,
+             ylab = if (shared) "" else ylab,
+             xaxt = if (shared) "n" else xaxt,
+             yaxt = if (shared) "n" else yaxt,
+             main = if (shared) "" else mains[i],
              asp = 1,
              ...)
+        if (shared) {
+          ## x axis on the lowest panel of each column, y axis on the first
+          if (xaxt != "n" && i + ncol_lay > n_panels) axis(1)
+          if (yaxt != "n" && (i - 1L) %% ncol_lay == 0L) axis(2)
+          title(main = mains[i], line = 0.3, font.main = 1, cex.main = 1)
+        }
         if (image_bg) {
           ig <- x$dat$pred$grid$igrid
           mag <- sqrt(tax.x[, i]^2 + tax.y[, i]^2)
           z <- matrix(NA_real_, length(x$dat$pred$grid$xgr) - 1L,
                       length(x$dat$pred$grid$ygr) - 1L)
           z[cbind(ig$idx, ig$idy)] <- mag
-          image(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
-            col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
-                add = TRUE)
+          image_args <- list(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
+                             col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
+                             add = TRUE)
+          image_args$zlim <- zlim_mag
+          do.call(image, image_args)
         }
       }
       if(plot_land){
         plot_land(sref = sref(x$dat))
       }
 
-      arrows(x$dat$pred$grid$xygrid[,1],
-             x$dat$pred$grid$xygrid[,2],
-             x$dat$pred$grid$xygrid[,1] + tax.x[,i] * cor,
-             x$dat$pred$grid$xygrid[,2] + tax.y[,i] * cor,
-             col = col,
-             lwd = lwd,
-             length = .1)
+      ## cells with (near) zero taxis draw nothing; drop the per-arrow warning
+      withCallingHandlers(
+        arrows(x$dat$pred$grid$xygrid[,1],
+               x$dat$pred$grid$xygrid[,2],
+               x$dat$pred$grid$xygrid[,1] + tax.x[,i] * cor,
+               x$dat$pred$grid$xygrid[,2] + tax.y[,i] * cor,
+               col = col,
+               lwd = lwd,
+               length = .1),
+        warning = function(w) {
+          if (grepl("zero-length arrow", conditionMessage(w)))
+            invokeRestart("muffleWarning")
+        })
 
       if(!add) box(lwd = 1.5)
 
+    }
+
+    if (shared) {
+      if (main_outer) mtext(main[1L], 3, 0.5, outer = TRUE, font = 2)
+      mtext(xlab, 1, 2, outer = TRUE)
+      mtext(ylab, 2, 2.2, outer = TRUE)
     }
 
   } else if(inherits(x, "admove_sim")) {
@@ -673,7 +735,9 @@ plot_taxis <- function(x,
 ##' @param alpha Transparency value. Currently not used directly in the plotting
 ##'   call. Default is `0.5`.
 ##' @param lwd Line width of the arrows. Default is `1`.
-##' @param main Main title of the plot. Default is `"Advection"`.
+##' @param main Main title of the plot. Default is `"Advection"`. With several
+##'   panels it is drawn once above them, and a vector with one entry per panel
+##'   replaces the per-panel titles instead.
 ##' @param plot_land Logical; if `TRUE`, land masses are added using
 ##'   [plot_land()]. Default is `FALSE`.
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of advection
@@ -706,7 +770,10 @@ plot_taxis <- function(x,
 ##'
 ##' If `average = TRUE`, the mean advection over the selected time steps is
 ##' plotted. Otherwise, one panel per selected time step is produced unless
-##' `add = TRUE`.
+##' `add = TRUE`, titled with its prediction time as a date at the resolution of
+##' the time units (e.g. `"Jan 2007"` for monthly units; `"t = 48.45"` if the
+##' time reference has no origin). The panels share their axes, the arrow scale
+##' and the colour scale of the magnitude, so they can be compared directly.
 ##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing a plot.
@@ -760,13 +827,28 @@ plot_advection <- function(x,
     nsea_plot <- 1L
   }
 
+  n_panels <- if (is_seasonal) nsea_plot
+              else if (average || length(select) == 1L) 1L
+              else length(select)
+
+  ## the panels of a fit share their limits: draw axes and axis labels only on
+  ## the outer panels and the main title once above the whole figure
+  shared <- auto_layout && !add && n_panels > 1L && inherits(x, "admove")
+  main_outer <- shared && length(main) != n_panels && nzchar(main[1L])
+
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(suppressWarnings(graphics::par(opar)))
-    n_panels <- if (is_seasonal) nsea_plot
-                else if (average || length(select) == 1L) 1L
-                else length(select)
-    par(mfrow = if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2))
+    mfrow <- if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2)
+    if (shared) {
+      par(mfrow = mfrow,
+          mar = c(0.3, 0.3, 1.4, 0.3),
+          oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
+          mgp = c(2, 0.5, 0),
+          tcl = -0.3)
+    } else {
+      par(mfrow = mfrow)
+    }
   }
 
   if (inherits(x, "admove")) {
@@ -796,12 +878,15 @@ plot_advection <- function(x,
       adv.y <- adv.y[, select_sea, drop = FALSE]
 
       ## per-panel titles showing season time interval
+      sea_lab <- paste0("Season ", select_sea, " [",
+                        round(ts_breaks[select_sea], 2), ", ",
+                        round(ts_upper[select_sea], 2), ")")
       mains <- if (length(main) == nsea_plot) {
         main
+      } else if (shared) {
+        sea_lab
       } else {
-        paste0(main[1L], " (Season ", select_sea, " [",
-               round(ts_breaks[select_sea], 2), ", ",
-               round(ts_upper[select_sea], 2), "))")
+        paste0(main[1L], " (", sea_lab, ")")
       }
 
     } else {
@@ -817,7 +902,20 @@ plot_advection <- function(x,
         adv.x <- x$pred$hAx[,select]
         adv.y <- x$pred$hAy[,select]
       }
-      mains <- rep(main[1L], ncol(as.matrix(adv.x)))
+      if (average) {
+        mains <- main[1L]
+      } else {
+        t_lab <- .time_labels(x$dat$pred$time[select], tref(x$dat))
+        mains <- if (length(select) > 1L && length(main) == length(select)) {
+          main
+        } else if (shared) {
+          t_lab
+        } else if (nzchar(main[1L])) {
+          paste0(main[1L], " (", t_lab, ")")
+        } else {
+          rep(main[1L], length(select))
+        }
+      }
     }
 
     if(!inherits(adv.x, "matrix")){
@@ -830,6 +928,12 @@ plot_advection <- function(x,
     cor <- if (is.finite(max_mag) && max_mag > 0)
       x$dat$grid$cellsize[1] / max_mag else 1
   }
+
+    ## one colour scale for the magnitude in all panels, like the arrow lengths
+    zlim_mag <- suppressWarnings(range(sqrt(adv.x^2 + adv.y^2), na.rm = TRUE,
+                                       finite = TRUE))
+    if (!all(is.finite(zlim_mag)) || diff(zlim_mag) == 0) zlim_mag <- NULL
+    ncol_lay <- par("mfrow")[2L]
 
     for(i in 1:ncol(adv.x)){
 
@@ -853,13 +957,19 @@ plot_advection <- function(x,
         plot(NA,
              xlim = x$dat$pred$grid$xrange,
              ylim = x$dat$pred$grid$yrange,
-             xlab = xlab,
-             ylab = ylab,
-             xaxt = xaxt,
-             yaxt = yaxt,
-             main = mains[i],
+             xlab = if (shared) "" else xlab,
+             ylab = if (shared) "" else ylab,
+             xaxt = if (shared) "n" else xaxt,
+             yaxt = if (shared) "n" else yaxt,
+             main = if (shared) "" else mains[i],
              asp = 1,
              ...)
+        if (shared) {
+          ## x axis on the lowest panel of each column, y axis on the first
+          if (xaxt != "n" && i + ncol_lay > n_panels) axis(1)
+          if (yaxt != "n" && (i - 1L) %% ncol_lay == 0L) axis(2)
+          title(main = mains[i], line = 0.3, font.main = 1, cex.main = 1)
+        }
         ## a spatially constant magnitude (in particular an all-zero field from
         ## a model fitted without advection) would colour every cell identically;
         ## state the value instead of drawing a flat raster
@@ -868,9 +978,11 @@ plot_advection <- function(x,
           z <- matrix(NA_real_, length(x$dat$pred$grid$xgr) - 1L,
                       length(x$dat$pred$grid$ygr) - 1L)
           z[cbind(ig$idx, ig$idy)] <- mag
-          image(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
-            col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
-                add = TRUE)
+          image_args <- list(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
+                             col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
+                             add = TRUE)
+          image_args$zlim <- zlim_mag
+          do.call(image, image_args)
         }
       }
       if(plot_land){
@@ -887,13 +999,19 @@ plot_advection <- function(x,
                pch = 16,
                cex = 0.2)
       } else {
-        arrows(x$dat$pred$grid$xygrid[,1],
-               x$dat$pred$grid$xygrid[,2],
-               x$dat$pred$grid$xygrid[,1] + adv.x[,i] * cor,
-               x$dat$pred$grid$xygrid[,2] + adv.y[,i] * cor,
-               col = col,
-               lwd = lwd,
-               length = .1)
+        ## cells with (near) zero advection draw nothing; drop the per-arrow warning
+        withCallingHandlers(
+          arrows(x$dat$pred$grid$xygrid[,1],
+                 x$dat$pred$grid$xygrid[,2],
+                 x$dat$pred$grid$xygrid[,1] + adv.x[,i] * cor,
+                 x$dat$pred$grid$xygrid[,2] + adv.y[,i] * cor,
+                 col = col,
+                 lwd = lwd,
+                 length = .1),
+          warning = function(w) {
+            if (grepl("zero-length arrow", conditionMessage(w)))
+              invokeRestart("muffleWarning")
+          })
       }
 
       if (mag_const && !add) {
@@ -902,6 +1020,12 @@ plot_advection <- function(x,
 
       if(!add) box(lwd = 1.5)
 
+    }
+
+    if (shared) {
+      if (main_outer) mtext(main[1L], 3, 0.5, outer = TRUE, font = 2)
+      mtext(xlab, 1, 2, outer = TRUE)
+      mtext(ylab, 2, 2.2, outer = TRUE)
     }
 
   } else if(inherits(x, "admove_sim")) {
@@ -1055,8 +1179,9 @@ plot_advection <- function(x,
 ##' @param alpha Transparency value. Currently not used directly in the plotting
 ##'   call. Default: `0.5`.
 ##' @param lwd Line width used for the plotted symbols. Default: `1`.
-##' @param main Main title of the plot, or one title per panel. Default:
-##'   `"Diffusion"`.
+##' @param main Main title of the plot. Default: `"Diffusion"`. With several
+##'   panels it is drawn once above them, and a vector with one entry per panel
+##'   replaces the per-panel titles instead.
 ##' @param plot_land Logical; if `TRUE`, land masses are added using
 ##'   [plot_land()]. Default: `FALSE`.
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of diffusion
@@ -1088,6 +1213,12 @@ plot_advection <- function(x,
 ##' on `x$pred$hD`. For simulated objects, diffusion is reconstructed from the
 ##' simulation setup using [default_sim_funcs()].
 ##'
+##' If `average = FALSE`, one panel per selected time step is produced, titled
+##' with its prediction time as a date at the resolution of the time units (e.g.
+##' `"Jan 2007"` for monthly units; `"t = 48.45"` if the time reference has no
+##' origin). The panels share their axes, the circle scale and the colour scale
+##' of diffusion, so they can be compared directly.
+##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing a plot.
 ##'
@@ -1117,13 +1248,14 @@ plot_diffusion <- function(x,
 
   if (!inherits(x, c("admove", "admove_sim")))
     stop("Don't know how to plot diffusion for this object. Only implemented yet for objects of class `admove` or `admove_sim`.")
-  if (is.null(select)) select <- seq_along(x$dat$pred$time)
 
   if (inherits(x, "admove")) {
 
     if (is.null(x$pred$hD))
       stop("No diffusion predictions in 'x'; run add_predictions() first.")
+    if (is.null(select)) select <- seq_along(x$dat$pred$time)
     pgrid <- x$dat$pred$grid
+    ptime <- x$dat$pred$time
     ## average on the log scale (geometric mean over time)
     logD <- x$pred$hD[, select, drop = FALSE]
     D <- if (average) as.matrix(exp(rowMeans(logD))) else exp(logD)
@@ -1154,26 +1286,61 @@ plot_diffusion <- function(x,
     dat$pred$grid$xygrid <- x$dat$pred$grid$xygrid
     dat$pred$grid$igrid <- x$dat$pred$grid$igrid
     pgrid <- dat$pred$grid
+    ptime <- dat$pred$time
+    if (is.null(select)) select <- seq_along(ptime)
 
     conf <- default_conf(dat)
     funcs <- default_sim_funcs(dat, conf, par, funcs)
 
-    D <- sapply(dat$pred$time[select],
+    D <- sapply(ptime[select],
                 function(t) apply(pgrid$xygrid, 1,
                                   function(x) exp(funcs$dif(as.matrix(x),t)[1])))
     D <- if (average) as.matrix(rowMeans(as.matrix(D))) else as.matrix(D)
   }
 
-  npanel <- ncol(D)
-  mains <- if (length(main) == npanel) main else rep(main[1L], npanel)
+  n_panels <- ncol(D)
+
+  ## the panels share their limits: draw axes and axis labels only on the outer
+  ## panels and the main title once above the whole figure
+  shared <- auto_layout && !add && n_panels > 1L
+  main_outer <- shared && length(main) != n_panels && nzchar(main[1L])
+
+  if (average) {
+    mains <- main[1L]
+  } else {
+    t_lab <- .time_labels(ptime[select], tref(x$dat))
+    mains <- if (n_panels > 1L && length(main) == n_panels) {
+      main
+    } else if (shared) {
+      t_lab
+    } else if (nzchar(main[1L])) {
+      paste0(main[1L], " (", t_lab, ")")
+    } else {
+      rep(main[1L], n_panels)
+    }
+  }
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(suppressWarnings(graphics::par(opar)))
-    par(mfrow = if (npanel == 1L || add) c(1, 1) else n2mfrow(npanel, asp = 2))
+    mfrow <- if (n_panels == 1L || add) c(1, 1) else n2mfrow(n_panels, asp = 2)
+    if (shared) {
+      par(mfrow = mfrow,
+          mar = c(0.3, 0.3, 1.4, 0.3),
+          oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
+          mgp = c(2, 0.5, 0),
+          tcl = -0.3)
+    } else {
+      par(mfrow = mfrow)
+    }
   }
 
-  for (i in seq_len(npanel)) {
+  ## one colour scale for D in all panels, like the circle sizes
+  zlim_dif <- suppressWarnings(range(D, na.rm = TRUE, finite = TRUE))
+  if (!all(is.finite(zlim_dif)) || diff(zlim_dif) == 0) zlim_dif <- NULL
+  ncol_lay <- par("mfrow")[2L]
+
+  for (i in seq_len(n_panels)) {
 
     dif <- D[, i]
     dif_const <- .is_constant_field(dif)
@@ -1185,13 +1352,19 @@ plot_diffusion <- function(x,
       plot(NA,
            xlim = pgrid$xrange,
            ylim = pgrid$yrange,
-           xlab = xlab,
-           ylab = ylab,
-           xaxt = xaxt,
-           yaxt = yaxt,
-           main = mains[i],
+           xlab = if (shared) "" else xlab,
+           ylab = if (shared) "" else ylab,
+           xaxt = if (shared) "n" else xaxt,
+           yaxt = if (shared) "n" else yaxt,
+           main = if (shared) "" else mains[i],
            asp = 1,
            ...)
+      if (shared) {
+        ## x axis on the lowest panel of each column, y axis on the first
+        if (xaxt != "n" && i + ncol_lay > n_panels) axis(1)
+        if (yaxt != "n" && (i - 1L) %% ncol_lay == 0L) axis(2)
+        title(main = mains[i], line = 0.3, font.main = 1, cex.main = 1)
+      }
     }
 
     ## one scale for all panels (so circle sizes compare across time steps);
@@ -1210,9 +1383,11 @@ plot_diffusion <- function(x,
       z <- matrix(NA_real_, length(pgrid$xgr) - 1L,
                   length(pgrid$ygr) - 1L)
       z[cbind(ig$idx, ig$idy)] <- dif
-      image(pgrid$xgr, pgrid$ygr, z,
-            col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
-            add = TRUE)
+      image_args <- list(pgrid$xgr, pgrid$ygr, z,
+                         col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
+                         add = TRUE)
+      image_args$zlim <- zlim_dif
+      do.call(image, image_args)
     }
 
     if (isTRUE(plot_land)) {
@@ -1231,7 +1406,14 @@ plot_diffusion <- function(x,
 
     if(!add) box(lwd = 1.5)
   }
+
+  if (shared) {
+    if (main_outer) mtext(main[1L], 3, 0.5, outer = TRUE, font = 2)
+    mtext(xlab, 1, 2, outer = TRUE)
+    mtext(ylab, 2, 2.2, outer = TRUE)
+  }
 }
+
 
 
 

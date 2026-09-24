@@ -572,6 +572,25 @@ date_2_time <- function(dates, tref = NULL) {
   if (is_date) as.Date(out, tz = tz) else out
 }
 
+## Short labels for model times, e.g. panel titles: calendar dates at the
+## resolution of the time units ("Jan 2007" in months) when the tref has an
+## origin, otherwise "t = 48.45". Moves to a finer format while the coarser one
+## would give two different times the same label.
+.time_labels <- function(t, tref) {
+  fallback <- paste0("t = ", as.character(round(t, 2)))
+  d <- tryCatch(time_2_date(t, tref), error = function(e) NULL)
+  if (is.null(d) || anyNA(d[is.finite(t)])) return(fallback)
+  fmts <- c("%Y", "%b %Y", "%d %b %Y", "%d %b %Y %H:%M")
+  u <- .normalise_time_unit(tref$units)
+  first <- switch(u, year = 1L, semester = , quarter = , month = 2L,
+                  week = , day = 3L, 4L)
+  for (fmt in fmts[first:length(fmts)]) {
+    lab <- format(d, fmt)
+    if (!anyDuplicated(lab[!duplicated(t)])) break
+  }
+  lab
+}
+
 #' Convert numeric model time back to dates
 #'
 #' Inverse of [date_2_time()]: given a numeric time scale measured since a

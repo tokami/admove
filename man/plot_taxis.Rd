@@ -49,7 +49,9 @@ call. Default is \code{0.5}.}
 
 \item{lwd}{Line width of the arrows. Default is \code{1}.}
 
-\item{main}{Main title of the plot. Default is \code{"Taxis"}.}
+\item{main}{Main title of the plot. Default is \code{"Taxis"}. With several
+panels it is drawn once above them, and a vector with one entry per panel
+replaces the per-panel titles instead.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added using
 \code{\link[=plot_land]{plot_land()}}. Default is \code{FALSE}.}
@@ -96,7 +98,11 @@ For objects of class \code{admove}, the function plots predicted taxis from
 recomputed from the simulated covariates and parameter values.
 
 If \code{average = TRUE}, the mean taxis over the selected time steps is plotted.
-Otherwise, one panel per selected time step is produced unless \code{add = TRUE}.
+Otherwise, one panel per selected time step is produced unless \code{add = TRUE},
+titled with its prediction time as a date at the resolution of the time
+units (e.g. \code{"Jan 2007"} for monthly units; \code{"t = 48.45"} if the time
+reference has no origin). The panels share their axes, the arrow scale and
+the colour scale of the magnitude, so they can be compared directly.
 
 The arrows show \eqn{\kappa \nabla h}, i.e. they include the taxis scaling
 parameter \code{kappa}. Since only the product \code{kappa * alpha} is identifiable
