@@ -147,6 +147,8 @@ admove <- function(dat,
   dat <- res_sea$dat
   conf <- res_sea$conf
 
+  conf <- .adv_conf(conf)
+
   if(is.null(par)) par <- default_par(dat, conf)
   if(is.null(map)) map <- default_map(dat, conf, par)
 
@@ -692,8 +694,7 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
   pref_funcs <- hb$pref_funcs
   habi_tax <- hb$habi$tax
   habi_dif <- hb$habi$dif
-  habi_adv_x <- hb$habi$adv_x
-  habi_adv_y <- hb$habi$adv_y
+  adv <- hb$habi$adv
 
 
   hT_pred <- hTdx_pred <- hTdy_pred <- hD_pred <-
@@ -707,10 +708,11 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
                          dat$pred$time[t])
     hTdx_pred[,t] <- kappa * tmp[,1]
     hTdy_pred[,t] <- kappa * tmp[,2]
-    hAx_pred[,t] <- habi_adv_x$val(dat$pred$grid$xygrid,
-                                   dat$pred$time[t])
-    hAy_pred[,t] <- habi_adv_y$val(dat$pred$grid$xygrid,
-                                   dat$pred$time[t])
+    if (!is.null(adv)) {
+      tmp <- adv$val(dat$pred$grid$xygrid, dat$pred$time[t])
+      hAx_pred[,t] <- tmp[,1]
+      hAy_pred[,t] <- tmp[,2]
+    }
   }
   t2 <- Sys.time()
 
@@ -730,8 +732,7 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
   pred$pref_funcs <- pref_funcs
   pred$habi <- list(tax = habi_tax,
                     dif = habi_dif,
-                    adv_x = habi_adv_x,
-                    adv_y = habi_adv_y)
+                    adv = adv)
   pred$hTdx <- hTdx_pred
   pred$hTdy <- hTdy_pred
   pred$hD <- hD_pred
@@ -778,8 +779,23 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 .check_pred_time_coverage <- function(dat, conf) {
 
   time <- dat$pred$time
-  if (is.null(dat$cov) || is.null(time) || length(time) == 0L)
-    return(invisible(NULL))
+  if (is.null(time) || length(time) == 0L) return(invisible(NULL))
+
+  ## advection fields: before their first slice the field is zero
+  if (isTRUE(conf$use_advection) && length(dat$adv) > 0L) {
+    for (f in seq_along(dat$adv)) {
+      tc <- dat$time_adv[[2L * f - 1L]]
+      bad <- vapply(time, function(t) t2index(t, tc) < 1L, logical(1L))
+      if (any(bad)) {
+        warning("Prediction times precede the advection field '",
+                names(dat$adv)[f], "' (starts at ", .fmt_num(min(tc)), ") at ",
+                sum(bad), " of ", length(time), " time(s); the field is zero ",
+                "there.", call. = FALSE)
+      }
+    }
+  }
+
+  if (is.null(dat$cov)) return(invisible(NULL))
 
   ncov <- length(dat$cov)
   per <- dat$period
@@ -854,9 +870,13 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
     ## drop cells where the fitted covariates are undefined (outside coverage or
     ## masked), exactly as setup_data() prunes the fitting grid, so the resulting
     ## prediction grid is valid everywhere and the CTMC generator is well-defined
-    if (!is.null(dat$cov) && !is.null(dat$xrange_cov)) {
+    if ((!is.null(dat$cov) && !is.null(dat$xrange_cov)) ||
+          !is.null(dat$xrange_adv)) {
       n0 <- nrow(grid$xygrid)
-      pr <- .prune_grid_to_cov(grid, dat$cov, dat$xrange_cov, dat$yrange_cov)
+      pr <- .prune_grid_to_cov(grid,
+                               c(unclass(dat$cov), unclass(.adv_flatten(dat$adv))),
+                               rbind(dat$xrange_cov, dat$xrange_adv),
+                               rbind(dat$yrange_cov, dat$yrange_adv))
       if (length(pr$removed) >= n0)
         stop("None of the cells in 'grid' fall within the fitted covariate ",
              "coverage; nothing to predict on.", call. = FALSE)
@@ -1211,7 +1231,7 @@ summarise_fit <- function(object, CI = 0.95, ...) {
     } else {
       nsea_vals <- c(taxis = nsea_of(x$par$alpha),
                      diffusion = nsea_of(x$par$beta),
-                     advection = nsea_of(x$par$gamma))
+                     advection = .adv_nsea(x$par))
     }
     nsea_vals <- nsea_vals[!is.na(nsea_vals)]
     if (length(nsea_vals) > 0L) {
@@ -1394,12 +1414,11 @@ plot_fit <- function(x,
 
   ncov <- if (!is.null(fit$dat$cov)) length(fit$dat$cov) else 1L
   nsea_fit <- if (!is.null(fit$par$alpha)) dim(fit$par$alpha)[3L] else 1L
-  nsea_adv <- if (!is.null(fit$par$gamma)) dim(fit$par$gamma)[3L] else 1L
+  nsea_adv <- .adv_nsea(fit$par)
   ## Covariates whose spline coefficients are all fixed (mapped NA) contribute
   ## no fitted preference relationship, so their preference panels are dropped.
-  ## This happens e.g. for the current covariates under advection, where alpha
-  ## (taxis) and beta (diffusion) are mapped off entirely. A covariate is "active"
-  ## if any of its coefficients across knots/seasons is estimated (non-NA in map).
+  ## A covariate is "active" if any of its coefficients across knots/seasons is
+  ## estimated (non-NA in map).
   active_cov <- function(map_par, par_arr) {
     if (is.null(par_arr)) return(seq_len(ncov))
     d <- dim(par_arr)                       ## [nknots, ncov, nsea]
@@ -1485,19 +1504,20 @@ plot_fit <- function(x,
 ## Internal functions -----------------------------------------------------------------
 
 ## TRUE when a fitted object carries a non-zero advection field: it was fitted
-## with advection on and at least one gamma coefficient is non-zero. Fixed
-## (mapped NA) but non-zero coefficients still produce a real field, so the test
-## is on the values rather than on the map. With advection off, or every gamma
-## at zero, the field is identically zero everywhere and there is nothing to
-## draw -- plot_fit() drops the panels in that case.
+## with advection on and at least one gamma or constant-drift coefficient is
+## non-zero. Fixed (mapped NA) but non-zero coefficients still produce a real
+## field, so the test is on the values rather than on the map. With advection
+## off, or every coefficient at zero, the field is identically zero everywhere
+## and there is nothing to draw -- plot_fit() drops the panels in that case.
 .adv_active <- function(fit) {
 
   if (!isTRUE(fit$conf$use_advection)) return(FALSE)
 
-  gamma_est <- if (!is.null(fit$pl$gamma)) fit$pl$gamma else fit$par$gamma
-  if (is.null(gamma_est)) return(FALSE)
+  est <- function(nm) if (!is.null(fit$pl[[nm]])) fit$pl[[nm]] else fit$par[[nm]]
+  vals <- c(est("gamma"), est("adv_const"))
+  if (length(vals) == 0L) return(FALSE)
 
-  any(gamma_est != 0, na.rm = TRUE)
+  any(vals != 0, na.rm = TRUE)
 }
 
 
@@ -1696,6 +1716,9 @@ plot_fit <- function(x,
 
   ind <- which(names(opt$par) == "gamma")
   pl$gamma[which(!is.na(map$gamma))] <- opt$par[ind]
+
+  ind <- which(names(opt$par) == "adv_const")
+  pl$adv_const[which(!is.na(map$adv_const))] <- opt$par[ind]
 
   ind <- which(names(opt$par) == "logSdO")
   pl$logSdO[which(!is.na(map$logSdO))] <- opt$par[ind]

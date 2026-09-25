@@ -603,6 +603,14 @@ scale_tref <- function(x, scale = 1, units = NULL, verbose = TRUE) {
 
     x$trange <- x$trange * scale
     x$time_cov <- lapply(x$time_cov, function(x) x * scale)
+    x$time_adv <- lapply(x$time_adv, function(x) x * scale)
+    ## advection fields are velocities per time unit: a time unit 'scale' times
+    ## shorter carries 1/scale of the displacement
+    x$adv <- lapply(x$adv, function(a) {
+      a$u[] <- unclass(a$u) / scale
+      a$v[] <- unclass(a$v) / scale
+      a
+    })
     ## rescaling is correct for seasonal breakpoints as well, since the period
     ## is rescaled by the same factor below -- but arithmetic drops attributes,
     ## so the seasonal marker has to be carried over
@@ -1013,6 +1021,7 @@ if (u == "quarter") {
 
     x$trange <- x$trange - delta
     x$time_cov <- lapply(x$time_cov, function(x) x - delta)
+    x$time_adv <- lapply(x$time_adv, function(x) x - delta)
     ## Seasonal spline breakpoints are phases within the cycle, anchored at the
     ## time origin, not absolute times: shifting them would rotate the seasonal
     ## cycle and break the requirement that the first breakpoint is 0. Seasons

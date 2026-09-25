@@ -25,6 +25,11 @@
 ##'   \code{fit}. If \code{NULL}, or if \code{simulate_cov = TRUE},
 ##'   covariates are simulated internally using [sim_cov()], one field per
 ##'   covariate.
+##' @param adv Optional advection field(s) created by [prep_adv()], passed to
+##'   [setup_data()]. If \code{NULL}, the advection fields of \code{dat} or
+##'   \code{fit} are kept. Advection is only simulated when
+##'   \code{conf$use_advection} is \code{TRUE} (the default when there is a
+##'   field) and \code{par$gamma} (or \code{par$adv_const}) is non-zero.
 ##' @param par Optional named list of simulation parameters, overriding the
 ##'   estimates of \code{fit}. Missing parameters are filled using
 ##'   [default_sim_par()].
@@ -153,6 +158,7 @@ sim_data <- function(x = NULL,
                      conf = NULL,
                      fit = NULL,
                      grid = NULL,
+                     adv = NULL,
                      ## time
                      trange = NULL,
                      dt = NULL,
@@ -217,6 +223,25 @@ sim_data <- function(x = NULL,
   knots_tax_in <- inp$knots_tax_in
   knots_dif_in <- inp$knots_dif_in
 
+  ## Advection fields of a supplied model are kept unless replaced. A new field
+  ## invalidates the data object (rebuilt below from the effective pieces, with
+  ## its knots, since the fields are not covariates), and an inherited
+  ## configuration has to switch advection on.
+  if (!is.null(adv)) {
+    if (!is.null(dat) &&
+          !isTRUE(all.equal(.as_adv_list(adv), dat$adv))) {
+      knots_tax <- dat$knots_tax
+      knots_dif <- dat$knots_dif
+      dat <- NULL
+    }
+    if (!is.null(conf) && is.null(conf_in)) {
+      conf <- .adv_conf(conf)
+      conf$use_advection <- TRUE
+    }
+  } else if (!is.null(dat)) {
+    adv <- dat$adv
+  }
+
   ## time
   if (is.null(trange)) trange <- c(0,1)
   if (is.null(trange_rel)) {
@@ -280,6 +305,7 @@ sim_data <- function(x = NULL,
 
     dat <- setup_data(cov = cov,
                       grid = grid,
+                      adv = adv,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
                       n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
@@ -438,6 +464,7 @@ sim_data <- function(x = NULL,
   dat <- setup_data(cov = cov,
                     grid = grid,
                     tags = tags,
+                    adv = dat$adv,
                     knots_tax = dat$knots_tax,
                     knots_dif = dat$knots_dif,
                     trange = trange)
@@ -765,6 +792,11 @@ sim_cov <- function(grid = NULL,
 ##'   the covariate fields.
 ##' @param cov Optional covariate fields used to define spatially and temporally
 ##'   varying movement rates, overriding those of \code{dat} or \code{fit}.
+##' @param adv Optional advection field(s) created by [prep_adv()], passed to
+##'   [setup_data()]. If \code{NULL}, the advection fields of \code{dat} or
+##'   \code{fit} are kept. Advection is only simulated when
+##'   \code{conf$use_advection} is \code{TRUE} (the default when there is a
+##'   field) and \code{par$gamma} (or \code{par$adv_const}) is non-zero.
 ##' @param par Optional named list of simulation parameters, overriding the
 ##'   estimates of \code{fit}. Missing parameters are filled using
 ##'   [default_sim_par()].
@@ -877,6 +909,7 @@ sim_tags <- function(tag_type,
                      conf = NULL,
                      fit = NULL,
                      grid = NULL,
+                     adv = NULL,
                      n_tags = 1,
                      n_resightings = c(1,5),
                      n_candidates = 1,
@@ -1016,6 +1049,7 @@ sim_tags <- function(tag_type,
   if (is.null(dat)) {
     dat <- setup_data(cov = cov,
                       grid = grid,
+                      adv = adv,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
                       n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
@@ -1048,7 +1082,6 @@ sim_tags <- function(tag_type,
 
   if (is.null(dat$cov)) {
     conf$use_taxis <- FALSE
-    conf$use_advection <- FALSE
   }
 
   if (!is.null(par) && is.null(par_in) && !.par_fits_dat(par, dat, conf)) {
@@ -1500,14 +1533,17 @@ default_sim_par <- function(par = NULL,
   par_out <- list(alpha = alpha,                                ## dimensionless
                   beta = array(log(D_target) / ncov_dif,        ## distance^2 / time
                                dim = par_dims$beta),
-                  gamma = array(0,                              ## dimensionless
-                                dim = par_dims$gamma),
+                  gamma = if (!is.null(par_dims$gamma))         ## dimensionless
+                            array(0, dim = par_dims$gamma),
+                  adv_const = matrix(0, par_dims$adv_const[1],  ## distance / time
+                                     par_dims$adv_const[2]),
                   logKappa = log(kappa_target),                 ## distance^2 / time
                   logSdO = matrix(log(sdO),2,3))                ## distance
+  par_out <- par_out[!vapply(par_out, is.null, logical(1))]
 
   if (!is.null(par)) {
     for (nm in names(par)) {
-      if (!is.null(dat) && nm %in% c("alpha", "beta", "gamma")) {
+      if (!is.null(dat) && nm %in% c("alpha", "beta")) {
         dim_exp <- dim(par_out[[nm]])
         dim_new <- dim(par[[nm]])
         if (length(dim_new) != 3L || !all(dim_new == dim_exp)) {
@@ -1579,7 +1615,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   if (!is.null(dat$cov)) {
 
     ## Make preference functions --------------------------
-    pref_funcs <- .make_pref_funcs(par$alpha, par$beta, par$gamma,
+    pref_funcs <- .make_pref_funcs(par$alpha, par$beta,
                                   dat$knots_tax, dat$knots_dif,
                                   method = conf$smooth_method)
 
@@ -1599,18 +1635,6 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                           dat$time_spline, period(dat),
                           conf$seasonal_cov,
                           conf$seasonal_spline)
-    habi_adv_x <- .make_habi(liv, dat$xrange_cov,
-                            dat$yrange_cov, dat$time_cov,
-                            pref_funcs$adv_x, pref_funcs$dadv_x,
-                            dat$time_spline, period(dat),
-                            conf$seasonal_cov,
-                            conf$seasonal_spline)
-    habi_adv_y <- .make_habi(liv, dat$xrange_cov,
-                            dat$yrange_cov, dat$time_cov,
-                            pref_funcs$adv_y, pref_funcs$dadv_y,
-                            dat$time_spline, period(dat),
-                            conf$seasonal_cov,
-                            conf$seasonal_spline)
 
     dif_fun <- function(xy, t){
       habi_dif$val(xy, t)
@@ -1624,27 +1648,23 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
       habi_tax$grad(xy, t)
     }
 
-    adv_fun <- function(xy, t) {
-      c(habi_adv_x$val(xy, t), habi_adv_y$val(xy, t))
-    }
-
-    res <- list(dif = dif_fun,
-                ddif = ddif_fun,
-                tax = tax_fun)
-
-    if (conf$use_advection) {
-      res$adv <- adv_fun
-    }
-
-
   } else {
 
     ## diffusion only if no cov info
     dif_fun <- function(xy, t){par$beta[1,1,1]}
     ddif_fun <- function(xy, t){c(0,0)}
     tax_fun <- function(xy, t) {c(0,0)}
-    adv_fun <- function(xy, t) {c(0,0)}
 
+  }
+
+  ## advection: an n x 2 matrix of velocities at the n positions in xy
+  conf <- .adv_conf(conf)
+  if (isTRUE(conf$use_advection)) {
+    adv <- .make_adv(dat$adv, dat$time_adv, par$gamma, par$adv_const,
+                     .get_period(dat))
+    adv_fun <- adv$val
+  } else {
+    adv_fun <- function(xy, t) matrix(0, nrow(as.matrix(xy)), 2)
   }
 
   funcs_out <- list(tax = tax_fun,
@@ -1909,21 +1929,25 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   if (is.null(dat)) {
     return(list(alpha = as.integer(c(n_tax_default, 1, 1)),
                 beta = as.integer(c(1, 1, 1)),
-                gamma = as.integer(c(2, 1, 1))))
+                gamma = NULL,
+                adv_const = as.integer(c(2, 1))))
   }
 
   if (is.null(conf)) conf <- default_conf(dat, verbose = FALSE)
+  conf <- .adv_conf(conf)
 
   n_tax <- if (!is.null(dat$knots_tax)) nrow(dat$knots_tax) else n_tax_default
   n_dif <- if (!is.null(dat$knots_dif)) nrow(dat$knots_dif) else 1L
   ncov_tax <- if (!is.null(dat$knots_tax)) ncol(dat$knots_tax) else 1L
   ncov_dif <- if (!is.null(dat$knots_dif)) ncol(dat$knots_dif) else 1L
-  ncov_adv <- if (!is.null(dat$cov)) length(dat$cov) else 1L
+  nfield <- length(dat$adv)
   nsea <- max(.get_nsea(.resolve_seasons(dat, conf)$dat))
+  nsea_adv <- as.integer(conf$n_seasons_adv)
 
   list(alpha = as.integer(c(n_tax, ncov_tax, nsea)),
        beta = as.integer(c(n_dif, ncov_dif, nsea)),
-       gamma = as.integer(c(2, ncov_adv, nsea)))
+       gamma = if (nfield > 0L) as.integer(c(2, nfield, nsea_adv)),
+       adv_const = as.integer(c(2, nsea_adv)))
 }
 
 
@@ -1948,8 +1972,10 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 .par_fits_dat <- function(par, dat, conf = NULL) {
   if (is.null(par)) return(TRUE)
   dims <- .sim_par_dims(dat, conf)
+  ## a gamma for advection fields the data do not have (or the reverse)
+  if (is.null(dims$gamma) != is.null(par$gamma)) return(FALSE)
   for (nm in names(dims)) {
-    if (is.null(par[[nm]])) next
+    if (is.null(par[[nm]]) || is.null(dims[[nm]])) next
     if (!identical(as.integer(dim(par[[nm]])), dims[[nm]])) return(FALSE)
   }
   TRUE

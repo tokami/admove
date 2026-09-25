@@ -64,8 +64,26 @@
 ##' when a seasonal spline basis is in use: diffusion is a second-moment
 ##' quantity, so estimating it per season divides the information available per
 ##' season and is easily traded off against a seasonal taxis acting on the same
-##' covariate. Taxis and advection remain season-specific. See [default_map()]
+##' covariate. Taxis remains season-specific. See [default_map()]
 ##' for how these settings translate into fixed and estimated coefficients.
+##'
+##' Advection (passive transport by a vector field such as ocean currents) is
+##' switched on by `use_advection`, which is `TRUE` by default when the data
+##' carry an advection field (`setup_data(adv = )`, see [prep_adv()]). Each field
+##' contributes `gamma * (u, v)` with an estimated entrainment coefficient
+##' `gamma`:
+##' \describe{
+##'   \item{`adv_gamma`}{`"shared"` (default): one coefficient per field, acting
+##'     on both components alike, so the direction of the field is kept.
+##'     `"xy"`: separate coefficients for the x and y components; these depend
+##'     on the orientation of the grid.}
+##'   \item{`adv_const`}{`FALSE` (default). `TRUE` adds an estimated constant
+##'     drift (x, y) that needs no field, e.g. a persistent migration direction.
+##'     It requires `use_advection = TRUE`.}
+##'   \item{`n_seasons_adv`}{Number of seasons of the advection coefficients
+##'     (and of the constant drift), `1` by default. Values above 1 need a
+##'     seasonal period, as for `n_seasons`.}
+##' }
 ##'
 ##' `engine` selects the estimation engine by name: `"kf"` (the default) is the
 ##' Kalman filter, continuous in space and discrete in time, `"ctmc"` the
@@ -144,7 +162,14 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   conf$use_dtags <- flag_dtags
   conf$use_stags <- flag_stags
   conf$use_taxis <- TRUE
-  conf$use_advection <- FALSE
+  conf$use_advection <- length(dat$adv) > 0L
+
+  ## Advection (see ?prep_adv): "shared" = one entrainment coefficient per
+  ## field, "xy" = separate x and y coefficients; adv_const = estimate a constant
+  ## drift; n_seasons_adv = seasons of the advection coefficients
+  conf$adv_gamma <- "shared"
+  conf$adv_const <- FALSE
+  conf$n_seasons_adv <- 1L
 
   ## Observation uncertainty (per tag type: dtags, stags, ctags)
   ## "none"         = not estimated (default; treat locations as exact)
@@ -305,6 +330,26 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
            !is.logical(conf$seasonal_dif) ||
            is.na(conf$seasonal_dif))) {
     stop("'conf$seasonal_dif' must be a single TRUE or FALSE.", call. = FALSE)
+  }
+
+  if (!is.character(conf$adv_gamma) || length(conf$adv_gamma) != 1L ||
+        !conf$adv_gamma %in% c("shared", "xy")) {
+    stop("'conf$adv_gamma' must be either \"shared\" or \"xy\".", call. = FALSE)
+  }
+  for (nm in c("use_advection", "adv_const")) {
+    v <- conf[[nm]]
+    if (length(v) != 1L || !is.logical(v) || is.na(v)) {
+      stop("'conf$", nm, "' must be a single TRUE or FALSE.", call. = FALSE)
+    }
+  }
+  conf$n_seasons_adv <- .check_n_seasons_values(conf$n_seasons_adv,
+                                                "conf$n_seasons_adv")
+  if (length(conf$n_seasons_adv) != 1L) {
+    stop("'conf$n_seasons_adv' must be a single number.", call. = FALSE)
+  }
+  if (conf$n_seasons_adv > 1L) .require_period(dat, conf$n_seasons_adv)
+  if (conf$adv_const && !conf$use_advection) {
+    stop("conf$adv_const = TRUE needs conf$use_advection = TRUE.", call. = FALSE)
   }
 
   if (!is.null(conf$drift_scheme) &&

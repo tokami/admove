@@ -720,6 +720,10 @@ plot_taxis <- function(x,
 ##' `gamma * current` in coordinate units per time step. The function can display
 ##' advection at selected time steps or the average across multiple time steps.
 ##'
+##' This shows the advection *estimated* by the model: the advection fields
+##' scaled by `gamma`, plus the constant drift. The input fields themselves are
+##' drawn by [plot_adv_field()].
+##'
 ##' @param x An object of class `admove` or `admove_sim`.
 ##' @param select Optional index vector specifying which prediction time steps to
 ##'   plot. If `NULL`, all available prediction time steps are used.
@@ -778,7 +782,8 @@ plot_taxis <- function(x,
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing a plot.
 ##'
-##' @seealso [plot_taxis()], [plot_diffusion()]
+##' @seealso [plot_taxis()], [plot_diffusion()], [plot_adv_field()] for the
+##'   input fields
 ##'
 ##' @export
 plot_advection <- function(x,
@@ -816,8 +821,8 @@ plot_advection <- function(x,
   ## detect seasonal setup from the advection coefficients (admove only)
   nsea <- 1L
   is_seasonal <- FALSE
-  if (inherits(x, "admove") && !is.null(x$par$gamma)) {
-    nsea <- dim(x$par$gamma)[3L]
+  if (inherits(x, "admove")) {
+    nsea <- .adv_nsea(x$par)
     is_seasonal <- nsea > 1L
   }
   if (is_seasonal) {
@@ -854,12 +859,9 @@ plot_advection <- function(x,
   if (inherits(x, "admove")) {
 
     if (is_seasonal) {
-      ## one advection field per seasonal component: find break points
-      ts_len <- vapply(x$dat$time_spline, length, integer(1L))
-      i_sea <- which(ts_len == nsea)
-      i_sea <- if (length(i_sea) > 0L) i_sea[1L] else 1L
-      ts_breaks <- x$dat$time_spline[[i_sea]]
+      ## one advection field per season of the advection coefficients
       per <- x$dat$period
+      ts_breaks <- as.numeric(.season_breaks(per, nsea))
       ts_upper <- c(ts_breaks[-1L], ts_breaks[1L] + per)
 
       ## representative absolute times: mid-season, shifted into dat$trange
@@ -869,10 +871,13 @@ plot_advection <- function(x,
 
       ncp <- nrow(x$dat$pred$grid$xygrid)
       habi <- .get_habi(x)
-      adv.x <- adv.y <- matrix(NA_real_, ncp, nsea)
-      for (s in seq_len(nsea)) {
-        adv.x[, s] <- habi$adv_x$val(x$dat$pred$grid$xygrid, t_sea_abs[s])
-        adv.y[, s] <- habi$adv_y$val(x$dat$pred$grid$xygrid, t_sea_abs[s])
+      adv.x <- adv.y <- matrix(0, ncp, nsea)
+      if (!is.null(habi$adv)) {
+        for (s in seq_len(nsea)) {
+          tmp <- habi$adv$val(x$dat$pred$grid$xygrid, t_sea_abs[s])
+          adv.x[, s] <- tmp[, 1]
+          adv.y[, s] <- tmp[, 2]
+        }
       }
       adv.x <- adv.x[, select_sea, drop = FALSE]
       adv.y <- adv.y[, select_sea, drop = FALSE]
@@ -1046,6 +1051,7 @@ plot_advection <- function(x,
 
     dat <- setup_data(cov = cov,
                       grid = grid,
+                      adv = x$dat$adv,
                       trange = trange,
                       knots_tax = dat$knots_tax,
                       knots_dif = dat$knots_dif,
@@ -1054,17 +1060,17 @@ plot_advection <- function(x,
     dat$pred$grid$xygrid <- x$dat$pred$grid$xygrid
     dat$pred$grid$igrid <- x$dat$pred$grid$igrid
 
-    conf <- default_conf(dat)
+    conf <- default_conf(dat, verbose = FALSE)
     conf$use_advection <- TRUE
+    conf$adv_const <- any(par$adv_const != 0)
+    conf$n_seasons_adv <- .adv_nsea(par)
+    if (length(dat$adv) == 0L && !conf$adv_const)
+      stop("The simulated object has no advection (no advection field and no ",
+           "constant drift).", call. = FALSE)
     funcs <- default_sim_funcs(dat, conf, par, funcs)
-    if (is.null(funcs$adv))
-      stop("No advection function available for this simulated object (no gamma / currents).")
-    hAx.true <- sapply(dat$pred$time,
-                       function(t) apply(dat$pred$grid$xygrid, 1,
-                                         function(x) funcs$adv(t(x),t)[1]))
-    hAy.true <- sapply(dat$pred$time,
-                       function(t) apply(dat$pred$grid$xygrid, 1,
-                                         function(x) funcs$adv(t(x),t)[2]))
+    xyg <- dat$pred$grid$xygrid
+    hAx.true <- sapply(dat$pred$time, function(t) funcs$adv(xyg, t)[, 1])
+    hAy.true <- sapply(dat$pred$time, function(t) funcs$adv(xyg, t)[, 2])
 
     if(average){
       if(length(select) > 1){
@@ -1596,7 +1602,7 @@ plot_compare_one <- function(fit, ...,
   if (quantity == "advection") {
     ## one panel per season (advection coefficients gamma may be seasonal); all
     ## fits overlaid before advancing to the next panel — mirrors the "taxis" case
-    nsea_cmp <- if (!is.null(fitlist[[1L]]$par$gamma)) dim(fitlist[[1L]]$par$gamma)[3L] else 1L
+    nsea_cmp <- .adv_nsea(fitlist[[1L]]$par)
     is_sea_cmp <- nsea_cmp > 1L
 
     for (s in seq_len(nsea_cmp)) {
@@ -1946,7 +1952,7 @@ plot_compare <- function(fit, ...,
   ref_fit <- Filter(function(x) inherits(x, c("admove", "admove_sim")), fitlist)[[1L]]
   ncov <- if (!is.null(ref_fit$dat$cov)) length(ref_fit$dat$cov) else 1L
   nsea_ref <- if (!is.null(ref_fit$par$alpha)) dim(ref_fit$par$alpha)[3L] else 1L
-  nsea_adv <- if (!is.null(ref_fit$par$gamma)) dim(ref_fit$par$gamma)[3L] else 1L
+  nsea_adv <- .adv_nsea(ref_fit$par)
   panels_per_q <- vapply(quantity, function(q) {
     if (q == "pref") ncov
     else if (q == "taxis") nsea_ref

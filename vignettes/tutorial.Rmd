@@ -271,7 +271,8 @@ conf <- default_conf(dat)
 Similarly, the `default_par` function generates a list of default model parameters
 and their initial values. While users can adjust the initial values as needed,
 caution is required when modifying parameter dimensions. These dimensions must
-be consistent with the input data (e.g., the number of environmental fields) and
+be consistent with the input data (e.g., the number of environmental and
+advection fields) and
 the configuration settings (e.g., whether passive advection, taxis, or both are
 used).
 
@@ -402,8 +403,31 @@ conf <- default_conf(dat)
 conf$engine <- "ctmc"
 ```
 
-Lastly, it may be useful to map parameters, for example, to estimate a single
-value for both directions of passive advection. A list of default map
+Passive transport by ocean currents (or wind) is not a habitat covariate and
+has its own input. Prepare the east and north components of the field with
+`prep_adv()` and pass it to `setup_data()` through `adv`. Speeds in physical
+units (e.g. m/s) are converted into grid units per model time step, including
+the rotation of a projected grid relative to geographic north. The model then
+estimates one entrainment coefficient `gamma` per field: `gamma = 1` is a
+passive drifter, `gamma = 0.1` an animal carried at a tenth of the current
+speed. `conf$adv_const <- TRUE` adds an estimated constant drift, with or
+without a field.
+
+```{r, eval=FALSE, echo=TRUE}
+cur <- prep_adv(cur_u, cur_v, units = "m/s")
+dat <- setup_data(grid = grid, cov = cov, tags = tags, adv = cur)
+plot_adv_field(dat, select = 1:4, plot_land = TRUE)   ## the input field
+conf <- default_conf(dat)   ## use_advection is TRUE when there is a field
+```
+
+Taxis and advection both explain directed movement, so their estimates can
+trade off. If the fitted taxis looks implausible, start `gamma` from a fit with
+the taxis coefficients fixed (`map$alpha <- factor(rep(NA, length(par$alpha)))`)
+and refit everything from its estimates (`par = fit$pl`), then compare the
+objective values.
+
+Lastly, it may be useful to map parameters, for example, to fix a coefficient
+or to estimate several elements as one. A list of default map
 settings can be generated using the `default_map` function. The resulting
 map can then be passed to `admove` to control which parameters are estimated,
 fixed, or shared.

@@ -12,6 +12,7 @@ sim_data(
   conf = NULL,
   fit = NULL,
   grid = NULL,
+  adv = NULL,
   trange = NULL,
   dt = NULL,
   simulate_cov = FALSE,
@@ -92,6 +93,12 @@ parameters, and the configuration of the fitted model, unless \code{dat},
 \code{admove_grid}, it is converted using \code{\link[=create_grid]{create_grid()}}. If no grid is
 given, it is taken from \code{dat} or \code{fit}, or derived from the
 covariate fields.}
+
+\item{adv}{Optional advection field(s) created by \code{\link[=prep_adv]{prep_adv()}}, passed to
+\code{\link[=setup_data]{setup_data()}}. If \code{NULL}, the advection fields of \code{dat} or
+\code{fit} are kept. Advection is only simulated when
+\code{conf$use_advection} is \code{TRUE} (the default when there is a
+field) and \code{par$gamma} (or \code{par$adv_const}) is non-zero.}
 
 \item{trange}{Numeric vector of length 2 giving the simulation time range.
 If \code{NULL}, a default range is used or extracted from \code{dat}.}

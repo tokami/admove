@@ -20,6 +20,12 @@
 ##'   [prep_ctags()], [prep_dtags()], or [prep_stags()]. Several tag objects can
 ##'   be supplied combined with `c(dtags, ctags)` or as a list,
 ##'   `list(dtags, ctags)`; both are merged with [combine_tags()].
+##' @param adv Optional advection field (e.g. ocean currents) created by
+##'   [prep_adv()], or a named list of several. Advection fields are kept apart
+##'   from the habitat covariates in `cov`: they get no taxis or diffusion
+##'   splines, only an entrainment coefficient each (see [default_par()]).
+##'   Fields with physical units are converted into model units along the grid
+##'   axes once the spatial and temporal references are harmonised.
 ##' @param trange Optional numeric vector of length two giving the model time
 ##'   range. If `NULL`, the time range is inferred from available tags and
 ##'   covariates.
@@ -162,6 +168,7 @@ setup_data <- function(grid = NULL,
                        n_knots_dif = 1,
                        knots_from = c("tags", "cov"),
                        fill_na = 0,
+                       adv = NULL,
                        sref = NULL,
                        tref = NULL,
                        transform_sref = FALSE,
@@ -176,6 +183,19 @@ setup_data <- function(grid = NULL,
   res <- list()
 
   if (!is.null(cov)) cov <- .make_cov_list(cov)
+
+  ## Advection fields go through the same harmonisation as the covariates (sref
+  ## and tref, NA filling, grid pruning, tag and time checks) as extra entries of
+  ## 'cov', found again by their keys, and are split off before the splines.
+  adv <- .as_adv_list(adv)
+  adv_keys <- NULL
+  if (!is.null(adv)) {
+    adv_flat <- .adv_flatten(adv)
+    adv_keys <- paste0(".adv:", names(adv_flat))
+    names(adv_flat) <- adv_keys
+    tmpl <- if (!is.null(cov)) cov else adv_flat
+    cov <- .cov_list_keep(c(unclass(cov), unclass(adv_flat)), tmpl)
+  }
 
   ## accept a list of tag objects as well as c(dtags, ctags)
   if (!is.null(tags) && !inherits(tags, "admove_tags")) {
@@ -319,6 +339,16 @@ setup_data <- function(grid = NULL,
     }
   }
 
+
+  ## Advection fields in physical units -> model units along the grid axes;
+  ## needs the final sref and tref, hence after the harmonisation above
+  if (!is.null(adv)) {
+    idx <- match(adv_keys, names(cov))
+    conv <- .adv_to_model_units(.adv_unflatten(unclass(cov)[idx], adv), verbose)
+    flat <- .adv_flatten(conv)
+    for (k in seq_along(idx)) cov[[idx[k]]] <- flat[[k]]
+    adv <- conv
+  }
 
   ## Time range -----------------------------------------
   if (!is.null(tags)) {
@@ -490,6 +520,38 @@ setup_data <- function(grid = NULL,
   }
 
 
+  ## Split the advection fields off again ------------
+  if (!is.null(adv)) {
+    idx <- match(adv_keys, names(res$cov))
+    if (anyNA(idx)) {
+      stop("An advection field was dropped while checking the covariates ",
+           "(e.g. because all its values are NA).", call. = FALSE)
+    }
+    flat <- unclass(res$cov)[idx]
+    names(flat) <- sub("^\\.adv:", "", adv_keys)
+    res$adv <- .adv_unflatten(flat, adv)
+    res$xrange_adv <- res$xrange_cov[idx, , drop = FALSE]
+    res$yrange_adv <- res$yrange_cov[idx, , drop = FALSE]
+    res$time_adv <- res$time_cov[idx]
+    names(res$time_adv) <- names(flat)
+
+    keep <- setdiff(seq_along(res$cov), idx)
+    if (length(keep) > 0L) {
+      res$cov <- .cov_list_keep(unclass(res$cov)[keep], res$cov)
+      res$xrange_cov <- res$xrange_cov[keep, , drop = FALSE]
+      res$yrange_cov <- res$yrange_cov[keep, , drop = FALSE]
+      res$time_cov <- res$time_cov[keep]
+    } else {
+      res$cov <- NULL
+      res$xrange_cov <- res$yrange_cov <- res$time_cov <- NULL
+    }
+    ## the knot defaults below read the covariates from 'cov'
+    keep_local <- setdiff(seq_along(cov), match(adv_keys, names(cov)))
+    cov <- if (length(keep_local) > 0L) {
+      .cov_list_keep(unclass(cov)[keep_local], cov)
+    } else NULL
+  }
+
   ## Splines ------------------------------------------
   if (!is.null(res$cov)) {
     res$time_spline <- lapply(seq_along(res$cov), function(x) 0)
@@ -601,6 +663,13 @@ summarise_data <- function(object, ...) {
   cat("\n")
   summarise_cov(dat$cov)
   cat("\n")
+  if (length(dat$adv) > 0L) {
+    for (nm in names(dat$adv)) {
+      cat("Advection field '", nm, "':\n", sep = "")
+      print(dat$adv[[nm]])
+    }
+    cat("\n")
+  }
   summarise_tags(dat$tags)
   .summarise_knots(dat)
 
@@ -718,11 +787,13 @@ plot_data <- function(x,
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
-    ## one panel for the grid, one per covariate, and one per tag type
+    ## one panel for the grid, one per covariate and advection field, and one
+    ## per tag type
     n <- as.integer(!is.null(x$grid))
     if (!is.null(x$cov)) {
       n <- n + length(.make_cov_list(x$cov))
     }
+    n <- n + length(x$adv)
     if (!is.null(x$tags)) {
       n <- n + sum(c("d", "s", "c") %in% x$tags$tag_type)
     }
@@ -743,6 +814,11 @@ plot_data <- function(x,
       add_lab(LETTERS[i])
       i = i + 1
     }
+  }
+  for (j in seq_along(x$adv)) {
+    plot_adv_field(x, i = j, select = 1, auto_layout = FALSE, main = "", ...)
+    add_lab(LETTERS[i])
+    i = i + 1
   }
   if(!is.null(x$tags)){
     if (any(x$tags$tag_type == "d")) {

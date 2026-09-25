@@ -37,7 +37,9 @@
 }
 
 
-.get_liv <- function(fields, r = 1) {
+## deriv = FALSE skips the gradient interpolants (liv_dx, liv_dy are then NULL):
+## the advection fields are only ever evaluated, never differentiated.
+.get_liv <- function(fields, r = 1, deriv = TRUE) {
 
   ncov <- length(fields)
   nts <- sapply(fields, function(x) dim(x)[3])
@@ -56,6 +58,8 @@
       )
     })
   })
+
+  if (!deriv) return(list(liv = liv, liv_dx = NULL, liv_dy = NULL))
 
   liv_dx <- lapply(seq_len(ncov), function(i) {
     lapply(seq_len(nts[i]), function(j) {
@@ -171,17 +175,25 @@
 }
 
 
-## Build the preference functions and the four habi objects (taxis, diffusion,
-## advection in x and y) from data, configuration and parameter estimates.
+## Build the preference functions, the habi objects (taxis, diffusion) and the
+## advection field from data, configuration and parameter estimates.
 ## Shared by add_predictions() and .get_habi() so the two always construct them
 ## the same way.
 .build_habi <- function(dat, conf, par_est, per) {
 
-  pref_funcs <- .make_pref_funcs(par_est$alpha, par_est$beta, par_est$gamma,
+  pref_funcs <- .make_pref_funcs(par_est$alpha, par_est$beta,
                                  dat$knots_tax, dat$knots_dif,
                                  method = conf$smooth_method)
 
   liv <- .get_liv(dat$cov)
+
+  ## NULL without advection, so that callers can tell "no field" from "zero"
+  adv <- NULL
+  if (isTRUE(conf$use_advection)) {
+    adv <- .make_adv(dat$adv, dat$time_adv,
+                     if (length(dat$adv) > 0L) par_est$gamma,
+                     par_est$adv_const, per)
+  }
 
   mk <- function(s, ds) .make_habi(liv, dat$xrange_cov,
                                    dat$yrange_cov, dat$time_cov,
@@ -193,8 +205,7 @@
   list(pref_funcs = pref_funcs,
        habi = list(tax = mk(pref_funcs$tax, pref_funcs$dtax),
                    dif = mk(pref_funcs$dif, pref_funcs$ddif),
-                   adv_x = mk(pref_funcs$adv_x, pref_funcs$dadv_x),
-                   adv_y = mk(pref_funcs$adv_y, pref_funcs$dadv_y)))
+                   adv = adv))
 }
 
 

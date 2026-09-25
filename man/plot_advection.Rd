@@ -97,6 +97,10 @@ the animal by the environmental flow (e.g. ocean currents), scaled by the
 estimated entrainment coefficients \code{gamma}; the arrows therefore show
 \code{gamma * current} in coordinate units per time step. The function can display
 advection at selected time steps or the average across multiple time steps.
+
+This shows the advection \emph{estimated} by the model: the advection fields
+scaled by \code{gamma}, plus the constant drift. The input fields themselves are
+drawn by \code{\link[=plot_adv_field]{plot_adv_field()}}.
 }
 \details{
 For objects of class \code{admove}, the function plots predicted advection from
@@ -112,5 +116,6 @@ time reference has no origin). The panels share their axes, the arrow scale
 and the colour scale of the magnitude, so they can be compared directly.
 }
 \seealso{
-\code{\link[=plot_taxis]{plot_taxis()}}, \code{\link[=plot_diffusion]{plot_diffusion()}}
+\code{\link[=plot_taxis]{plot_taxis()}}, \code{\link[=plot_diffusion]{plot_diffusion()}}, \code{\link[=plot_adv_field]{plot_adv_field()}} for the
+input fields
 }

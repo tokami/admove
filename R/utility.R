@@ -1376,7 +1376,7 @@ make_x_y_cov <- function(grid, tref = NULL) {
 
 
 
-.make_pref_funcs <- function(alpha, beta, gamma,
+.make_pref_funcs <- function(alpha, beta,
                             knots_tax, knots_dif,
                             method = "rtmb") {
 
@@ -1384,16 +1384,14 @@ make_x_y_cov <- function(grid, tref = NULL) {
 
   ncov <- dim(knots_tax)[2]
 
-  pref_funcs <- vector("list", 8)
-  for (i in 1:8) pref_funcs[[i]] <- vector("list", ncov)
+  pref_funcs <- vector("list", 4)
+  for (i in 1:4) pref_funcs[[i]] <- vector("list", ncov)
   names(pref_funcs) <- c("dif", "ddif",
-                         "tax", "dtax",
-                         "adv_x", "dadv_x",
-                         "adv_y", "dadv_y")
+                         "tax", "dtax")
 
   for(i in 1:ncov){
 
-    ## advection
+    ## taxis
     pref_funcs$tax[[i]] <- pref_funcs$dtax[[i]] <- vector("list", dim(alpha)[3])
     for(j in 1:dim(alpha)[3]){
       pref_funcs$tax[[i]][[j]] <- .poly_fun(knots_tax[,i], alpha[,i,j],
@@ -1412,18 +1410,6 @@ make_x_y_cov <- function(grid, tref = NULL) {
       pref_funcs$ddif[[i]][[j]] <- .poly_fun(knots_dif[,i], beta[,i,j],
                                           deriv=TRUE,
                                           method = method)
-    }
-
-    ## advection (x)
-    pref_funcs$adv_x[[i]] <- pref_funcs$dadv_x[[i]] <- vector("list", dim(gamma)[3])
-    for(j in 1:dim(gamma)[3]){
-      pref_funcs$adv_x[[i]][[j]] <- .poly_fun(NULL, gamma[1,i,j], adv = TRUE)
-    }
-
-    ## advection (y)
-    pref_funcs$adv_y[[i]] <- pref_funcs$dadv_y[[i]] <- vector("list", dim(gamma)[3])
-    for(j in 1:dim(gamma)[3]){
-      pref_funcs$adv_y[[i]][[j]] <- .poly_fun(NULL, gamma[2,i,j], adv = TRUE)
     }
   }
 

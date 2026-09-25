@@ -21,6 +21,9 @@ test_that("default_conf returns expected names", {
       "use_stags",
       "use_taxis",
       "use_advection",
+      "adv_gamma",
+      "adv_const",
+      "n_seasons_adv",
       "obs_var_type",
       "do_update",
       "engine",
@@ -206,6 +209,7 @@ test_that("check_conf preserves user supplied values", {
   conf <- list(
     use_taxis = FALSE,
     use_advection = TRUE,
+    adv_const = TRUE,
     engine = 2
   )
 

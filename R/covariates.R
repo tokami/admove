@@ -537,11 +537,6 @@ plot_cov <- function(x,
   xaxt <- if (is.null(dots$xaxt)) "s" else dots$xaxt
   yaxt <- if (is.null(dots$yaxt)) "s" else dots$yaxt
   dots$xaxt <- dots$yaxt <- NULL
-  .outer_axes <- function(k, n) {
-    ncol_lay <- par("mfrow")[2L]
-    if (xaxt != "n" && k + ncol_lay > n) axis(1)
-    if (yaxt != "n" && (k - 1L) %% ncol_lay == 0L) axis(2)
-  }
 
   if (inherits(cov, "admove_cov_list") && length(i) > 1) {
     sel <- cov[i]
@@ -580,7 +575,7 @@ plot_cov <- function(x,
                      xaxt = if (auto_layout) "n" else xaxt,
                      yaxt = if (auto_layout) "n" else yaxt),
                 dots))
-      if (auto_layout) .outer_axes(j, n)
+      if (auto_layout) .outer_panel_axes(j, n, xaxt, yaxt)
     }
     if (auto_layout) {
       mtext(main, 3, 0, outer = TRUE)
@@ -668,7 +663,7 @@ plot_cov <- function(x,
                          xaxt = if (shared) "n" else xaxt,
                          yaxt = if (shared) "n" else yaxt),
                     dots))
-    if (shared) .outer_axes(i, nt)
+    if (shared) .outer_panel_axes(i, nt, xaxt, yaxt)
     z <- cov[,,i, drop = TRUE]
     if (zlim_ok) {
       ## clamp to zlim so values outside a user-supplied range are not left blank
@@ -697,6 +692,15 @@ plot_cov <- function(x,
 
 
   return(invisible(NULL))
+}
+
+
+## Axes of panel k of n in a multi-panel layout: x on the lowest panel of each
+## column, y on the first column.
+.outer_panel_axes <- function(k, n, xaxt = "s", yaxt = "s") {
+  ncol_lay <- par("mfrow")[2L]
+  if (xaxt != "n" && k + ncol_lay > n) axis(1)
+  if (yaxt != "n" && (k - 1L) %% ncol_lay == 0L) axis(2)
 }
 
 

@@ -70,24 +70,26 @@ test_that("summary prints one row per estimated parameter", {
   sim <- small_sim()
   conf <- sim$conf
   conf$use_advection <- TRUE
-  map <- default_map(sim$dat, conf, sim$par)
+  conf$adv_const <- TRUE
+  par <- default_par(sim$dat, conf, verbose = FALSE)
+  par$logKappa <- sim$par$logKappa
+  map <- default_map(sim$dat, conf, par)
 
-  ## default_map couples the x- and y-direction advection coefficients
-  expect_equal(nlevels(map$gamma), 1L)
-  expect_equal(sum(!is.na(map$gamma)), 2L)
+  ## couple the x and y drift, so that one estimate covers two elements
+  map$adv_const <- factor(c(1, 1))
 
   fit <- suppressWarnings(
-    admove(sim, conf = conf, map = map, do_predictions = FALSE,
+    admove(sim$dat, conf = conf, par = par, map = map, do_predictions = FALSE,
            do_report = FALSE, verbose = FALSE)
   )
 
   out <- capture.output(summary(fit))
 
   ## one row per entry in opt$par, i.e. per logLik degree of freedom
-  expect_equal(sum(grepl("^ (alpha|beta|gamma|logSdO)", out)),
+  expect_equal(sum(grepl("^ (alpha|beta|adv_const|logSdO)", out)),
                length(fit$opt$par))
-  expect_equal(sum(grepl("gamma", out)), 1L)
-  expect_true(any(grepl("gamma1,2", out, fixed = TRUE)))
+  expect_equal(sum(grepl("adv_const", out)), 1L)
+  expect_true(any(grepl("adv_const1,2", out, fixed = TRUE)))
 
   ## the parameter plot labels its x-axis with the same names
   sel <- admove:::.select_estimated_par(fit$pl, fit$map)

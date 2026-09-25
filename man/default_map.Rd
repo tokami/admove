@@ -15,8 +15,8 @@ default_map(dat, conf, par)
 \code{\link[=default_par]{default_par()}}.}
 }
 \value{
-A named list of factors with elements \code{alpha}, \code{logKappa}, \code{beta}, \code{gamma},
-and \code{logSdO}. Entries with \code{NA} are fixed, while equal factor levels are
+A named list of factors with elements \code{alpha}, \code{logKappa}, \code{beta}, \code{gamma}
+(when the data have advection fields), \code{adv_const} and \code{logSdO}. Entries with \code{NA} are fixed, while equal factor levels are
 estimated as the same parameter.
 }
 \description{
@@ -34,9 +34,13 @@ estimated independently for each season;
 \item diffusion spline coefficients (\code{beta}) are mapped using
 \code{.make_beta_map()} and are \strong{coupled across seasons}, so diffusion is
 constant over the seasonal cycle unless \code{conf$seasonal_dif} is \code{TRUE};
-\item advection coefficients (\code{gamma}) are either fixed or, if advection is
-enabled, coupled between the \(x\)- and \(y\)-directions within each
-covariate and season;
+\item advection coefficients (\code{gamma}, one per advection field, see
+\code{\link[=prep_adv]{prep_adv()}}) are fixed when \code{conf$use_advection} is \code{FALSE}. Otherwise
+there is one estimated coefficient per field and advection season,
+shared by the \(x\)- and \(y\)-components (\code{conf$adv_gamma = "shared"}), or one per component (\code{"xy"});
+\item the constant drift (\code{adv_const}) is estimated, separately in \(x\)
+and \(y\) and per advection season, only when \code{conf$adv_const} is
+\code{TRUE}, and fixed otherwise;
 \item observation-error parameters (\code{logSdO}) are fixed unless estimation
 is enabled for the corresponding tag type via \code{conf$obs_var_type}, in
 which case \(x\)- and \(y\)-direction standard deviations are coupled by
@@ -45,8 +49,9 @@ included.
 }
 
 Seasonality is opt-in per model component. Setting \code{conf$seasonal_spline}
-gives \code{alpha}, \code{beta} and \code{gamma} a seasonal third dimension, but only the
-taxis and advection coefficients are estimated season by season. Diffusion
+gives \code{alpha} and \code{beta} a seasonal third dimension, but only the taxis
+coefficients are estimated season by season. The seasons of the advection
+coefficients are set separately by \code{conf$n_seasons_adv}. Diffusion
 is a second-moment quantity: estimating it separately per season divides the
 information available per season and is easily traded off against a seasonal
 taxis acting on the same covariate. Set \code{conf$seasonal_dif <- TRUE} to

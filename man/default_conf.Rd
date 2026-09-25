@@ -76,8 +76,26 @@ diffusion is estimated season by season, and is \strong{\code{FALSE} by default}
 when a seasonal spline basis is in use: diffusion is a second-moment
 quantity, so estimating it per season divides the information available per
 season and is easily traded off against a seasonal taxis acting on the same
-covariate. Taxis and advection remain season-specific. See \code{\link[=default_map]{default_map()}}
+covariate. Taxis remains season-specific. See \code{\link[=default_map]{default_map()}}
 for how these settings translate into fixed and estimated coefficients.
+
+Advection (passive transport by a vector field such as ocean currents) is
+switched on by \code{use_advection}, which is \code{TRUE} by default when the data
+carry an advection field (\code{setup_data(adv = )}, see \code{\link[=prep_adv]{prep_adv()}}). Each field
+contributes \verb{gamma * (u, v)} with an estimated entrainment coefficient
+\code{gamma}:
+\describe{
+\item{\code{adv_gamma}}{\code{"shared"} (default): one coefficient per field, acting
+on both components alike, so the direction of the field is kept.
+\code{"xy"}: separate coefficients for the x and y components; these depend
+on the orientation of the grid.}
+\item{\code{adv_const}}{\code{FALSE} (default). \code{TRUE} adds an estimated constant
+drift (x, y) that needs no field, e.g. a persistent migration direction.
+It requires \code{use_advection = TRUE}.}
+\item{\code{n_seasons_adv}}{Number of seasons of the advection coefficients
+(and of the constant drift), \code{1} by default. Values above 1 need a
+seasonal period, as for \code{n_seasons}.}
+}
 
 \code{engine} selects the estimation engine by name: \code{"kf"} (the default) is the
 Kalman filter, continuous in space and discrete in time, \code{"ctmc"} the
