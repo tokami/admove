@@ -13,7 +13,8 @@ plot_pref_grid(
   combine_cov = FALSE,
   combine.sea = FALSE,
   main = NULL,
-  col = hcl.colors(14, "YlOrRd", rev = TRUE),
+  col = NULL,
+  legend = NULL,
   ci = 0.95,
   plot_land = FALSE,
   auto_layout = TRUE,
@@ -48,11 +49,16 @@ selected seasonal components before plotting. Default is \code{FALSE}.}
 
 \item{main}{Optional main title for the plot panels.}
 
-\item{col}{Colours for the preference surface. Defaults to
-\code{hcl.colors(14, "YlOrRd", rev = TRUE)}.}
+\item{col}{Colour palette for the preference surface. Default: \code{NULL}, the
+light purple palette for estimated quantities shared with \code{\link[=plot_taxis]{plot_taxis()}},
+\code{\link[=plot_advection]{plot_advection()}} and \code{\link[=plot_diffusion]{plot_diffusion()}}.}
 
-\item{ci}{Confidence level for pointwise confidence intervals. Default is
-\code{0.95}.}
+\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn to the right of each
+panel. All panels share one colour scale. Default: \code{NULL}, which means
+\code{TRUE} when \code{auto_layout = TRUE} and \code{add = FALSE}.}
+
+\item{ci}{Currently not used (the surfaces are drawn without confidence
+intervals). Default is \code{0.95}.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added to the plot.
 Default is \code{FALSE}.}
@@ -96,5 +102,7 @@ Preference surfaces can be plotted separately or combined across covariates
 (\code{combine_cov = TRUE}) and/or seasons (\code{combine.sea = TRUE}).
 
 For simulated objects of class \code{admove_sim}, the preference surface is
-reconstructed from the simulated covariates and parameter values.
+evaluated with the true parameters (\code{x$par_true}) in the same way.
+
+\code{combine_cov = TRUE} requires all selected covariates on the same raster.
 }

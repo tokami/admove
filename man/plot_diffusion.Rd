@@ -15,6 +15,8 @@ plot_diffusion(
   main = "Diffusion",
   plot_land = FALSE,
   image_bg = TRUE,
+  col_bg = NULL,
+  legend = NULL,
   auto_layout = TRUE,
   add = FALSE,
   xlab = NULL,
@@ -58,6 +60,18 @@ intensity is drawn underneath the circles. It is skipped when diffusion is
 the same in every cell (e.g. a single-knot, covariate-independent
 diffusion), since a flat raster carries no information; the constant value
 is stated above the panel instead.}
+
+\item{col_bg}{Colour palette for the image of diffusion. Default: \code{NULL}, a
+light purple sequential palette shared by \code{\link[=plot_taxis]{plot_taxis()}},
+\code{\link[=plot_advection]{plot_advection()}}, \code{\link[=plot_diffusion]{plot_diffusion()}} and \code{\link[=plot_pref_grid]{plot_pref_grid()}}, so that
+estimated quantities are set apart from the input data drawn by \code{\link[=plot_cov]{plot_cov()}}
+and \code{\link[=plot_adv_field]{plot_adv_field()}}.}
+
+\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn to the right of each
+panel, labelled with the units (squared space units per time unit, e.g.
+\verb{km²/month}). Default: \code{NULL}, which means \code{TRUE} when \code{auto_layout = TRUE}
+and \code{FALSE} otherwise (when the caller controls the margins, there may be no
+room for the bar). Never drawn with \code{add = TRUE} or \code{image_bg = FALSE}.}
 
 \item{auto_layout}{Logical; if \code{TRUE}, graphical parameters are set and
 restored automatically; multiple panels are arranged using \code{\link[=n2mfrow]{n2mfrow()}}.
