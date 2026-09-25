@@ -36,4 +36,22 @@ degrees of freedom reported by \code{\link[=logLik]{logLik()}}.
 
 The taxis scaling parameter \code{kappa} is fixed rather than estimated (see
 \code{\link[=default_par]{default_par()}}) and is reported separately above the table.
+
+The summary opens with a list of convergence checks. The fit passes only if
+all of them pass:
+\itemize{
+\item the optimizer reports convergence (\code{fit$opt$convergence == 0});
+"false convergence" fails;
+\item the objective at the estimates is finite;
+\item the largest absolute gradient component is below \code{grad_tol}
+(see \code{\link[=admove]{admove()}});
+\item no estimate sits on a lower or upper bound given to \code{\link[=admove]{admove()}};
+\item the Hessian is positive definite (\code{fit$sdrep$pdHess});
+\item all parameter standard errors are finite.
+}
+The last two need \code{\link[=add_sdreport]{add_sdreport()}} and are shown as not checked without it.
+The results are stored in \code{fit$convergence} (\code{NA} = not
+checked). A note is added when two estimated parameters are correlated by
+more than 0.99 in absolute value, which usually means they are not
+separately identifiable; this is not part of the checks.
 }

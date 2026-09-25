@@ -1,8 +1,7 @@
 ## require(admove); require(testthat)
 
-## nlminb can report convergence = 0 ("relative convergence") at a point that is
-## not stationary, where sdreport() still returns a positive-definite Hessian and
-## small standard errors. The fit therefore judges on the gradient as well.
+## A fit passes only if every convergence check passes: optimizer status,
+## finite objective, gradient, bounds, positive-definite Hessian, finite SEs.
 
 
 test_that(".max_abs_gradient returns the largest absolute gradient component", {
@@ -24,85 +23,135 @@ test_that(".max_abs_gradient is NA when the gradient cannot be evaluated", {
 })
 
 
-test_that(".convergence_status flags a large gradient even when nlminb is happy", {
+## minimal fit that passes every check; tests break one thing at a time
+.good_fit <- function() {
+  cov <- matrix(c(1, 0.2, 0.2, 1), 2, dimnames = list(c("alpha", "alpha"),
+                                                      c("alpha", "alpha")))
+  list(opt = list(convergence = 0L, message = "relative convergence (4)",
+                  objective = 100, par = c(alpha = 0.1, alpha = 0.2)),
+       max_gradient = 1e-6,
+       grad_tol = 1e-3,
+       at_bound = character(0),
+       sdrep = structure(list(pdHess = TRUE, cov.fixed = cov), class = "sdreport"))
+}
 
-  ok <- list(convergence = 0L, message = "relative convergence (4)")
 
-  expect_equal(admove:::.convergence_status(ok, 1e-4, 1e-2), "ok")
-  expect_equal(admove:::.convergence_status(ok, 60, 1e-2), "bad")
-  expect_equal(admove:::.convergence_status(ok, NA_real_, 1e-2), "bad")
-  expect_equal(admove:::.convergence_status(list(convergence = 1L), 1e-8, 1e-2),
-               "gradient_ok")
+test_that("a fit passes when every check passes", {
+
+  checks <- admove:::.convergence_checks(.good_fit())
+
+  expect_true(all(checks))
+  expect_equal(names(checks),
+               c("optimizer", "objective", "gradient", "bounds", "hessian", "se"))
+  expect_equal(admove:::.convergence_verdict(checks), "pass")
 })
 
 
-test_that("a fit stores the maximum gradient and summary reports it", {
+test_that("each check fails on its own", {
+
+  break_fit <- list(
+    optimizer = function(f) { f$opt$convergence <- 1L; f },
+    objective = function(f) { f$opt$objective <- NaN; f },
+    gradient = function(f) { f$max_gradient <- 60; f },
+    bounds = function(f) { f$at_bound <- "alpha1"; f },
+    hessian = function(f) { f$sdrep$pdHess <- FALSE; f },
+    se = function(f) { f$sdrep$cov.fixed[1, 1] <- -1; f }
+  )
+
+  for (nm in names(break_fit)) {
+    checks <- admove:::.convergence_checks(break_fit[[nm]](.good_fit()))
+    expect_equal(names(checks)[!checks], nm, info = nm)
+    expect_equal(admove:::.convergence_verdict(checks), "fail", info = nm)
+  }
+})
+
+
+test_that("false convergence fails even with a zero gradient", {
+
+  fit <- .good_fit()
+  fit$opt$convergence <- 1L
+  fit$opt$message <- "false convergence (8)"
+  fit$max_gradient <- 1e-8
+
+  checks <- admove:::.convergence_checks(fit)
+  expect_equal(admove:::.convergence_verdict(checks), "fail")
+  expect_match(admove:::.convergence_message(fit, checks),
+               "did not pass convergence checks: optimizer: false convergence (8).",
+               fixed = TRUE)
+})
+
+
+test_that("the gradient tolerance is absolute", {
+
+  fit <- .good_fit()
+  fit$opt$objective <- 1e6
+  fit$max_gradient <- 0.01
+
+  expect_false(admove:::.convergence_checks(fit)[["gradient"]])
+  fit$grad_tol <- 0.1
+  expect_true(admove:::.convergence_checks(fit)[["gradient"]])
+})
+
+
+test_that("without an sdreport the Hessian and SEs are not checked", {
+
+  fit <- .good_fit()
+  fit$sdrep <- NULL
+
+  checks <- admove:::.convergence_checks(fit)
+  expect_true(is.na(checks[["hessian"]]))
+  expect_true(is.na(checks[["se"]]))
+  expect_equal(admove:::.convergence_verdict(checks), "partial")
+  expect_match(admove:::.convergence_message(fit, checks), "not checked: hessian, se",
+               fixed = TRUE)
+})
+
+
+test_that(".at_bound finds estimates on a finite bound", {
+
+  par <- c(a = 1, a = 2, b = 0)
+
+  expect_equal(admove:::.at_bound(par, rep(-Inf, 3), rep(Inf, 3)), character(0))
+  expect_equal(admove:::.at_bound(par, c(-Inf, -Inf, 0), rep(Inf, 3)), "b1")
+  expect_equal(admove:::.at_bound(par, rep(-Inf, 3), c(5, 2, Inf)), "a2")
+  ## bounds that do not line up with the estimated parameters: not checked
+  expect_null(admove:::.at_bound(par, c(0, 0), c(Inf, Inf)))
+})
+
+
+test_that("highly correlated parameters are listed", {
+
+  fit <- .good_fit()
+  expect_equal(admove:::.high_correlations(fit$sdrep), character(0))
+
+  fit$sdrep$cov.fixed[1, 2] <- fit$sdrep$cov.fixed[2, 1] <- 0.999
+  expect_equal(admove:::.high_correlations(fit$sdrep), "alpha1 ~ alpha2")
+})
+
+
+test_that("a fit stores its convergence checks and summary lists them", {
 
   fit <- small_fit()
 
   expect_true(is.numeric(fit$max_gradient))
-  expect_equal(fit$grad_tol, 1e-4)
+  expect_equal(fit$grad_tol, 1e-3)
+  expect_true(is.logical(fit$convergence))
 
   out <- capture.output(summary(fit))
-  expect_true(any(grepl("Max. gradient component", out, fixed = TRUE)))
+  expect_true(any(grepl("Convergence checks", out, fixed = TRUE)))
+  expect_true(any(grepl("max|gradient|", out, fixed = TRUE)))
 })
 
 
-test_that("summary warns when the optimizer stopped away from a stationary point", {
+test_that("the small fit passes all checks with an sdreport", {
 
-  fit <- small_fit()
+  fit <- small_fit(sdreport = TRUE)
 
-  ## pretend the optimizer stopped with a large gradient but reported success
-  fit$opt$convergence <- 0L
-  fit$max_gradient <- 60
-
-  out <- capture.output(summary(fit))
-  expect_true(any(grepl("did not obtain proper convergence", out)))
-  expect_true(any(grepl("gradient is not zero", out)))
+  expect_equal(admove:::.convergence_verdict(fit$convergence), "pass")
 })
 
 
-test_that("the gradient tolerance scales with the objective", {
-
-  ## the same absolute gradient is fine for a large objective and not for a
-  ## small one: the gradient scales with the number of observations
-  big   <- list(convergence = 0L, objective = 11244)
-  small <- list(convergence = 0L, objective = 12)
-
-  expect_equal(admove:::.grad_threshold(1e-4, 11244), 1.1244)
-  expect_equal(admove:::.grad_threshold(1e-4, 12), 12e-4)
-
-  ## the values the EPO skipjack fits actually stop at
-  for (g in c(0.013, 0.034, 0.087)) {
-    expect_equal(admove:::.convergence_status(big, g, 1e-4), "ok")
-  }
-  expect_equal(admove:::.convergence_status(big, 60, 1e-4), "bad")
-  expect_equal(admove:::.convergence_status(small, 0.087, 1e-4), "bad")
-
-  ## objectives below 1 do not shrink the threshold further
-  expect_equal(admove:::.grad_threshold(1e-4, 0.001), 1e-4)
-  expect_equal(admove:::.grad_threshold(1e-4, NULL), 1e-4)
-})
-
-
-test_that("a zero gradient outranks the optimizer's status code", {
-
-  big <- list(convergence = 1L, message = "false convergence (8)", objective = 15050)
-
-  ## nlminb unhappy but the gradient is at zero: a stalled line search AT the
-  ## optimum, not a failed fit
-  expect_equal(admove:::.convergence_status(big, 0.017, 1e-4), "gradient_ok")
-
-  ## nlminb happy but the gradient is not: the dangerous case
-  expect_equal(admove:::.convergence_status(
-    list(convergence = 0L, objective = 11468), 60, 1e-4), "bad")
-
-  expect_equal(admove:::.convergence_status(
-    list(convergence = 0L, objective = 11244), 0.087, 1e-4), "ok")
-})
-
-
-test_that("summary notes, rather than condemns, a stalled line search", {
+test_that("summary warns when a check fails", {
 
   fit <- small_fit()
   fit$opt$convergence <- 1L
@@ -110,6 +159,6 @@ test_that("summary notes, rather than condemns, a stalled line search", {
   fit$max_gradient <- 1e-8
 
   out <- capture.output(summary(fit))
-  expect_false(any(grepl("did not obtain proper convergence", out)))
-  expect_true(any(grepl("stalled line search", out)))
+  expect_true(any(grepl("[FAIL] optimizer: false convergence (8)", out, fixed = TRUE)))
+  expect_true(any(grepl("did not pass convergence checks", out)))
 })
