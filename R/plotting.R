@@ -338,6 +338,16 @@ plot_land <- local({
 ##'   [plot_land()]. Default is `FALSE`.
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of taxis
 ##'   magnitude is drawn underneath the arrows.
+##' @param col_bg Colour palette for the image of taxis magnitude. Default:
+##'   `NULL`, a light purple sequential palette shared by [plot_taxis()],
+##'   [plot_advection()], [plot_diffusion()] and [plot_pref_grid()], so that
+##'   estimated quantities are set apart from the input data drawn by [plot_cov()]
+##'   and [plot_adv_field()].
+##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
+##'   panel, labelled with the units (space units per time unit, e.g. `km/month`).
+##'   Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and `FALSE`
+##'   otherwise (when the caller controls the margins, there may be no room for
+##'   the bar). Never drawn with `add = TRUE` or `image_bg = FALSE`.
 ##' @param auto_layout Logical; if `TRUE`, the plotting layout is set
 ##'   automatically. If multiple time steps are plotted and `average = FALSE`,
 ##'   panels are arranged using [n2mfrow()]. Default is `TRUE`.
@@ -388,6 +398,8 @@ plot_taxis <- function(x,
                        main = "Taxis",
                        plot_land = FALSE,
                        image_bg = TRUE,
+                       col_bg = NULL,
+                       legend = NULL,
                        auto_layout = TRUE,
                        add = FALSE,
                        xlab = NULL,
@@ -400,6 +412,10 @@ plot_taxis <- function(x,
   map_labs <- .map_labs(x)
   if (is.null(xlab)) xlab <- map_labs[1]
   if (is.null(ylab)) ylab <- map_labs[2]
+  if (is.null(col_bg)) col_bg <- .est_col()
+  ## the bar needs the right margin, which is only set with auto_layout
+  if (is.null(legend)) legend <- isTRUE(auto_layout)
+  legend <- legend && image_bg && !add
 
   if (inherits(x, "admove")) {
     if (is.null(select)) select <- 1:length(x$dat$pred$time)
@@ -435,12 +451,13 @@ plot_taxis <- function(x,
     mfrow <- if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2)
     if (shared) {
       par(mfrow = mfrow,
-          mar = c(0.3, 0.3, 1.4, 0.3),
+          mar = c(0.3, 0.3, 1.4, if (legend) 4.5 else 0.3),
           oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
           mgp = c(2, 0.5, 0),
           tcl = -0.3)
     } else {
       par(mfrow = mfrow)
+      if (legend) .mar_legend()
     }
   }
 
@@ -569,10 +586,12 @@ plot_taxis <- function(x,
                       length(x$dat$pred$grid$ygr) - 1L)
           z[cbind(ig$idx, ig$idy)] <- mag
           image_args <- list(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
-                             col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
+                             col = col_bg,
                              add = TRUE)
           image_args$zlim <- zlim_mag
           do.call(image, image_args)
+          if (legend && !is.null(zlim_mag))
+            .color_bar(col_bg, zlim_mag, lab = .rate_units(x))
         }
       }
       if(plot_land){
@@ -682,9 +701,10 @@ plot_taxis <- function(x,
         z <- matrix(NA_real_, length(dat$pred$grid$xgr) - 1L,
                     length(dat$pred$grid$ygr) - 1L)
         z[cbind(ig$idx, ig$idy)] <- mag
-        image(dat$pred$grid$xgr, dat$pred$grid$ygr, z,
-            col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
-              add = TRUE)
+        image(dat$pred$grid$xgr, dat$pred$grid$ygr, z, col = col_bg, add = TRUE)
+        zlim_sim <- suppressWarnings(range(mag, na.rm = TRUE, finite = TRUE))
+        if (legend && all(is.finite(zlim_sim)) && diff(zlim_sim) > 0)
+          .color_bar(col_bg, zlim_sim, lab = .rate_units(x))
       }
     }
 
@@ -748,6 +768,16 @@ plot_taxis <- function(x,
 ##'   magnitude is drawn underneath the arrows. It is skipped when the magnitude
 ##'   is the same in every cell, since a flat raster carries no information; the
 ##'   constant value is stated above the panel instead.
+##' @param col_bg Colour palette for the image of advection magnitude. Default:
+##'   `NULL`, a light purple sequential palette shared by [plot_taxis()],
+##'   [plot_advection()], [plot_diffusion()] and [plot_pref_grid()], so that
+##'   estimated quantities are set apart from the input data drawn by [plot_cov()]
+##'   and [plot_adv_field()].
+##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
+##'   panel, labelled with the units (space units per time unit, e.g. `km/month`).
+##'   Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and `FALSE`
+##'   otherwise (when the caller controls the margins, there may be no room for
+##'   the bar). Never drawn with `add = TRUE` or `image_bg = FALSE`.
 ##' @param auto_layout Logical; if `TRUE`, the plotting layout is set
 ##'   automatically. If multiple time steps are plotted and `average = FALSE`,
 ##'   panels are arranged using [n2mfrow()]. Default is `TRUE`.
@@ -797,6 +827,8 @@ plot_advection <- function(x,
                            main = "Advection",
                            plot_land = FALSE,
                            image_bg = TRUE,
+                           col_bg = NULL,
+                           legend = NULL,
                            auto_layout = TRUE,
                            add = FALSE,
                            xlab = NULL,
@@ -809,6 +841,10 @@ plot_advection <- function(x,
   map_labs <- .map_labs(x)
   if (is.null(xlab)) xlab <- map_labs[1]
   if (is.null(ylab)) ylab <- map_labs[2]
+  if (is.null(col_bg)) col_bg <- .est_col()
+  ## the bar needs the right margin, which is only set with auto_layout
+  if (is.null(legend)) legend <- isTRUE(auto_layout)
+  legend <- legend && image_bg && !add
 
   if (inherits(x, "admove")) {
     if (is.null(select)) select <- 1:length(x$dat$pred$time)
@@ -847,12 +883,13 @@ plot_advection <- function(x,
     mfrow <- if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2)
     if (shared) {
       par(mfrow = mfrow,
-          mar = c(0.3, 0.3, 1.4, 0.3),
+          mar = c(0.3, 0.3, 1.4, if (legend) 4.5 else 0.3),
           oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
           mgp = c(2, 0.5, 0),
           tcl = -0.3)
     } else {
       par(mfrow = mfrow)
+      if (legend) .mar_legend()
     }
   }
 
@@ -984,10 +1021,12 @@ plot_advection <- function(x,
                       length(x$dat$pred$grid$ygr) - 1L)
           z[cbind(ig$idx, ig$idy)] <- mag
           image_args <- list(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
-                             col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
+                             col = col_bg,
                              add = TRUE)
           image_args$zlim <- zlim_mag
           do.call(image, image_args)
+          if (legend && !is.null(zlim_mag))
+            .color_bar(col_bg, zlim_mag, lab = .rate_units(x))
         }
       }
       if(plot_land){
@@ -1119,9 +1158,10 @@ plot_advection <- function(x,
         z <- matrix(NA_real_, length(dat$pred$grid$xgr) - 1L,
                     length(dat$pred$grid$ygr) - 1L)
         z[cbind(ig$idx, ig$idy)] <- mag
-        image(dat$pred$grid$xgr, dat$pred$grid$ygr, z,
-            col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
-              add = TRUE)
+        image(dat$pred$grid$xgr, dat$pred$grid$ygr, z, col = col_bg, add = TRUE)
+        zlim_sim <- suppressWarnings(range(mag, na.rm = TRUE, finite = TRUE))
+        if (legend && all(is.finite(zlim_sim)) && diff(zlim_sim) > 0)
+          .color_bar(col_bg, zlim_sim, lab = .rate_units(x))
       }
     }
 
@@ -1195,6 +1235,16 @@ plot_advection <- function(x,
 ##'   the same in every cell (e.g. a single-knot, covariate-independent
 ##'   diffusion), since a flat raster carries no information; the constant value
 ##'   is stated above the panel instead.
+##' @param col_bg Colour palette for the image of diffusion. Default: `NULL`, a
+##'   light purple sequential palette shared by [plot_taxis()],
+##'   [plot_advection()], [plot_diffusion()] and [plot_pref_grid()], so that
+##'   estimated quantities are set apart from the input data drawn by [plot_cov()]
+##'   and [plot_adv_field()].
+##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
+##'   panel, labelled with the units (squared space units per time unit, e.g.
+##'   `km²/month`). Default: `NULL`, which means `TRUE` when `auto_layout = TRUE`
+##'   and `FALSE` otherwise (when the caller controls the margins, there may be no
+##'   room for the bar). Never drawn with `add = TRUE` or `image_bg = FALSE`.
 ##' @param auto_layout Logical; if `TRUE`, graphical parameters are set and
 ##'   restored automatically; multiple panels are arranged using [n2mfrow()].
 ##'   Default: `TRUE`.
@@ -1239,6 +1289,8 @@ plot_diffusion <- function(x,
                            main = "Diffusion",
                            plot_land = FALSE,
                            image_bg = TRUE,
+                           col_bg = NULL,
+                           legend = NULL,
                            auto_layout = TRUE,
                            add = FALSE,
                            xlab = NULL,
@@ -1251,6 +1303,10 @@ plot_diffusion <- function(x,
   map_labs <- .map_labs(x)
   if (is.null(xlab)) xlab <- map_labs[1]
   if (is.null(ylab)) ylab <- map_labs[2]
+  if (is.null(col_bg)) col_bg <- .est_col()
+  ## the bar needs the right margin, which is only set with auto_layout
+  if (is.null(legend)) legend <- isTRUE(auto_layout)
+  legend <- legend && image_bg && !add
 
   if (!inherits(x, c("admove", "admove_sim")))
     stop("Don't know how to plot diffusion for this object. Only implemented yet for objects of class `admove` or `admove_sim`.")
@@ -1305,6 +1361,8 @@ plot_diffusion <- function(x,
   }
 
   n_panels <- ncol(D)
+  ## a constant D gets no image, so no colour bar (and no margin for it)
+  if (.is_constant_field(D)) legend <- FALSE
 
   ## the panels share their limits: draw axes and axis labels only on the outer
   ## panels and the main title once above the whole figure
@@ -1332,12 +1390,13 @@ plot_diffusion <- function(x,
     mfrow <- if (n_panels == 1L || add) c(1, 1) else n2mfrow(n_panels, asp = 2)
     if (shared) {
       par(mfrow = mfrow,
-          mar = c(0.3, 0.3, 1.4, 0.3),
+          mar = c(0.3, 0.3, 1.4, if (legend) 4.5 else 0.3),
           oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
           mgp = c(2, 0.5, 0),
           tcl = -0.3)
     } else {
       par(mfrow = mfrow)
+      if (legend) .mar_legend()
     }
   }
 
@@ -1390,10 +1449,12 @@ plot_diffusion <- function(x,
                   length(pgrid$ygr) - 1L)
       z[cbind(ig$idx, ig$idy)] <- dif
       image_args <- list(pgrid$xgr, pgrid$ygr, z,
-                         col = adjustcolor(rev(hcl.colors(100, "YlOrRd")), 0.4),
+                         col = col_bg,
                          add = TRUE)
       image_args$zlim <- zlim_dif
       do.call(image, image_args)
+      if (legend && !is.null(zlim_dif))
+        .color_bar(col_bg, zlim_dif, lab = .rate_units(x, sq = TRUE))
     }
 
     if (isTRUE(plot_land)) {
@@ -2313,6 +2374,36 @@ add_lab <- function(lab){
 }
 
 
+## Palette for the estimated (or simulated true) movement components: taxis,
+## advection, diffusion and preference surfaces. Deliberately distinct from the
+## input data palettes (viridis in plot_cov(), YlOrRd in plot_adv_field()), so
+## estimates are not mistaken for data. Only the lighter part of the ramp, so
+## black arrows and circles stay readable on top; opaque (no alpha), so the
+## colour bar matches the image exactly.
+.est_col <- function(n = 100) {
+  grDevices::colorRampPalette(hcl.colors(100, "Purples 3", rev = TRUE)[1:65])(n)
+}
+
+
+## Units of a rate for the colour bar: speed (space/time) or, with `sq = TRUE`,
+## diffusivity (space^2/time). NULL if the units are unknown.
+.rate_units <- function(x, sq = FALSE) {
+  us <- .pred_units(x, "space")
+  ut <- .pred_units(x, "time")
+  if (length(us) != 1L || length(ut) != 1L || is.na(us) || is.na(ut) ||
+        !nzchar(us) || !nzchar(ut)) return(NULL)
+  paste0(us, if (sq) "\u00b2", "/", ut)
+}
+
+
+## Right margin for a single panel with a colour bar: at least 4.5 lines.
+.mar_legend <- function() {
+  mar <- par("mar")
+  mar[4L] <- max(mar[4L], 4.5)
+  par(mar = mar)
+}
+
+
 ## Note in the corner of a spatial panel stating the constant value of a field
 ## that has no spatial variation, so a uniform panel is not mistaken for a
 ## missing or failed one.
@@ -2745,10 +2836,14 @@ plot_pref_func <- function(x,
 ##' @param combine.sea Logical; if `TRUE`, preference surfaces are summed across
 ##'   selected seasonal components before plotting. Default is `FALSE`.
 ##' @param main Optional main title for the plot panels.
-##' @param col Colours for the preference surface. Defaults to
-##'   `hcl.colors(14, "YlOrRd", rev = TRUE)`.
-##' @param ci Confidence level for pointwise confidence intervals. Default is
-##'   `0.95`.
+##' @param col Colour palette for the preference surface. Default: `NULL`, the
+##'   light purple palette for estimated quantities shared with [plot_taxis()],
+##'   [plot_advection()] and [plot_diffusion()].
+##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
+##'   panel. All panels share one colour scale. Default: `NULL`, which means
+##'   `TRUE` when `auto_layout = TRUE` and `add = FALSE`.
+##' @param ci Currently not used (the surfaces are drawn without confidence
+##'   intervals). Default is `0.95`.
 ##' @param plot_land Logical; if `TRUE`, land masses are added to the plot.
 ##'   Default is `FALSE`.
 ##' @param auto_layout Logical; if `TRUE`, the plotting layout is set
@@ -2775,7 +2870,9 @@ plot_pref_func <- function(x,
 ##' (`combine_cov = TRUE`) and/or seasons (`combine.sea = TRUE`).
 ##'
 ##' For simulated objects of class `admove_sim`, the preference surface is
-##' reconstructed from the simulated covariates and parameter values.
+##' evaluated with the true parameters (`x$par_true`) in the same way.
+##'
+##' `combine_cov = TRUE` requires all selected covariates on the same raster.
 ##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing plots.
@@ -2789,7 +2886,8 @@ plot_pref_grid <- function(x,
                            combine_cov = FALSE,
                            combine.sea = FALSE,
                            main = NULL,
-                           col = hcl.colors(14, "YlOrRd", rev = TRUE),
+                           col = NULL,
+                           legend = NULL,
                            ci = 0.95,
                            plot_land = FALSE,
                            auto_layout = TRUE,
@@ -2800,336 +2898,162 @@ plot_pref_grid <- function(x,
                            asp = 2,
                            ...) {
 
+  if (!inherits(x, c("admove", "admove_sim"))) {
+    stop("Don't know how to plot preference surfaces for this object. Only ",
+         "implemented for objects of class `admove` or `admove_sim`.",
+         call. = FALSE)
+  }
+
   map_labs <- .map_labs(x)
   if (is.null(xlab)) xlab <- map_labs[1]
   if (is.null(ylab)) ylab <- map_labs[2]
 
-  main0 <- main
-  select.y0 <- select.y
+  if (is.null(col)) col <- .est_col()
+  if (is.null(legend)) legend <- isTRUE(auto_layout) && !add
 
+  ## estimated coefficients for a fit, true ones for a simulation
+  pars <- if (inherits(x, "admove")) .fitted_par(x) else x$par_true
+  if (is.null(pars)) stop("'x' has no parameters to plot.", call. = FALSE)
+  smooth_method <- x$conf$smooth_method
+
+  if (type == "taxis") {
+    coef <- pars$alpha
+    knots <- x$dat$knots_tax
+  } else if (type == "diffusion") {
+    coef <- pars$beta
+    knots <- x$dat$knots_dif
+  } else stop("only taxis and diffusion implemented yet.")
+  knots <- as.matrix(knots)
+
+  if (is.null(select_cov)) select_cov <- seq_len(dim(coef)[2])
+  if (is.null(select.sea)) select.sea <- seq_len(dim(coef)[3])
+
+  nsea <- length(select.sea)
+  ncov <- length(select_cov)
+  if((nsea == 1 || combine.sea) && (ncov == 1 || combine_cov)) {
+    mfrow <- c(1,1)
+  } else if(nsea == 1 || combine.sea) {
+    mfrow <- n2mfrow(ncov, asp)
+  } else if(ncov == 1 || combine_cov) {
+    mfrow <- n2mfrow(nsea, asp)
+  } else {
+    mfrow <- c(nsea, ncov)
+  }
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(suppressWarnings(graphics::par(opar)))
-    par(mfrow = c(1,1))
+    par(mfrow = mfrow,
+        mar = c(4.5, 4, 1, if (legend) 4.4 else 1) + 0.1, oma = c(1,1,1,1))
   }
 
-  if (inherits(x, "admove")) {
+  cov_all <- .make_cov_list(x$dat$cov)
+  grid <- x$dat$grid
 
-    sdr <- x$sdr
-    cov_pred <- x$dat$pred$cov
+  ## preference of each selected covariate and season on the covariate's own
+  ## raster, NA outside the model grid
+  cov_xy <- vector("list", ncov)
+  mat_list <- vector("list", nsea)
+  for(j in 1:nsea){
+    mat_list[[j]] <- vector("list", ncov)
+    for(i in 1:ncov){
+      k <- select_cov[i]
+      covk <- cov_all[[k]]
 
-    if (type == "taxis") {
+      years <- as.numeric(dimnames(covk)[[3]])
+      indi <- if (!is.null(select.y)) {
+        which.min(abs(years - as.numeric(select.y)))
+      } else 1L
 
-      if(is.null(select_cov)){
-        select_cov <- 1:dim(x$par$alpha)[2]
-      }
+      xcov <- as.numeric(dimnames(covk)[[1]])
+      ycov <- as.numeric(dimnames(covk)[[2]])
+      cov_xy[[i]] <- list(x = xcov, y = ycov)
+      xycov <- expand.grid(xcov, ycov)
+      indix <- as.integer(cut(xycov[,1], grid$xgr, include.lowest = TRUE))
+      indiy <- as.integer(cut(xycov[,2], grid$ygr, include.lowest = TRUE))
 
-      if(is.null(select.sea)){
-        select.sea <- 1:dim(x$par$alpha)[3]
-      }
+      covi <- unclass(covk)[, , indi]
+      covi[is.na(grid$celltable[cbind(indix, indiy)])] <- NA
 
-      ind <- if (!is.null(sdr)) which(names(sdr$value) == "pref_taxis_pred") else
-        which(names(x$rep) == "pref_taxis_pred")
-      par_est <- .fitted_par(x)$alpha[,select_cov,select.sea, drop = FALSE]
-      knots <- x$dat$knots_tax[,select_cov]
-      ## if (!is.null(par)) par_true <- par$alpha[,select_cov,select.sea]
+      pref_fun <- .poly_fun(as.numeric(knots[, k]),
+                            as.numeric(coef[, k, select.sea[j]]),
+                            method = smooth_method)
 
-
-    } else if(type == "diffusion") {
-
-      if(is.null(select_cov)){
-        select_cov <- 1:dim(x$par$beta)[2]
-      }
-      if(is.null(select.sea)){
-        select.sea <- 1:dim(x$par$beta)[3]
-      }
-
-      ind <- if (!is.null(sdr)) which(names(sdr$value) == "pref_dif_pred") else
-        which(names(x$rep) == "pref_dif_pred")
-      par_est <- .fitted_par(x)$beta[,select_cov, select.sea, drop = FALSE]
-      knots <- x$dat$knots_dif[,select_cov]
-      ## if(!is.null(par)) par_true <- par$beta[,select_cov]
-
-    } else stop("only taxis and diffusion implemented yet.")
-
-    if (!is.null(sdr)) {
-      pref <- sdr$value[ind]
-      prefsd <- sdr$sd[ind]
-      preflow <- pref - qnorm(ci + (1 - ci)/2) * prefsd
-      prefup <- pref + qnorm(ci + (1 - ci)/2) * prefsd
-    } else {
-      fit_rep <- if (!is.null(x$rep)) x$rep else x$obj$report()
-      if(type == "taxis"){
-        pref <- fit_rep[["pref_taxis_pred"]]
-      }else if(type == "diffusion"){
-        pref <- fit_rep[["pref_dif_pred"]]
-      }
-      prefsd <- preflow <- prefup <- pref
+      mat <- matrix(NA_real_, length(xcov), length(ycov))
+      ok <- is.finite(covi)
+      mat[ok] <- pref_fun(as.numeric(covi[ok]))
+      mat_list[[j]][[i]] <- mat
     }
-
-    pref <- array(pref, dim = c(nrow(cov_pred), ncol(cov_pred), 4))
-    preflow <- array(preflow, dim = c(nrow(cov_pred), ncol(cov_pred), 4))
-    prefup <- array(prefup, dim = c(nrow(cov_pred), ncol(cov_pred), 4))
-
-    nsea <- length(select.sea)
-    ncov <- length(select_cov)
-    if((nsea == 1 || combine.sea) && (ncov == 1 || combine_cov)) {
-      mfrow <- c(1,1)
-    } else if((nsea == 1 || combine.sea) && (ncov != 1 || !combine_cov)) {
-      mfrow <- n2mfrow(ncov, asp)
-    } else if(ncov == 1 || combine_cov) {
-      mfrow <- n2mfrow(nsea, asp)
-    } else {
-      mfrow <- c(nsea, ncov)
-    }
-    if(auto_layout){
-      par(mfrow = mfrow,
-          mar = c(4.5,4,1,1)+0.1, oma = c(1,1,1,1))
-    }
-
-    ## plotting data
-    mat_list <- vector("list", nsea)
-    for(j in 1:nsea){
-      mat_list[[j]] <- vector("list", ncov)
-      for(i in 1:ncov){
-
-        years <- as.numeric(attributes(x$dat$cov[[i]])$dimnames[[3]])
-        if(!is.null(select.y0)){
-          indi <- which.min(abs(years - as.numeric(select.y)))
-        }else{
-          indi <- 1
-        }
-
-        ## if(is.null(main0)) main <- paste0(names(x$dat$cov)[i], " (",
-        ##                                   years[indi],")")
-
-        xcov <- as.numeric(rownames(x$dat$cov[[i]][,,indi]))
-        ycov <- as.numeric(colnames(x$dat$cov[[i]][,,indi]))
-        xycov <- expand.grid(xcov, ycov)
-        xgrid <- x$dat$grid$xgr
-        ygrid <- x$dat$grid$ygr
-
-        indix <- as.integer(cut(xycov[,1], xgrid, include.lowest = TRUE))
-        indiy <- as.integer(cut(xycov[,2], ygrid, include.lowest = TRUE))
-
-        covi <- x$dat$cov[[i]][,,indi]
-
-        isna <- x$dat$grid$celltable[cbind(indix,indiy)]
-        covi[is.na(isna)] <- NA
-
-        if (inherits(knots, "matrix")) {
-          get_true.pref <- .poly_fun(as.numeric(knots[,i]),
-                                             as.numeric(par_est[,i,j]),
-                                             method = x$conf$smooth_method)
-        } else {
-          get_true.pref <- .poly_fun(knots, par_est,
-                                             method = x$conf$smooth_method)
-        }
-
-
-        pref_pred <- get_true.pref(as.numeric(covi))
-
-        mat <- x$dat$cov[[i]][,,1]
-        mat[] <- pref_pred
-
-        mat_list[[j]][[i]] <- mat
-      }
-    }
-
-    if (combine.sea) {
-      nsea <- 1
-      res_list <- vector("list", nsea)
-      res_list[[1]] <- vector("list", ncov)
-      for (i in 1:ncov) {
-        res_list[[i]] <- do.call("+", lapply(mat_list, "[[", i))
-      }
-      mat_list <- res_list
-    }
-
-    if (combine_cov) {
-      ncov <- 1
-      for (i in 1:length(mat_list)) mat_list[[i]][[1]] <- do.call("+", mat_list[[i]])
-    }
-
-    ## plot
-    for(j in 1:nsea){
-      for(i in 1:ncov){
-
-        if(!add){
-          if(!is.null(bg)){
-            graphics::par(bg = bg)
-          }
-          plot(NA,
-               xlim = x$dat$grid$xrange,
-               ylim = x$dat$grid$yrange,
-               xlab = xlab,
-               ylab = ylab,
-               main = main,
-               ...)
-        }
-
-        mat <- mat_list[[j]][[i]]
-
-        image(as.numeric(rownames(mat)),
-              as.numeric(colnames(mat)),
-              mat,
-              xlim = x$dat$grid$xrange,
-              ylim = x$dat$grid$yrange,
-              add = TRUE)
-
-        if(plot_land){
-          plot_land(x$dat$grid$xrange, x$dat$grid$yrange,
-                    shift = ifelse(max(x$dat$grid$xrange) > 180, TRUE, FALSE))
-        }
-
-        {
-          parts <- character(0)
-          if (ncov > 1) {
-            cov_nm <- names(x$dat$cov)[select_cov[i]]
-            if (!is.null(cov_nm) && nzchar(cov_nm)) parts <- c(parts, cov_nm)
-          }
-          if (nsea > 1) parts <- c(parts, paste0("t = ", years[indi]))
-          leg_lab <- paste(parts, collapse = ", ")
-          if (nzchar(leg_lab))
-            legend("topleft", legend = leg_lab, pch = NA, bg = "white", x.intersp = 0.1)
-        }
-
-        box(lwd=1.5)
-
-      }
-    }
-
-  } else if (inherits(x, "admove_sim")){
-
-    grid <- x$grid
-    cov <- x$cov
-    par <- x$par
-    dat <- x$dat
-    knots_tax <- dat$knots_tax
-    funcs <- NULL
-
-    if(is.null(par)) stop("No parameters provided! Use par = list() to specify parameters for taxis.")
-
-    if(!add){
-      if(!is.null(bg)){
-        graphics::par(bg = bg)
-      }
-      plot(NA,
-           xlim = grid$xrange,
-           ylim = grid$yrange,
-           xlab = xlab,
-           ylab = ylab,
-           ...)
-      ## if(!is.null(bg)){
-      ##     usr <- par("usr")
-      ##     rect(usr[1], usr[3], usr[2], usr[4], col = bg, border = NA)
-      ## }
-    }
-
-    par <- default_sim_par(par)
-    cov <- .make_cov_list(cov)
-    dat <- setup_data(cov = cov,
-                       grid = grid,
-                       trange = c(0,
-                                  max(sapply(cov,
-                                             function(x) dim(x)[3]))),
-                       verbose = FALSE)
-    conf <- default_conf(dat)
-    funcs <- default_sim_funcs(dat, conf, par, funcs)
-
-    ## uv.true <- t(apply(x$dat$xygrid, 1, function(xy)
-    ##     funcs$tax(xy,NA)))
-
-    get_true.pref <- .poly_fun(as.numeric(knots_tax),
-                                       as.numeric(x$par_true$alpha),
-                                       method = conf$smooth_method)
-
-    i = 1
-    pref_pred <- get_true.pref(as.numeric(cov[[i]]))
-
-    if(plot_land){
-      plot_land(grid$xrange, grid$yrange,
-                shift = ifelse(max(grid$xrange) > 180, TRUE, FALSE))
-    }
-
-    dims <- dim(grid)
-    image(
-      matrix(pref_pred, dims$nx, dims$ny),
-      xlim = grid$xrange,
-      ylim = grid$yrange,
-      add = TRUE)
-
-    if(!add) box(lwd = 1.5)
-
-
-  } else {
-
-    grid <- x$grid
-    cov <- x$cov
-    par <- x$par
-    dat <- x$dat
-    knots_tax <- x$knots
-    funcs <- NULL
-
-    if(is.null(par)) stop("No parameters provided! Use par = list() to specify parameters for taxis.")
-
-    if(!add){
-      if(!is.null(bg)){
-        graphics::par(bg = bg)
-      }
-      plot(NA,
-           xlim = grid$xrange,
-           ylim = grid$yrange,
-           xlab = xlab,
-           ylab = ylab,
-           ...)
-      ## if(!is.null(bg)){
-      ##     usr <- par("usr")
-      ##     rect(usr[1], usr[3], usr[2], usr[4], col = bg, border = NA)
-      ## }
-    }
-
-    par <- default_sim_par(par)
-    cov <- .make_cov_list(cov)
-    dat <- setup_data(cov = cov,
-                       grid = grid,
-                       trange = c(0,
-                                                   max(sapply(cov,
-                                                              function(x) dim(x)[3]))),
-                       verbose = FALSE)
-    conf <- default_conf(dat)
-    funcs <- default_sim_funcs(dat, conf, par, funcs)
-
-    ## uv.true <- t(apply(x$dat$xygrid, 1, function(xy)
-    ##     funcs$tax(xy,NA)))
-
-          browser()
-
-
-
-    get_true.pref <- .poly_fun(as.numeric(x$knots),
-                                       as.numeric(x$par$alpha),
-                                       method = conf$smooth_method)
-
-    i = 1
-    pref_pred <- get_true.pref(as.numeric(cov[[i]]))
-
-    if(plot_land){
-      plot_land(grid$xrange, grid$yrange,
-                shift = ifelse(max(grid$xrange) > 180, TRUE, FALSE))
-    }
-
-    dims <- dim(grid)
-
-    image(
-      matrix(pref_pred, dims$nx, dims$ny),
-      xlim = grid$xrange,
-      ylim = grid$yrange,
-      add = TRUE)
-
-    if(!add) box(lwd = 1.5)
-
   }
+
+  if (combine.sea) {
+    mat_list <- list(lapply(seq_len(ncov), function(i)
+      Reduce("+", lapply(mat_list, "[[", i))))
+    nsea <- 1
+  }
+
+  if (combine_cov) {
+    ## summing needs one raster: all covariates on the same coordinates
+    same <- all(vapply(cov_xy, function(c) identical(c, cov_xy[[1]]), logical(1)))
+    if (!same) {
+      stop("'combine_cov = TRUE' needs covariates on the same raster.",
+           call. = FALSE)
+    }
+    mat_list <- lapply(mat_list, function(m) list(Reduce("+", m)))
+    cov_xy <- cov_xy[1]
+    ncov <- 1
+  }
+
+  ## one colour scale for all panels; a constant surface (e.g. a single-knot
+  ## diffusion) is stated rather than drawn as a flat raster
+  vals <- unlist(mat_list)
+  pref_const <- .is_constant_field(vals)
+  zlim <- if (pref_const) NULL else range(vals, na.rm = TRUE, finite = TRUE)
+  if (is.null(zlim) && legend && auto_layout) par(mar = replace(par("mar"), 4, 1.1))
+
+  ## plot
+  for(j in 1:nsea){
+    for(i in 1:ncov){
+
+      if(!add){
+        if(!is.null(bg)){
+          graphics::par(bg = bg)
+        }
+        plot(NA,
+             xlim = grid$xrange,
+             ylim = grid$yrange,
+             xlab = xlab,
+             ylab = ylab,
+             main = main,
+             ...)
+      }
+
+      if (!is.null(zlim)) {
+        image(cov_xy[[i]]$x, cov_xy[[i]]$y, mat_list[[j]][[i]],
+              col = col, zlim = zlim, add = TRUE)
+        if (legend && !add) .color_bar(col, zlim)
+      } else if (!add && any(is.finite(vals))) {
+        .add_const_note(vals[is.finite(vals)][1L], "preference")
+      }
+
+      if(plot_land){
+        plot_land(sref = sref(x$dat))
+      }
+
+      parts <- character(0)
+      if (ncov > 1) {
+        cov_nm <- names(cov_all)[select_cov[i]]
+        if (!is.null(cov_nm) && nzchar(cov_nm)) parts <- c(parts, cov_nm)
+      }
+      if (nsea > 1) parts <- c(parts, paste0("season ", select.sea[j]))
+      leg_lab <- paste(parts, collapse = ", ")
+      if (nzchar(leg_lab))
+        legend("topleft", legend = leg_lab, pch = NA, bg = "white", x.intersp = 0.1)
+
+      if(!add) box(lwd = 1.5)
+    }
+  }
+
+  invisible(NULL)
 }
 
 

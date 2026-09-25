@@ -705,8 +705,10 @@ plot_cov <- function(x,
 
 
 ## Vertical colour bar just right of the current plot region, in the figure
-## margin (needs a right margin of about 4 lines).
-.color_bar <- function(col, zlim, width = 0.03, gap = 0.015, cex = 0.7) {
+## margin (needs a right margin of about 4 lines). `lab` (e.g. the units) is
+## written above the bar.
+.color_bar <- function(col, zlim, width = 0.03, gap = 0.015, cex = 0.7,
+                       lab = NULL) {
 
   plt <- par("plt")
   x0 <- grconvertX(plt[2] + gap, from = "nfc", to = "user")
@@ -726,7 +728,12 @@ plot_cov <- function(x,
   yat <- y0 + (at - zlim[1]) / diff(zlim) * (y1 - y0)
   xt <- grconvertX(plt[2] + gap + width + 0.01, from = "nfc", to = "user")
   segments(x1, yat, x1 + 0.3 * (x1 - x0), yat, col = grey(0.3))
-  text(xt, yat, labels = format(at), adj = c(0, 0.5), cex = cex)
+  ## plain numbers unless huge (a diffusivity bar reads 20000, not 2e+04)
+  labs <- format(at, scientific = max(abs(at), 0) >= 1e6, trim = TRUE)
+  text(xt, yat, labels = labs, adj = c(0, 0.5), cex = cex)
+  if (!is.null(lab) && nzchar(lab)) {
+    text(x0, y1 + 0.5 * strheight("M", cex = cex), lab, adj = c(0, 0), cex = cex)
+  }
 
   invisible(NULL)
 }
