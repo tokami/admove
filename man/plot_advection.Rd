@@ -50,7 +50,9 @@ call. Default is \code{0.5}.}
 
 \item{lwd}{Line width of the arrows. Default is \code{1}.}
 
-\item{main}{Main title of the plot. Default is \code{"Advection"}.}
+\item{main}{Main title of the plot. Default is \code{"Advection"}. With several
+panels it is drawn once above them, and a vector with one entry per panel
+replaces the per-panel titles instead.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added using
 \code{\link[=plot_land]{plot_land()}}. Default is \code{FALSE}.}
@@ -95,6 +97,10 @@ the animal by the environmental flow (e.g. ocean currents), scaled by the
 estimated entrainment coefficients \code{gamma}; the arrows therefore show
 \code{gamma * current} in coordinate units per time step. The function can display
 advection at selected time steps or the average across multiple time steps.
+
+This shows the advection \emph{estimated} by the model: the advection fields
+scaled by \code{gamma}, plus the constant drift. The input fields themselves are
+drawn by \code{\link[=plot_adv_field]{plot_adv_field()}}.
 }
 \details{
 For objects of class \code{admove}, the function plots predicted advection from
@@ -104,8 +110,12 @@ simulated covariates and parameter values.
 
 If \code{average = TRUE}, the mean advection over the selected time steps is
 plotted. Otherwise, one panel per selected time step is produced unless
-\code{add = TRUE}.
+\code{add = TRUE}, titled with its prediction time as a date at the resolution of
+the time units (e.g. \code{"Jan 2007"} for monthly units; \code{"t = 48.45"} if the
+time reference has no origin). The panels share their axes, the arrow scale
+and the colour scale of the magnitude, so they can be compared directly.
 }
 \seealso{
-\code{\link[=plot_taxis]{plot_taxis()}}, \code{\link[=plot_diffusion]{plot_diffusion()}}
+\code{\link[=plot_taxis]{plot_taxis()}}, \code{\link[=plot_diffusion]{plot_diffusion()}}, \code{\link[=plot_adv_field]{plot_adv_field()}} for the
+input fields
 }

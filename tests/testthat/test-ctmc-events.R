@@ -9,6 +9,14 @@
 ##     agreement is ~1e-12 relative, not bit-identical. Never use identical().
 ##   - the aligned lattice ("align"/"auto"): a genuinely different, finer
 ##     discretisation. Only "off" is held to these numbers.
+##
+## They are recorded at the defaults of 25cfe44, which the fixtures set
+## explicitly: beta = 0, and for ctmc_pin_obj() also logKappa and the knots.
+## logKappa is fixed rather than estimated and the knots define the smooths, so
+## both are part of the model. Later changes to the defaults (the diffusion
+## start for beta, the kappa scaling, the default knot placement) must not move
+## the pins, and would if the fixtures took them from default_par() and
+## setup_data() as they are.
 
 
 ## ---------------------------------------------------------------- fixtures
@@ -42,10 +50,16 @@ ctmc_pin_obj <- function(w = 0.3, t2 = 0.6, groups = "off") {
   dat <- suppressWarnings(suppressMessages(
     setup_data(grid = grid, cov = cov, tags = tags, trange = c(0, 1),
                verbose = FALSE)))
+  dat$knots_tax[] <- c(21.1571676734481, 24.529971476953499, 27.526040460835198)
+  dat$knots_dif[] <- 24.529971476953499
   conf <- default_conf(dat, verbose = FALSE)
   conf$engine <- 2
   conf$ctmc_groups <- groups
   par <- default_par(dat, conf, verbose = FALSE)
+  par$beta[] <- 0
+  ## the kappa scaling depends on the tag positions, so one value per t2
+  log_kappa <- c("0.6" = -0.89422860017923178, "0.85" = -1.2425352944474477)
+  par$logKappa[] <- log_kappa[[as.character(t2)]]
   map <- default_map(dat, conf, par)
 
   suppressWarnings(suppressMessages(
@@ -68,9 +82,11 @@ ctmc_pin_sim_obj <- function(method = "expav", groups = "off") {
   conf$engine <- 2
   conf$ctmc_method <- method
   conf$ctmc_groups <- groups
+  par <- sim$par
+  par$beta[] <- 0
 
   suppressMessages(suppressWarnings(
-    admove(sim$dat, conf, sim$par, sim$map, run = FALSE, verbose = FALSE)))$obj
+    admove(sim$dat, conf, par, sim$map, run = FALSE, verbose = FALSE)))$obj
 }
 
 
@@ -150,12 +166,81 @@ test_that("habi$slice() changes exactly at the covariate and spline breaks", {
   expect_equal(length(unique(paste(keys, ints))), length(unique(ints)))
   expect_equal(length(unique(keys)), length(unique(ints)))
 
-  ## all four habi objects are built with the same time arguments, so one key
-  ## serves the generator; .ctmc_slice_key() relies on this
+  ## tax and dif are built with the same time arguments, so one of them serves
+  ## the generator key; .ctmc_slice_key() relies on this
   for (z in tt) {
     expect_identical(habi$tax$slice(z), habi$dif$slice(z))
-    expect_identical(habi$tax$slice(z), habi$adv_x$slice(z))
   }
+})
+
+
+## A current that changes at t = 0, 1, ..., 5 and a covariate that is constant
+## in time, given either as 6 identical slices (its breaks happen to cover the
+## current's) or as 1 slice (only the advection part of the key and the breaks
+## can). Before advection entered .ctmc_slice_key() and .ctmc_breaks(), the
+## single-slice version silently reused the t = 0 generator throughout.
+ctmc_adv_obj <- function(nt_cov) {
+
+  grid <- create_grid(cellsize = 0.25, verbose = FALSE)
+  base <- withr::with_seed(7, sim_cov(grid, nt = 6))
+  cov <- withr::with_seed(7, sim_cov(grid, nt = nt_cov))
+  for (k in seq_len(nt_cov)) cov[, , k] <- base[, , 1]
+  u <- withr::with_seed(3, sim_cov(grid, nt = 6))
+  v <- withr::with_seed(4, sim_cov(grid, nt = 6))
+  u[] <- u[] - mean(u)
+  v[] <- v[] - mean(v)
+
+  tags <- data.frame(
+    id = c("a", "a", "b", "b", "c", "c"),
+    t  = c(0, 4.6, 0, 3.4, 0, 4.2),
+    x  = c(0.3, 0.6, 0.3, 0.4, 0.3, 0.8),
+    y  = c(0.3, 0.4, 0.3, 0.8, 0.3, 0.6))
+  nms <- c(t = "t", x = "x", y = "y", id = "id")
+  tags <- suppressMessages(prep_ctags(tags, names = nms, sref = sref(grid),
+                                      verbose = FALSE))
+  dat <- suppressWarnings(suppressMessages(
+    setup_data(grid = grid, cov = list(cov1 = cov), tags = tags,
+               adv = list(cur = prep_adv(u, v, units = NULL)),
+               trange = c(0, 5), verbose = FALSE)))
+  dat$min_dt <- 0.4
+  conf <- default_conf(dat, verbose = FALSE)
+  conf$engine <- 2
+  par <- default_par(dat, conf, verbose = FALSE)
+  map <- default_map(dat, conf, par)
+
+  suppressWarnings(suppressMessages(
+    admove(dat, conf, par, map, run = FALSE, verbose = FALSE)))$obj
+}
+
+
+test_that("the CTMC generator follows the advection time slices", {
+
+  a <- ctmc_adv_obj(6)
+  b <- ctmc_adv_obj(1)
+
+  ## away from par = 0, so that the current (gamma) and the taxis act
+  p <- a$par
+  p[] <- seq(0.3, 1.2, length.out = length(p))
+
+  expect_equal(b$fn(p), a$fn(p), tolerance = 1e-8)
+  expect_equal(b$report(p)$ctmc_ngen, a$report(p)$ctmc_ngen)
+})
+
+
+test_that(".ctmc_breaks() includes advection field times and season starts", {
+
+  d <- list(tags = data.frame(t = c(0, 2.5)),
+            time_cov = list(0), time_spline = list(0),
+            use_advection = TRUE, time_adv = list(c(0, 1.5), c(0, 1.5)),
+            n_seasons_adv = 2L, period = 1)
+
+  expect_equal(admove:::.ctmc_breaks(d), seq(0, 3.5, by = 0.5))
+
+  d$n_seasons_adv <- 1L
+  expect_equal(admove:::.ctmc_breaks(d), c(0, 1.5))
+
+  d$use_advection <- FALSE
+  expect_equal(admove:::.ctmc_breaks(d), 0)
 })
 
 

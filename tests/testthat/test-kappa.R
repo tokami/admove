@@ -37,8 +37,8 @@ test_that("cov_taxis restricts which covariates scale kappa", {
   dat <- skjepo$sim$dat
   conf <- skjepo$sim$conf
 
-  ## add a second covariate with a different range-to-gradient ratio, as an
-  ## advection input would have, and check that it only affects kappa when it is
+  ## add a second covariate with a different range-to-gradient ratio, e.g. one
+  ## that only informs diffusion, and check that it only affects kappa when it is
   ## included. (Rescaling a covariate would not do: kappa = dk * sqrt(2 D0 / T)
   ## / G is invariant to that when the knots are rescaled with it.)
   dat2 <- dat

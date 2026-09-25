@@ -14,7 +14,7 @@ admove(
   lower = NULL,
   upper = NULL,
   rel_tol = 1e-10,
-  grad_tol = 1e-04,
+  grad_tol = 0.001,
   do_predictions = TRUE,
   do_sdreport = TRUE,
   do_report = TRUE,
@@ -60,18 +60,13 @@ explicit upper bounds are supplied.}
 \item{rel_tol}{Relative convergence tolerance passed to \code{\link[stats:nlminb]{stats::nlminb()}}.
 Default is \code{1e-10}.}
 
-\item{grad_tol}{Convergence tolerance on the gradient, \strong{relative to the
-objective}: a fit counts as converged when the largest absolute gradient
-component is below \code{grad_tol * max(1, abs(objective))}. Default
-\code{1e-4}. \code{\link[stats:nlminb]{stats::nlminb()}} can report \code{convergence = 0}
-("relative convergence") at a point that is not stationary, and
-\code{\link[RTMB:sdreport]{RTMB::sdreport()}} can then return a positive-definite Hessian and small
-standard errors there, so the optimizer's own status is not sufficient.
-The tolerance is relative because the gradient scales with the objective,
-which scales with the number of observations: an absolute threshold that
-is right for a few hundred tags flags every fit of a few thousand. The
-maximum gradient component is stored in the fitted object as
-\code{max_gradient} and reported by \code{\link[=summarise_fit]{summarise_fit()}}.}
+\item{grad_tol}{Convergence tolerance on the gradient: one of the
+convergence checks passes when the largest absolute gradient component at
+the estimates is below \code{grad_tol}. Default \code{1e-3}. The
+gradient grows with the number of observations, so large data sets may
+need a tighter \code{rel_tol} or a larger \code{grad_tol}. The maximum
+gradient component is stored in the fitted object as
+\code{max_gradient}. See \code{\link[=summarise_fit]{summarise_fit()}} for all convergence checks.}
 
 \item{do_predictions}{Logical; if \code{TRUE} (default), model predictions
 are computed after fitting. If \code{FALSE}, prediction-related outputs are

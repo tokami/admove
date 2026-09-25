@@ -3,9 +3,10 @@
 
 
 make_inputs <- function(time_spline, nsea_dim, nknot = 4, ncov = 2,
-                        seasonal_dif = FALSE) {
+                        seasonal_dif = FALSE, nadv = 1) {
 
-  dat <- list(time_spline = time_spline)
+  ## default_map() only needs the number of advection fields
+  dat <- list(time_spline = time_spline, adv = vector("list", nadv))
 
   conf <- list(
     use_dtags = TRUE,
@@ -19,7 +20,8 @@ make_inputs <- function(time_spline, nsea_dim, nknot = 4, ncov = 2,
   par <- list(
     alpha = array(0, dim = c(nknot, ncov, nsea_dim)),
     beta = array(0, dim = c(nknot, ncov, nsea_dim)),
-    gamma = array(0, dim = c(2, ncov, nsea_dim)),
+    gamma = array(0, dim = c(2, nadv, 1)),
+    adv_const = matrix(0, 2, 1),
     logSdO = matrix(0, 2, 3)
   )
 
@@ -97,15 +99,12 @@ test_that("slices a covariate never evaluates are fixed", {
 
   a <- as_map_array(map$alpha, x$par$alpha)
   b <- as_map_array(map$beta, x$par$beta)
-  g <- as_map_array(map$gamma, x$par$gamma)
 
   expect_true(all(is.na(a[, 2, 2:4])))
   expect_true(all(is.na(b[, 2, 2:4])))
-  expect_true(all(is.na(g[, 2, 2:4])))
 
   ## covariate 1 keeps all of its slices
   expect_true(all(!is.na(a[2:4, 1, ])))
-  expect_true(all(!is.na(g[, 1, ])))
 })
 
 
@@ -125,9 +124,10 @@ test_that("non-seasonal defaults are unchanged", {
   ## diffusion intercept plus one coefficient per remaining knot and covariate
   expect_equal(n_estimated(map$beta), 7L)
 
-  ## advection couples x and y within each covariate
+  ## advection couples x and y within each field; no constant drift
   expect_equal(g[1, , 1], g[2, , 1])
-  expect_equal(n_estimated(map$gamma), 2L)
+  expect_equal(n_estimated(map$gamma), 1L)
+  expect_true(all(is.na(as.integer(map$adv_const))))
 })
 
 

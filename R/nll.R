@@ -80,20 +80,28 @@ nll <- function(par, dat) {
   ## Covariate field limits for the KF: one predicted position outside the field
   ## turns the whole likelihood NaN, so kf_boundary = "clamp" holds positions at
   ## the edge. See dev/code_notes.org, "Bounding-box clamp".
-  kf_clamp <- dat$engine == 1 && !is.null(dat$xrange_cov) &&
+  ## The advection fields count as fields here too: they are interpolated the
+  ## same way and are undefined outside their extent.
+  fields_all <- base::c(unclass(dat$cov),
+                        if (isTRUE(dat$use_advection)) unclass(.adv_flatten(dat$adv)))
+  xr_all <- rbind(dat$xrange_cov,
+                  if (isTRUE(dat$use_advection)) dat$xrange_adv)
+  yr_all <- rbind(dat$yrange_cov,
+                  if (isTRUE(dat$use_advection)) dat$yrange_adv)
+  kf_clamp <- dat$engine == 1 && !is.null(xr_all) &&
     !identical(dat$kf_boundary, "none")
   if (kf_clamp) {
     ## eps_field is load-bearing, not cosmetic: clamping in both coordinates
     ## lands on a corner cell centre, usually land, and the interpolant is NaN
     ## within ~1e-4 cells of an NA cell centre.
-    cs_field <- min(sapply(seq_along(dat$cov), function(k) {
-      c(diff(dat$xrange_cov[k, ]) / max(1, dim(dat$cov[[k]])[1] - 1),
-        diff(dat$yrange_cov[k, ]) / max(1, dim(dat$cov[[k]])[2] - 1))
+    cs_field <- min(sapply(seq_along(fields_all), function(k) {
+      c(diff(xr_all[k, ]) / max(1, dim(fields_all[[k]])[1] - 1),
+        diff(yr_all[k, ]) / max(1, dim(fields_all[[k]])[2] - 1))
     }))
     eps_field <- 1e-3 * cs_field
-    xlim_field <- c(max(dat$xrange_cov[, 1]), min(dat$xrange_cov[, 2])) +
+    xlim_field <- c(max(xr_all[, 1]), min(xr_all[, 2])) +
       c(eps_field, -eps_field)
-    ylim_field <- c(max(dat$yrange_cov[, 1]), min(dat$yrange_cov[, 2])) +
+    ylim_field <- c(max(yr_all[, 1]), min(yr_all[, 2])) +
       c(eps_field, -eps_field)
     clamp_xy <- function(xy) {
       out <- xy
@@ -109,7 +117,7 @@ nll <- function(par, dat) {
 
 
   ## Make preference functions --------------------------
-  pref_funcs <- .make_pref_funcs(par$alpha, par$beta, par$gamma,
+  pref_funcs <- .make_pref_funcs(par$alpha, par$beta,
                                 dat$knots_tax, dat$knots_dif,
                                 method = dat$smooth_method)
 
@@ -126,18 +134,12 @@ nll <- function(par, dat) {
                         dat$time_spline, dat$period,
                         dat$seasonal_cov,
                         dat$seasonal_spline)
-  habi_adv_x <- .make_habi(liv, dat$xrange_cov,
-                          dat$yrange_cov, dat$time_cov,
-                          pref_funcs$adv_x, pref_funcs$dadv_x,
-                          dat$time_spline, dat$period,
-                          dat$seasonal_cov,
-                          dat$seasonal_spline)
-  habi_adv_y <- .make_habi(liv, dat$xrange_cov,
-                          dat$yrange_cov, dat$time_cov,
-                          pref_funcs$adv_y, pref_funcs$dadv_y,
-                          dat$time_spline, dat$period,
-                          dat$seasonal_cov,
-                          dat$seasonal_spline)
+  ## advection fields (see ?prep_adv) are not covariates: no splines, only an
+  ## entrainment coefficient per field and a constant drift
+  if (dat$use_advection) {
+    adv <- .make_adv(dat$adv, dat$time_adv, par$gamma, par$adv_const,
+                     dat$period)
+  }
 
 
   ## Estimate movement ------------------------------------
@@ -204,8 +206,7 @@ nll <- function(par, dat) {
 
         ## advection
         if (dat$use_advection) {
-          moveA <- c(habi_adv_x$val(last_xy, ts[t-1]),
-                     habi_adv_y$val(last_xy, ts[t-1])) * dt
+          moveA <- adv$val(last_xy, ts[t-1]) * dt
         }
 
         pred_xy <- last_xy + moveT + moveA
@@ -322,8 +323,7 @@ nll <- function(par, dat) {
                 sdO = sdO,
                 habi = list(tax = habi_tax,
                             dif = habi_dif,
-                            adv_x = habi_adv_x,
-                            adv_y = habi_adv_y))
+                            adv = if (dat$use_advection) adv))
 
     ctmc_out <- .ctmc_loglik(ctx, loglik_tags)
     loglik_tags <- ctmc_out$loglik_tags

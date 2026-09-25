@@ -33,18 +33,13 @@
 ##'   explicit upper bounds are supplied.
 ##' @param rel_tol Relative convergence tolerance passed to [stats::nlminb()].
 ##'   Default is \code{1e-10}.
-##' @param grad_tol Convergence tolerance on the gradient, **relative to the
-##'   objective**: a fit counts as converged when the largest absolute gradient
-##'   component is below \code{grad_tol * max(1, abs(objective))}. Default
-##'   \code{1e-4}. [stats::nlminb()] can report \code{convergence = 0}
-##'   ("relative convergence") at a point that is not stationary, and
-##'   [RTMB::sdreport()] can then return a positive-definite Hessian and small
-##'   standard errors there, so the optimizer's own status is not sufficient.
-##'   The tolerance is relative because the gradient scales with the objective,
-##'   which scales with the number of observations: an absolute threshold that
-##'   is right for a few hundred tags flags every fit of a few thousand. The
-##'   maximum gradient component is stored in the fitted object as
-##'   \code{max_gradient} and reported by [summarise_fit()].
+##' @param grad_tol Convergence tolerance on the gradient: one of the
+##'   convergence checks passes when the largest absolute gradient component at
+##'   the estimates is below \code{grad_tol}. Default \code{1e-3}. The
+##'   gradient grows with the number of observations, so large data sets may
+##'   need a tighter \code{rel_tol} or a larger \code{grad_tol}. The maximum
+##'   gradient component is stored in the fitted object as
+##'   \code{max_gradient}. See [summarise_fit()] for all convergence checks.
 ##' @param do_predictions Logical; if \code{TRUE} (default), model predictions
 ##'   are computed after fitting. If \code{FALSE}, prediction-related outputs are
 ##'   skipped, and some plotting methods may not be available.
@@ -109,7 +104,7 @@ admove <- function(dat,
                    lower = NULL,
                    upper = NULL,
                    rel_tol = 1e-10,
-                   grad_tol = 1e-4,
+                   grad_tol = 1e-3,
                    do_predictions = TRUE,
                    do_sdreport = TRUE,
                    do_report = TRUE,
@@ -146,6 +141,8 @@ admove <- function(dat,
   res_sea <- .resolve_seasons(dat, conf)
   dat <- res_sea$dat
   conf <- res_sea$conf
+
+  conf <- .adv_conf(conf)
 
   if(is.null(par)) par <- default_par(dat, conf)
   if(is.null(map)) map <- default_map(dat, conf, par)
@@ -310,24 +307,14 @@ admove <- function(dat,
                        lower = lower2,
                        upper = upper2)
 
-  ## nlminb can stop at a point that is not stationary and still report
-  ## convergence = 0, so judge on the gradient as well
   max_gradient <- .max_abs_gradient(obj, opt$par)
+  at_bound <- .at_bound(opt$par, lower2, upper2)
 
   t3 <- Sys.time()
 
-  if (verbose) {
-    status <- .convergence_status(opt, max_gradient, grad_tol)
-    message(paste0("Minimisation done (",
-                   signif(as.numeric(difftime(t3, t2, units = "mins")), 2),
-                   "min). Model ", "not "[identical(status, "bad")],
-                   "converged (max|gradient| ", signif(max_gradient, 4),
-                   " of ", signif(.grad_threshold(grad_tol, opt$objective), 4),
-                   if (identical(status, "gradient_ok"))
-                     paste0("; the optimizer reported \"", opt$message,
-                            "\", but the gradient is at zero"),
-                   ")."))
-  }
+  if (verbose) message(paste0("Minimisation done (",
+                              signif(as.numeric(difftime(t3, t2, units = "mins")), 2),
+                              "min)."))
 
   res <- list(dat = dat,
               conf = conf,
@@ -337,6 +324,7 @@ admove <- function(dat,
               obj = obj,
               max_gradient = max_gradient,
               grad_tol = grad_tol,
+              at_bound = at_bound,
               low = lower,
               hig = upper)
 
@@ -414,6 +402,14 @@ admove <- function(dat,
     exit <- if (do_report) res$rep$ctmc_exit else obj$report(opt$par)$ctmc_exit
     res$ctmc_rho <- max(exit)
     .check_ctmc_nmax_binds(res$ctmc_rho, conf$ctmc_nmax)
+  }
+
+  res$convergence <- .convergence_checks(res)
+  verdict <- .convergence_verdict(res$convergence)
+  if (identical(verdict, "fail")) {
+    warning(.convergence_message(res, res$convergence), call. = FALSE)
+  } else if (verbose) {
+    message(.convergence_message(res, res$convergence))
   }
 
   if (do_tag_dist) {
@@ -585,6 +581,8 @@ add_sdreport <- function(fit, save_covariance = FALSE, ad_hessian = TRUE, ...) {
   res$times <- c(res$times,
                  sdreport = signif(as.numeric(difftime(t2, t1, units = "mins")),2))
 
+  res$convergence <- .convergence_checks(res)
+
 
   res <- .add_class(res, "admove")
   res <- add_sref(res, sref(res$dat))
@@ -728,8 +726,7 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
   pref_funcs <- hb$pref_funcs
   habi_tax <- hb$habi$tax
   habi_dif <- hb$habi$dif
-  habi_adv_x <- hb$habi$adv_x
-  habi_adv_y <- hb$habi$adv_y
+  adv <- hb$habi$adv
 
 
   hT_pred <- hTdx_pred <- hTdy_pred <- hD_pred <-
@@ -743,10 +740,11 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
                          dat$pred$time[t])
     hTdx_pred[,t] <- kappa * tmp[,1]
     hTdy_pred[,t] <- kappa * tmp[,2]
-    hAx_pred[,t] <- habi_adv_x$val(dat$pred$grid$xygrid,
-                                   dat$pred$time[t])
-    hAy_pred[,t] <- habi_adv_y$val(dat$pred$grid$xygrid,
-                                   dat$pred$time[t])
+    if (!is.null(adv)) {
+      tmp <- adv$val(dat$pred$grid$xygrid, dat$pred$time[t])
+      hAx_pred[,t] <- tmp[,1]
+      hAy_pred[,t] <- tmp[,2]
+    }
   }
   t2 <- Sys.time()
 
@@ -766,8 +764,7 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
   pred$pref_funcs <- pref_funcs
   pred$habi <- list(tax = habi_tax,
                     dif = habi_dif,
-                    adv_x = habi_adv_x,
-                    adv_y = habi_adv_y)
+                    adv = adv)
   pred$hTdx <- hTdx_pred
   pred$hTdy <- hTdy_pred
   pred$hD <- hD_pred
@@ -814,8 +811,23 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 .check_pred_time_coverage <- function(dat, conf) {
 
   time <- dat$pred$time
-  if (is.null(dat$cov) || is.null(time) || length(time) == 0L)
-    return(invisible(NULL))
+  if (is.null(time) || length(time) == 0L) return(invisible(NULL))
+
+  ## advection fields: before their first slice the field is zero
+  if (isTRUE(conf$use_advection) && length(dat$adv) > 0L) {
+    for (f in seq_along(dat$adv)) {
+      tc <- dat$time_adv[[2L * f - 1L]]
+      bad <- vapply(time, function(t) t2index(t, tc) < 1L, logical(1L))
+      if (any(bad)) {
+        warning("Prediction times precede the advection field '",
+                names(dat$adv)[f], "' (starts at ", .fmt_num(min(tc)), ") at ",
+                sum(bad), " of ", length(time), " time(s); the field is zero ",
+                "there.", call. = FALSE)
+      }
+    }
+  }
+
+  if (is.null(dat$cov)) return(invisible(NULL))
 
   ncov <- length(dat$cov)
   per <- dat$period
@@ -890,9 +902,13 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
     ## drop cells where the fitted covariates are undefined (outside coverage or
     ## masked), exactly as setup_data() prunes the fitting grid, so the resulting
     ## prediction grid is valid everywhere and the CTMC generator is well-defined
-    if (!is.null(dat$cov) && !is.null(dat$xrange_cov)) {
+    if ((!is.null(dat$cov) && !is.null(dat$xrange_cov)) ||
+          !is.null(dat$xrange_adv)) {
       n0 <- nrow(grid$xygrid)
-      pr <- .prune_grid_to_cov(grid, dat$cov, dat$xrange_cov, dat$yrange_cov)
+      pr <- .prune_grid_to_cov(grid,
+                               c(unclass(dat$cov), unclass(.adv_flatten(dat$adv))),
+                               rbind(dat$xrange_cov, dat$xrange_adv),
+                               rbind(dat$yrange_cov, dat$yrange_adv))
       if (length(pr$removed) >= n0)
         stop("None of the cells in 'grid' fall within the fitted covariate ",
              "coverage; nothing to predict on.", call. = FALSE)
@@ -1137,6 +1153,24 @@ add_tag_dist <- function(fit, i = NULL, dt = 0.5,
 ##' The taxis scaling parameter \code{kappa} is fixed rather than estimated (see
 ##' [default_par()]) and is reported separately above the table.
 ##'
+##' The summary opens with a list of convergence checks. The fit passes only if
+##' all of them pass:
+##' \itemize{
+##'   \item the optimizer reports convergence (\code{fit$opt$convergence == 0});
+##'     "false convergence" fails;
+##'   \item the objective at the estimates is finite;
+##'   \item the largest absolute gradient component is below \code{grad_tol}
+##'     (see [admove()]);
+##'   \item no estimate sits on a lower or upper bound given to [admove()];
+##'   \item the Hessian is positive definite (\code{fit$sdrep$pdHess});
+##'   \item all parameter standard errors are finite.
+##' }
+##' The last two need [add_sdreport()] and are shown as not checked without it.
+##' The results are stored in \code{fit$convergence} (\code{NA} = not
+##' checked). A note is added when two estimated parameters are correlated by
+##' more than 0.99 in absolute value, which usually means they are not
+##' separately identifiable; this is not part of the checks.
+##'
 ##' @return
 ##' A summary object, typically printed for inspection.
 ##'
@@ -1155,30 +1189,29 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 
   cat("<admove>\n")
 
-  ## The optimizer's own status is not sufficient: nlminb can report
-  ## "relative convergence (4)" at a point that is far from stationary, where
-  ## sdreport() then still returns a positive-definite Hessian and (spuriously
-  ## small) standard errors. Judge on the gradient too. Fits made before
-  ## max_gradient was stored fall back to evaluating it here.
-  grad_tol <- if (is.null(x$grad_tol)) 1e-4 else x$grad_tol
-  max_gradient <- x$max_gradient
-  if (is.null(max_gradient)) max_gradient <- .max_abs_gradient(x$obj, x$opt$par)
-  status <- .convergence_status(x$opt, max_gradient, grad_tol)
-  bad <- identical(status, "bad")
+  checks <- .convergence_checks(x)
+  verdict <- .convergence_verdict(checks)
+  bad <- identical(verdict, "fail")
 
-  cat(paste(' Convergence: ', x$opt$convergence,
-            '  MSG: ', x$opt$message, '\n', sep=''))
-  cat(paste0(' Max. gradient component: ', signif(max_gradient, 4),
-             ' (tolerance ',
-             signif(.grad_threshold(grad_tol, x$opt$objective), 4), ')\n'))
+  cat(" Convergence checks:\n")
+  lab <- .convergence_labels(x)
+  for (nm in names(checks)) {
+    tick <- if (is.na(checks[[nm]])) "[--]  " else if (checks[[nm]]) "[ok]  " else "[FAIL]"
+    cat(paste0("   ", tick, " ", lab[[nm]],
+               if (is.na(checks[[nm]])) " (not checked)", "\n"))
+  }
   if (bad) {
-    cat('WARNING: Model did not obtain proper convergence! Estimates and uncertainties are most likely invalid and cannot be trusted.\n')
-    if (isTRUE(x$opt$convergence == 0)) {
-      cat('         The optimizer reported convergence, but the gradient is not zero: it stopped away from a stationary point.\n')
-    }
-  } else if (identical(status, "gradient_ok")) {
-    cat('NOTE: The optimizer stopped with a warning, but the gradient is at zero, so this is a\n')
-    cat('      stalled line search at the optimum rather than a failed fit. Check the estimates.\n')
+    cat("WARNING: Model did not pass convergence checks. Estimates and uncertainties cannot be trusted.\n")
+  } else if (identical(verdict, "partial")) {
+    cat("NOTE: Model passed the checks that were run; run add_sdreport() for the rest.\n")
+  }
+
+  pairs <- .high_correlations(x$sdrep)
+  if (length(pairs) > 0) {
+    cat(paste0("NOTE: Parameters correlated by more than 0.99 (possibly not separately identifiable):\n",
+               "      ", paste(utils::head(pairs, 5), collapse = ", "),
+               if (length(pairs) > 5) paste0(", ... and ", length(pairs) - 5, " more"),
+               "\n"))
   }
 
   if (length(x$boundary_tags) > 0) {
@@ -1187,7 +1220,6 @@ summarise_fit <- function(object, CI = 0.95, ...) {
                '      (conf$kf_boundary = "clamp"); the fit depends on this boundary treatment.\n'))
   }
 
-  ## if('sderr' %in% names(x)) cat('WARNING: Could not calculate all standard deviations. The optimum found may be invalid. Proceed with caution.\n')
   if (bad) {
     txtobj <- 'Objective function: '
   } else {
@@ -1247,7 +1279,7 @@ summarise_fit <- function(object, CI = 0.95, ...) {
     } else {
       nsea_vals <- c(taxis = nsea_of(x$par$alpha),
                      diffusion = nsea_of(x$par$beta),
-                     advection = nsea_of(x$par$gamma))
+                     advection = .adv_nsea(x$par))
     }
     nsea_vals <- nsea_vals[!is.na(nsea_vals)]
     if (length(nsea_vals) > 0L) {
@@ -1430,12 +1462,11 @@ plot_fit <- function(x,
 
   ncov <- if (!is.null(fit$dat$cov)) length(fit$dat$cov) else 1L
   nsea_fit <- if (!is.null(fit$par$alpha)) dim(fit$par$alpha)[3L] else 1L
-  nsea_adv <- if (!is.null(fit$par$gamma)) dim(fit$par$gamma)[3L] else 1L
+  nsea_adv <- .adv_nsea(fit$par)
   ## Covariates whose spline coefficients are all fixed (mapped NA) contribute
   ## no fitted preference relationship, so their preference panels are dropped.
-  ## This happens e.g. for the current covariates under advection, where alpha
-  ## (taxis) and beta (diffusion) are mapped off entirely. A covariate is "active"
-  ## if any of its coefficients across knots/seasons is estimated (non-NA in map).
+  ## A covariate is "active" if any of its coefficients across knots/seasons is
+  ## estimated (non-NA in map).
   active_cov <- function(map_par, par_arr) {
     if (is.null(par_arr)) return(seq_len(ncov))
     d <- dim(par_arr)                       ## [nknots, ncov, nsea]
@@ -1521,19 +1552,20 @@ plot_fit <- function(x,
 ## Internal functions -----------------------------------------------------------------
 
 ## TRUE when a fitted object carries a non-zero advection field: it was fitted
-## with advection on and at least one gamma coefficient is non-zero. Fixed
-## (mapped NA) but non-zero coefficients still produce a real field, so the test
-## is on the values rather than on the map. With advection off, or every gamma
-## at zero, the field is identically zero everywhere and there is nothing to
-## draw -- plot_fit() drops the panels in that case.
+## with advection on and at least one gamma or constant-drift coefficient is
+## non-zero. Fixed (mapped NA) but non-zero coefficients still produce a real
+## field, so the test is on the values rather than on the map. With advection
+## off, or every coefficient at zero, the field is identically zero everywhere
+## and there is nothing to draw -- plot_fit() drops the panels in that case.
 .adv_active <- function(fit) {
 
   if (!isTRUE(fit$conf$use_advection)) return(FALSE)
 
-  gamma_est <- if (!is.null(fit$pl$gamma)) fit$pl$gamma else fit$par$gamma
-  if (is.null(gamma_est)) return(FALSE)
+  est <- function(nm) if (!is.null(fit$pl[[nm]])) fit$pl[[nm]] else fit$par[[nm]]
+  vals <- c(est("gamma"), est("adv_const"))
+  if (length(vals) == 0L) return(FALSE)
 
-  any(gamma_est != 0, na.rm = TRUE)
+  any(vals != 0, na.rm = TRUE)
 }
 
 
@@ -1733,6 +1765,9 @@ plot_fit <- function(x,
   ind <- which(names(opt$par) == "gamma")
   pl$gamma[which(!is.na(map$gamma))] <- opt$par[ind]
 
+  ind <- which(names(opt$par) == "adv_const")
+  pl$adv_const[which(!is.na(map$adv_const))] <- opt$par[ind]
+
   ind <- which(names(opt$par) == "logSdO")
   pl$logSdO[which(!is.na(map$logSdO))] <- opt$par[ind]
 
@@ -1817,38 +1852,119 @@ plot_fit <- function(x,
 }
 
 
-## Gradient below which a fit counts as stationary. Relative to the objective,
-## because the gradient scales with it: the same model fitted to 40 tags and to
-## 4000 tags stops at very different absolute gradients, and an absolute
-## threshold chosen for one flags every fit of the other.
-.grad_threshold <- function(grad_tol, objective) {
+## Convergence checks of a fit: TRUE = pass, FALSE = fail, NA = not checked
+## (no sdreport, or a fit made before the quantity was stored). A fit passes only
+## if no check is FALSE. See dev/code_notes.org, "Convergence checks".
+.convergence_checks <- function(fit) {
 
-  sc <- if (is.null(objective) || length(objective) != 1L ||
-              !is.finite(objective)) 1 else max(1, abs(objective))
+  opt <- fit$opt
+  max_gradient <- fit$max_gradient
+  if (is.null(max_gradient)) max_gradient <- .max_abs_gradient(fit$obj, opt$par)
+  grad_tol <- if (is.null(fit$grad_tol)) 1e-3 else fit$grad_tol
+  sdrep <- fit$sdrep
+  has_sdrep <- inherits(sdrep, "sdreport")
 
-  grad_tol * sc
+  c(optimizer = isTRUE(opt$convergence == 0),
+    objective = isTRUE(is.finite(opt$objective)),
+    gradient = isTRUE(max_gradient < grad_tol),
+    bounds = if (is.null(fit$at_bound)) NA else length(fit$at_bound) == 0,
+    hessian = if (has_sdrep) isTRUE(sdrep$pdHess) else NA,
+    se = if (has_sdrep) all(is.finite(.se_fixed(sdrep))) else NA)
 }
 
 
-## Convergence verdict, in three states. The optimizer's status code and the
-## gradient disagree often enough that collapsing them loses information:
-##   "ok"          both agree the fit is at an optimum
-##   "gradient_ok" the optimizer stopped unhappily (typically "false
-##                 convergence (8)": the line search could not improve on the
-##                 current point) but the gradient is at zero. That is normally
-##                 a stalled line search AT the optimum, not a failure.
-##   "bad"         the gradient is not zero, whatever the optimizer reports --
-##                 including the dangerous case of convergence = 0 at a
-##                 non-stationary point, where sdreport() still returns small
-##                 standard errors.
-.convergence_status <- function(opt, max_gradient, grad_tol) {
+## a negative variance (indefinite Hessian) gives NaN, not a warning
+.se_fixed <- function(sdrep) {
+  suppressWarnings(sqrt(diag(as.matrix(sdrep$cov.fixed))))
+}
 
-  if (is.null(opt) || is.null(opt$convergence)) return("bad")
-  if (!is.finite(max_gradient)) return("bad")
-  if (max_gradient > .grad_threshold(grad_tol, opt$objective)) return("bad")
-  if (opt$convergence > 0) return("gradient_ok")
 
-  "ok"
+.convergence_verdict <- function(checks) {
+  if (any(!checks, na.rm = TRUE)) return("fail")
+  if (anyNA(checks)) return("partial")
+  "pass"
+}
+
+
+## One label per check, for summarise_fit() and .convergence_message()
+.convergence_labels <- function(fit) {
+
+  max_gradient <- fit$max_gradient
+  if (is.null(max_gradient)) max_gradient <- .max_abs_gradient(fit$obj, fit$opt$par)
+  grad_tol <- if (is.null(fit$grad_tol)) 1e-3 else fit$grad_tol
+  n_bad_se <- if (inherits(fit$sdrep, "sdreport")) {
+    sum(!is.finite(.se_fixed(fit$sdrep)))
+  } else 0
+
+  list(optimizer = paste0("optimizer: ", fit$opt$message),
+       objective = "objective finite",
+       gradient = paste0("max|gradient| ", signif(max_gradient, 3),
+                         " (tolerance ", signif(grad_tol, 3), ")"),
+       bounds = if (length(fit$at_bound) > 0) {
+         paste0("estimates at a bound: ", paste(fit$at_bound, collapse = ", "))
+       } else "no estimate at a bound",
+       hessian = "Hessian positive definite",
+       se = if (n_bad_se > 0) {
+         paste0("standard errors finite (", n_bad_se, " not finite)")
+       } else "standard errors finite")
+}
+
+
+.convergence_message <- function(fit, checks) {
+
+  verdict <- .convergence_verdict(checks)
+  if (identical(verdict, "pass")) return("Model passed all convergence checks.")
+
+  lab <- .convergence_labels(fit)
+  if (identical(verdict, "partial")) {
+    return(paste0("Model passed the convergence checks that were run; not checked: ",
+                  paste(names(checks)[is.na(checks)], collapse = ", "), "."))
+  }
+
+  failed <- names(checks)[!is.na(checks) & !checks]
+  paste0("Model did not pass convergence checks: ",
+         paste(unlist(lab[failed]), collapse = "; "),
+         ". Estimates and uncertainties cannot be trusted; see summary().")
+}
+
+
+## Labels for a vector of estimated parameters: name plus index within the name
+## (alpha1, alpha2, beta1, ...), as names(opt$par) repeats the name.
+.par_labels <- function(nms) {
+  paste0(nms, stats::ave(seq_along(nms), nms, FUN = seq_along))
+}
+
+
+## Estimated parameters within a relative 1e-8 of a finite lower or upper bound.
+## NULL (not checked) when the bounds do not line up one-to-one with 'par', as
+## happens when the map couples elements.
+.at_bound <- function(par, lower, upper) {
+
+  lower <- as.numeric(unlist(lower))
+  upper <- as.numeric(unlist(upper))
+  if (!any(is.finite(c(lower, upper)))) return(character(0))
+  if (length(lower) != length(par) || length(upper) != length(par)) return(NULL)
+  tol <- 1e-8 * pmax(1, abs(par))
+  hit <- (is.finite(lower) & par <= lower + tol) |
+    (is.finite(upper) & par >= upper - tol)
+
+  .par_labels(names(par))[which(hit)]
+}
+
+
+## Pairs of estimated parameters with |correlation| > 0.99, as "a ~ b" labels
+.high_correlations <- function(sdrep, threshold = 0.99) {
+
+  if (!inherits(sdrep, "sdreport")) return(character(0))
+  cov <- as.matrix(sdrep$cov.fixed)
+  if (length(cov) < 4 || any(!is.finite(cov))) return(character(0))
+
+  cor <- suppressWarnings(stats::cov2cor(cov))
+  lab <- .par_labels(rownames(cov))
+  idx <- which(abs(cor) > threshold & upper.tri(cor), arr.ind = TRUE)
+  if (nrow(idx) == 0) return(character(0))
+
+  paste0(lab[idx[, 1]], " ~ ", lab[idx[, 2]])
 }
 
 

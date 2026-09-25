@@ -13,6 +13,7 @@ sim_tags(
   conf = NULL,
   fit = NULL,
   grid = NULL,
+  adv = NULL,
   n_tags = 1,
   n_resightings = c(1, 5),
   n_candidates = 1,
@@ -84,6 +85,12 @@ given explicitly.}
 class \code{"admove_grid"}, it is converted using \code{\link[=create_grid]{create_grid()}}. If no
 grid is given, it is taken from \code{dat} or \code{fit}, or derived from
 the covariate fields.}
+
+\item{adv}{Optional advection field(s) created by \code{\link[=prep_adv]{prep_adv()}}, passed to
+\code{\link[=setup_data]{setup_data()}}. If \code{NULL}, the advection fields of \code{dat} or
+\code{fit} are kept. Advection is only simulated when
+\code{conf$use_advection} is \code{TRUE} (the default when there is a
+field) and \code{par$gamma} (or \code{par$adv_const}) is non-zero.}
 
 \item{n_tags}{Number of tags to simulate.}
 

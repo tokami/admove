@@ -426,8 +426,11 @@ prep_cov <- function(x,
 ##'   A scalar selects one covariate and plots all its time steps. A vector
 ##'   selects multiple covariates and produces one panel per element (showing
 ##'   the first time step, or the first element of `select`). Default: `1`.
-##' @param select Optional vector of time-step indices to plot. Default:
-##'   `NULL`, in which case all time steps are plotted.
+##' @param select Optional vector of time-step indices to plot, i.e. indices of
+##'   the covariate's time slices (not model times). Default: `NULL`, in which
+##'   case all time steps are plotted. To plot the slices covering given model
+##'   times, e.g. the prediction times of a fit, match them to the slice start
+##'   times with [findInterval()] (see Examples).
 ##' @param main Main title of the plot. Default: `"Covariate fields"`.
 ##' @param labels Logical; currently reserved for plotting cell labels. Default:
 ##'   `TRUE`.
@@ -456,8 +459,10 @@ prep_cov <- function(x,
 ##'   room for the bar).
 ##' @param titles Optional character vector of panel titles, one per panel.
 ##'   Default: `NULL`, in which case covariate names (or `"Covariate i"`) are
-##'   used for several covariates and `"Time step j"` for several time steps; a
-##'   single panel gets no title.
+##'   used for several covariates and the start time of each slice for several
+##'   time steps, as a date at the resolution of the time units (e.g.
+##'   `"Jan 2007"` for monthly units; `"t = 48"` if the time reference has no
+##'   origin); a single panel gets no title.
 ##' @param land_col Fill colour for land. Default: `grey(0.85)` (opaque, so
 ##'   covariate colours do not show through).
 ##' @param land_border Border colour for land. Default: `grey(0.5)`.
@@ -474,6 +479,12 @@ prep_cov <- function(x,
 ##'
 ##' @examples
 ##' plot_cov(skjepo$cov)
+##'
+##' \dontrun{
+##' ## covariate slices covering the prediction times of a fit
+##' tt <- as.numeric(dimnames(fit$dat$cov[[1]])[[3]])
+##' plot_cov(fit, 1, select = findInterval(fit$dat$pred$time, tt))
+##' }
 ##'
 ##' @name plot_cov
 ##' @export
@@ -519,6 +530,14 @@ plot_cov <- function(x,
   ## right margin wide enough for the colour bar and its labels
   mar_right <- if (legend) 4.5 else 1.5
 
+  ## with several panels, draw the axes only on the outer panels (x on the
+  ## lowest panel of each column, y on the first column); the axis labels go
+  ## once into the outer margin
+  dots <- list(...)
+  xaxt <- if (is.null(dots$xaxt)) "s" else dots$xaxt
+  yaxt <- if (is.null(dots$yaxt)) "s" else dots$yaxt
+  dots$xaxt <- dots$yaxt <- NULL
+
   if (inherits(cov, "admove_cov_list") && length(i) > 1) {
     sel <- cov[i]
     n <- length(sel)
@@ -531,8 +550,10 @@ plot_cov <- function(x,
       opar <- par(no.readonly = TRUE)
       on.exit(par(opar))
       par(mfrow = n2mfrow(n, asp = 2),
-          mar = c(1.5, 1.5, 2, mar_right),
-          oma = c(3, 3, ifelse(main == "", 0, 1.5), 0))
+          mar = c(0.3, 0.3, 1.4, mar_right),
+          oma = c(3, 3.5, ifelse(main == "", 0, 1.5), 0),
+          mgp = c(2, 0.5, 0),
+          tcl = -0.3)
     }
     for (j in seq_along(sel)) {
       panel_lbl <- if (!is.null(titles)) {
@@ -542,20 +563,24 @@ plot_cov <- function(x,
       } else {
         paste0("Covariate ", i[j])
       }
-      plot_cov(sel[[j]], select = t_sel, main = "",
-               plot_land = plot_land, auto_layout = FALSE,
-               xlab = xlab, ylab = ylab, bg = bg,
-               plot_contour = plot_contour,
-               xlim = xlim, ylim = ylim,
-               col = col, zlim = zlim, legend = legend,
-               titles = panel_lbl,
-               land_col = land_col, land_border = land_border,
-               ...)
+      do.call(plot_cov,
+              c(list(sel[[j]], select = t_sel, main = "",
+                     plot_land = plot_land, auto_layout = FALSE,
+                     xlab = xlab, ylab = ylab, bg = bg,
+                     plot_contour = plot_contour,
+                     xlim = xlim, ylim = ylim,
+                     col = col, zlim = zlim, legend = legend,
+                     titles = panel_lbl,
+                     land_col = land_col, land_border = land_border,
+                     xaxt = if (auto_layout) "n" else xaxt,
+                     yaxt = if (auto_layout) "n" else yaxt),
+                dots))
+      if (auto_layout) .outer_panel_axes(j, n, xaxt, yaxt)
     }
     if (auto_layout) {
       mtext(main, 3, 0, outer = TRUE)
-      mtext(xlab, 1, 1, outer = TRUE)
-      mtext(ylab, 2, 1.5, outer = TRUE)
+      mtext(xlab, 1, 2, outer = TRUE)
+      mtext(ylab, 2, 2.2, outer = TRUE)
     }
     return(invisible(NULL))
   }
@@ -575,7 +600,9 @@ plot_cov <- function(x,
   nt <- dim(cov)[3]
 
   if (is.null(titles)) {
-    titles <- if (nt > 1) paste0("Time step ", if (is.null(select)) seq_len(nt) else select) else ""
+    titles <- if (nt > 1) {
+      .time_labels(as.numeric(dimnames(cov)[[3]]), tref(cov))
+    } else ""
   } else if (length(titles) != nt) {
     stop("'titles' must have one entry per plotted time step (", nt, ").")
   }
@@ -613,9 +640,13 @@ plot_cov <- function(x,
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
     par(mfrow = n2mfrow(nt, asp = 2),
-        mar = c(1.5, 1.5, ifelse(nt > 1, 2, 1.5), mar_right),
-        oma = c(3,3,ifelse(main == "", 0, 1.5),0))
+        mar = c(if (nt > 1) 0.3 else 1.5, if (nt > 1) 0.3 else 1.5,
+                ifelse(nt > 1, 1.4, 1.5), mar_right),
+        oma = c(3, 3.5, ifelse(main == "", 0, 1.5), 0),
+        mgp = c(2, 0.5, 0),
+        tcl = -0.3)
   }
+  shared <- auto_layout && nt > 1
   for(i in 1:nt){
     x <- as.numeric(rownames(cov[,,i]))
     if(length(x) == 0) x <- 1:nrow(cov[,,i])
@@ -624,12 +655,15 @@ plot_cov <- function(x,
     if(!is.null(bg)){
       par(bg = bg)
     }
-    plot(1,1, type = "n",
-         xlim = xlims, ylim = ylims,
-         xlab = "",
-         ylab = "",
-         asp = 1,
-         ...)
+    do.call(plot, c(list(1, 1, type = "n",
+                         xlim = xlims, ylim = ylims,
+                         xlab = "",
+                         ylab = "",
+                         asp = 1,
+                         xaxt = if (shared) "n" else xaxt,
+                         yaxt = if (shared) "n" else yaxt),
+                    dots))
+    if (shared) .outer_panel_axes(i, nt, xaxt, yaxt)
     z <- cov[,,i, drop = TRUE]
     if (zlim_ok) {
       ## clamp to zlim so values outside a user-supplied range are not left blank
@@ -644,19 +678,29 @@ plot_cov <- function(x,
               labcex = 0.6)
     }
     if (nzchar(titles[i])) {
-      title(main = titles[i], line = 0.4, font.main = 1, cex.main = 1)
+      title(main = titles[i], line = if (shared) 0.3 else 0.4,
+            font.main = 1, cex.main = 1)
     }
     box(lwd = 1.5)
     if (legend && zlim_ok) .color_bar(col, zlim)
   }
   if(auto_layout){
     mtext(main, 3, 0, outer = TRUE)
-    mtext(xlab, 1, 1, outer = TRUE)
-    mtext(ylab, 2, 1.5, outer = TRUE)
+    mtext(xlab, 1, if (shared) 2 else 1, outer = TRUE)
+    mtext(ylab, 2, if (shared) 2.2 else 1.5, outer = TRUE)
   }
 
 
   return(invisible(NULL))
+}
+
+
+## Axes of panel k of n in a multi-panel layout: x on the lowest panel of each
+## column, y on the first column.
+.outer_panel_axes <- function(k, n, xaxt = "s", yaxt = "s") {
+  ncol_lay <- par("mfrow")[2L]
+  if (xaxt != "n" && k + ncol_lay > n) axis(1)
+  if (yaxt != "n" && (k - 1L) %% ncol_lay == 0L) axis(2)
 }
 
 

@@ -15,6 +15,7 @@ setup_data(
   n_knots_dif = 1,
   knots_from = c("tags", "cov"),
   fill_na = 0,
+  adv = NULL,
   sref = NULL,
   tref = NULL,
   transform_sref = FALSE,
@@ -70,6 +71,13 @@ be interpolated at all grid cell centres (one ring without a grid). This
 matters when grid cells are larger than covariate cells: the centre of a
 coastal grid cell can then lie several covariate cells inland. Default
 \code{0}: no filling.}
+
+\item{adv}{Optional advection field (e.g. ocean currents) created by
+\code{\link[=prep_adv]{prep_adv()}}, or a named list of several. Advection fields are kept apart
+from the habitat covariates in \code{cov}: they get no taxis or diffusion
+splines, only an entrainment coefficient each (see \code{\link[=default_par]{default_par()}}).
+Fields with physical units are converted into model units along the grid
+axes once the spatial and temporal references are harmonised.}
 
 \item{sref}{Optional spatial reference to use as the target spatial
 reference for all inputs. If supplied, it should be coercible to an

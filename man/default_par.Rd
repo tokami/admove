@@ -16,12 +16,10 @@ from \code{dat}.}
 
 \item{cov_taxis}{Covariates that carry the habitat preference, given as
 names or indices into \code{dat$cov}. Only these are used to scale \code{logKappa}.
-Defaults to all covariates. Covariates that only enter the model as
-advection inputs -- typically the zonal and meridional current components,
-whose taxis coefficients are fixed in the \code{map} -- should be excluded:
-their range and gradient say nothing about the taxis scale, but they
-contribute to the median otherwise, so switching advection on and off
-changes \code{kappa} for no good reason.}
+Defaults to all covariates. Covariates that only inform diffusion, with
+their taxis coefficients fixed in the \code{map}, should be excluded: their
+range and gradient say nothing about the taxis scale. Advection fields
+(\code{setup_data(adv = )}) are not covariates and never enter \code{kappa}.}
 
 \item{verbose}{Logical; if \code{TRUE}, informative messages are printed.}
 }
@@ -96,6 +94,15 @@ The value does not change the likelihood, but it does change the path of the
 optimizer: when the objective has several local optima in \code{alpha}, fits with
 different \code{kappa} can end in different ones. Compare their objective values
 rather than taking either at face value.
+
+Advection has two parameters. \code{gamma} is an array
+\verb{[direction (x, y), field, season]} of entrainment coefficients, one set per
+advection field of the data (see \code{\link[=prep_adv]{prep_adv()}}); it is absent when the data
+have no advection field. \code{adv_const} is a \verb{2 x season} matrix with a constant
+drift (x, y) in space units per time unit. Both start at 0, the model being
+linear in them. With \code{conf$adv_gamma = "shared"} \code{\link[=default_map]{default_map()}} ties the x
+and y rows of \code{gamma} together; \code{adv_const} is only estimated when
+\code{conf$adv_const} is \code{TRUE}.
 }
 \examples{
 par <- with(skjepo$sim, default_par(dat, conf))

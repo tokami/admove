@@ -74,7 +74,10 @@ test_that("parameter dimensions follow conf$n_seasons", {
 
   expect_equal(dim(par$alpha)[3L], 4L)
   expect_equal(dim(par$beta)[3L], 4L)
-  expect_equal(dim(par$gamma)[3L], 4L)
+  ## advection seasons are set separately (conf$n_seasons_adv), and there is no
+  ## gamma without an advection field
+  expect_null(par$gamma)
+  expect_equal(dim(par$adv_const), c(2L, 1L))
 
   map <- default_map(dat, conf, par)
   expect_length(map$alpha, length(par$alpha))

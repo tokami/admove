@@ -42,8 +42,11 @@ A scalar selects one covariate and plots all its time steps. A vector
 selects multiple covariates and produces one panel per element (showing
 the first time step, or the first element of \code{select}). Default: \code{1}.}
 
-\item{select}{Optional vector of time-step indices to plot. Default:
-\code{NULL}, in which case all time steps are plotted.}
+\item{select}{Optional vector of time-step indices to plot, i.e. indices of
+the covariate's time slices (not model times). Default: \code{NULL}, in which
+case all time steps are plotted. To plot the slices covering given model
+times, e.g. the prediction times of a fit, match them to the slice start
+times with \code{\link[=findInterval]{findInterval()}} (see Examples).}
 
 \item{main}{Main title of the plot. Default: \code{"Covariate fields"}.}
 
@@ -86,8 +89,10 @@ room for the bar).}
 
 \item{titles}{Optional character vector of panel titles, one per panel.
 Default: \code{NULL}, in which case covariate names (or \code{"Covariate i"}) are
-used for several covariates and \code{"Time step j"} for several time steps; a
-single panel gets no title.}
+used for several covariates and the start time of each slice for several
+time steps, as a date at the resolution of the time units (e.g.
+\code{"Jan 2007"} for monthly units; \code{"t = 48"} if the time reference has no
+origin); a single panel gets no title.}
 
 \item{land_col}{Fill colour for land. Default: \code{grey(0.85)} (opaque, so
 covariate colours do not show through).}
@@ -115,5 +120,11 @@ with \code{\link[graphics:contour]{graphics::contour()}}.
 }
 \examples{
 plot_cov(skjepo$cov)
+
+\dontrun{
+## covariate slices covering the prediction times of a fit
+tt <- as.numeric(dimnames(fit$dat$cov[[1]])[[3]])
+plot_cov(fit, 1, select = findInterval(fit$dat$pred$time, tt))
+}
 
 }

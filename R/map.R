@@ -18,9 +18,14 @@
 ##'   \item diffusion spline coefficients (`beta`) are mapped using
 ##'     `.make_beta_map()` and are **coupled across seasons**, so diffusion is
 ##'     constant over the seasonal cycle unless `conf$seasonal_dif` is `TRUE`;
-##'   \item advection coefficients (`gamma`) are either fixed or, if advection is
-##'     enabled, coupled between the \(x\)- and \(y\)-directions within each
-##'     covariate and season;
+##'   \item advection coefficients (`gamma`, one per advection field, see
+##'     [prep_adv()]) are fixed when `conf$use_advection` is `FALSE`. Otherwise
+##'     there is one estimated coefficient per field and advection season,
+##'     shared by the \(x\)- and \(y\)-components (`conf$adv_gamma =
+##'     "shared"`), or one per component (`"xy"`);
+##'   \item the constant drift (`adv_const`) is estimated, separately in \(x\)
+##'     and \(y\) and per advection season, only when `conf$adv_const` is
+##'     `TRUE`, and fixed otherwise;
 ##'   \item observation-error parameters (`logSdO`) are fixed unless estimation
 ##'     is enabled for the corresponding tag type via `conf$obs_var_type`, in
 ##'     which case \(x\)- and \(y\)-direction standard deviations are coupled by
@@ -29,8 +34,9 @@
 ##' }
 ##'
 ##' Seasonality is opt-in per model component. Setting `conf$seasonal_spline`
-##' gives `alpha`, `beta` and `gamma` a seasonal third dimension, but only the
-##' taxis and advection coefficients are estimated season by season. Diffusion
+##' gives `alpha` and `beta` a seasonal third dimension, but only the taxis
+##' coefficients are estimated season by season. The seasons of the advection
+##' coefficients are set separately by `conf$n_seasons_adv`. Diffusion
 ##' is a second-moment quantity: estimating it separately per season divides the
 ##' information available per season and is easily traded off against a seasonal
 ##' taxis acting on the same covariate. Set `conf$seasonal_dif <- TRUE` to
@@ -51,8 +57,8 @@
 ##'   [default_par()].
 ##'
 ##' @return
-##' A named list of factors with elements `alpha`, `logKappa`, `beta`, `gamma`,
-##' and `logSdO`. Entries with `NA` are fixed, while equal factor levels are
+##' A named list of factors with elements `alpha`, `logKappa`, `beta`, `gamma`
+##' (when the data have advection fields), `adv_const` and `logSdO`. Entries with `NA` are fixed, while equal factor levels are
 ##' estimated as the same parameter.
 ##'
 ##' @examples
@@ -82,11 +88,16 @@ default_map <- function(dat, conf, par){
                              seasonal = isTRUE(conf$seasonal_dif))
 
   ## Advection ------------------------------------------------
-  if(conf$use_advection){
-    ## Link x and y direction by default
-    map$gamma <- .make_gamma_map(par$gamma, nsea)
-  }else{
-    map$gamma <- factor(rep(NA, length(par$gamma)))
+  conf <- .adv_conf(conf)
+  if (!is.null(par$gamma)) {
+    map$gamma <- if (conf$use_advection) {
+      .make_gamma_map(par$gamma, conf$adv_gamma)
+    } else factor(rep(NA, length(par$gamma)))
+  }
+  if (!is.null(par$adv_const)) {
+    map$adv_const <- if (conf$use_advection && conf$adv_const) {
+      factor(seq_along(par$adv_const))
+    } else factor(rep(NA, length(par$adv_const)))
   }
 
   ## Observation error ----------------------------------------
@@ -206,22 +217,26 @@ default_map <- function(dat, conf, par){
   factor(map_id)
 }
 
-.make_gamma_map <- function(gamma, nsea = NULL) {
+## gamma is [direction (x, y), field, season]. "shared": one level per field and
+## season for both directions; "xy": one per direction as well.
+.make_gamma_map <- function(gamma, type = c("shared", "xy")) {
 
+  type <- match.arg(type)
   dims <- dim(gamma)
-  stopifnot(length(dims) == 3)
-
-  ncov <- dims[2]
-  nsea <- .expand_nsea(nsea, ncov, dims[3])
+  stopifnot(length(dims) == 3, dims[1] == 2)
 
   map_id <- array(NA_integer_, dim = dims, dimnames = dimnames(gamma))
   next_id <- 1L
 
-  for (j in seq_len(ncov)) {
-    for (s in seq_len(nsea[j])) {
-      ## x and y direction coupled within covariate and season
-      map_id[, j, s] <- next_id
-      next_id <- next_id + 1L
+  for (s in seq_len(dims[3])) {
+    for (f in seq_len(dims[2])) {
+      if (type == "shared") {
+        map_id[, f, s] <- next_id
+        next_id <- next_id + 1L
+      } else {
+        map_id[, f, s] <- next_id + 0:1
+        next_id <- next_id + 2L
+      }
     }
   }
 

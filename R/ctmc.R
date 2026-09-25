@@ -212,8 +212,7 @@ print.admove_release_events <- function(x, ...) {
 
   ## advection
   if (dat$use_advection) {
-    move <- cbind(ctx$habi$adv_x$val(xygrid, t),
-                  ctx$habi$adv_y$val(xygrid, t))  ## distance / time
+    move <- ctx$habi$adv$val(xygrid, t)  ## distance / time
     Astar <- fill_inst_mat(Astar, move, nextTo, next_dist, dat$drift_scheme)
   }
 
@@ -248,7 +247,8 @@ print.admove_release_events <- function(x, ...) {
 }
 
 
-## Every covariate and spline slice boundary on the absolute time axis, so that
+## Every covariate, spline and advection slice boundary on the absolute time
+## axis (advection: field times and season starts), so that
 ## no lattice step spans two slices and the generator is exactly constant
 ## within a step. That is what makes subdividing a step exact -- with Q constant,
 ## exp(Q*(a+b)) == exp(Q*a) %*% exp(Q*b) -- and hence what lets tags released
@@ -256,6 +256,17 @@ print.admove_release_events <- function(x, ...) {
 .ctmc_breaks <- function(dat) {
 
   tv <- c(dat$time_cov, dat$time_spline)
+  seas <- c(dat$seasonal_cov, dat$seasonal_spline)
+  seas <- vapply(seq_along(tv), function(i) isTRUE(seas[i]), logical(1L))
+  if (isTRUE(dat$use_advection)) {
+    tv <- c(tv, unname(dat$time_adv))
+    seas <- c(seas, rep(FALSE, length(dat$time_adv)))
+    nsea_adv <- if (is.null(dat$n_seasons_adv)) 1L else dat$n_seasons_adv
+    if (nsea_adv > 1L) {
+      tv <- c(tv, list(.season_breaks(dat$period, nsea_adv)))
+      seas <- c(seas, TRUE)
+    }
+  }
   if (length(tv) == 0) return(numeric(0))
 
   ## nll() is handed the split() list, but this is also callable on the
@@ -270,7 +281,6 @@ print.admove_release_events <- function(x, ...) {
   tmin <- min(tt)
   tmax <- max(tt)
 
-  seas <- c(dat$seasonal_cov, dat$seasonal_spline)
   per <- dat$period
   wrap <- !is.null(per) && length(per) == 1L && is.finite(per) && per > 0
   kseq <- if (wrap) floor(tmin / per):ceiling(tmax / per) else 0
@@ -298,12 +308,16 @@ print.admove_release_events <- function(x, ...) {
 }
 
 
-## The covariate and spline slice indices t falls in, as one key. Taken from
-## the habi object itself rather than from the breakpoints, so it cannot drift
-## from what val()/grad() actually read. All four habi objects are built with
-## the same time arguments, so one of them serves.
+## The covariate and spline slice indices t falls in, plus the advection season
+## and field slices, as one key. Taken from the habi objects themselves rather
+## than from the breakpoints, so it cannot drift from what val()/grad() actually
+## read. tax and dif are built with the same time arguments, so one of them
+## serves; advection has its own time axis and seasons and must be in the key,
+## or a generator from the wrong advection slice is silently reused.
 .ctmc_slice_key <- function(habi, t) {
-  paste(habi$dif$slice(t), collapse = ",")
+  key <- paste(habi$dif$slice(t), collapse = ",")
+  if (!is.null(habi$adv)) key <- paste0(key, "|", paste(habi$adv$slice(t), collapse = ","))
+  key
 }
 
 

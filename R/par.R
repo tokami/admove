@@ -11,12 +11,10 @@
 ##'   from \code{dat}.
 ##' @param cov_taxis Covariates that carry the habitat preference, given as
 ##'   names or indices into `dat$cov`. Only these are used to scale `logKappa`.
-##'   Defaults to all covariates. Covariates that only enter the model as
-##'   advection inputs -- typically the zonal and meridional current components,
-##'   whose taxis coefficients are fixed in the `map` -- should be excluded:
-##'   their range and gradient say nothing about the taxis scale, but they
-##'   contribute to the median otherwise, so switching advection on and off
-##'   changes `kappa` for no good reason.
+##'   Defaults to all covariates. Covariates that only inform diffusion, with
+##'   their taxis coefficients fixed in the `map`, should be excluded: their
+##'   range and gradient say nothing about the taxis scale. Advection fields
+##'   (`setup_data(adv = )`) are not covariates and never enter `kappa`.
 ##' @param verbose Logical; if \code{TRUE}, informative messages are printed.
 ##'
 ##' @details
@@ -84,6 +82,15 @@
 ##' different `kappa` can end in different ones. Compare their objective values
 ##' rather than taking either at face value.
 ##'
+##' Advection has two parameters. `gamma` is an array
+##' `[direction (x, y), field, season]` of entrainment coefficients, one set per
+##' advection field of the data (see [prep_adv()]); it is absent when the data
+##' have no advection field. `adv_const` is a `2 x season` matrix with a constant
+##' drift (x, y) in space units per time unit. Both start at 0, the model being
+##' linear in them. With `conf$adv_gamma = "shared"` [default_map()] ties the x
+##' and y rows of `gamma` together; `adv_const` is only estimated when
+##' `conf$adv_const` is `TRUE`.
+##'
 ##' @return
 ##' A named list of initial parameter values.
 ##'
@@ -104,9 +111,9 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
   ## it implies before the array dimensions are taken from them
   dat <- .resolve_seasons(dat, conf)$dat
 
-  ## Number of spline slices per covariate. The third dimension of alpha, beta
-  ## and gamma is shared, so it is sized by the covariate that uses the most
-  ## slices; default_map() fixes the slices each covariate never evaluates.
+  ## Number of spline slices per covariate. The third dimension of alpha and
+  ## beta is shared, so it is sized by the covariate that uses the most slices;
+  ## default_map() fixes the slices each covariate never evaluates.
   max_seasonal <- max(.get_nsea(dat))
 
   ## Taxis -----------------------------------------
@@ -160,17 +167,14 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
   }
 
   ## Advection ----------------------------------------
-
-  if (is.null(dat$cov)) {
-    cov <- 1
-  } else {
-    cov <- dat$cov
+  ## One entrainment coefficient per field and direction (x, y) and a constant
+  ## drift, per advection season. Both enter linearly, so 0 is a fine start.
+  conf <- .adv_conf(conf)
+  nsea_adv <- conf$n_seasons_adv
+  if (length(dat$adv) > 0L) {
+    par$gamma <- array(0, dim = c(2L, length(dat$adv), nsea_adv))
   }
-
-  par$gamma <- array(rep(0, length(cov)),
-                     dim = c(2,
-                             length(cov),
-                             max_seasonal))
+  par$adv_const <- matrix(0, 2L, nsea_adv)
 
 
   ## Taxis scaling -------------------------------------

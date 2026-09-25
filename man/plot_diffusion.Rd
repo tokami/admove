@@ -6,6 +6,8 @@
 \usage{
 plot_diffusion(
   x,
+  select = NULL,
+  average = TRUE,
   cor = NULL,
   col = "black",
   alpha = 0.5,
@@ -26,6 +28,13 @@ plot_diffusion(
 \arguments{
 \item{x}{An object of class \code{admove} or \code{admove_sim}.}
 
+\item{select}{Optional index vector specifying which prediction time steps to
+plot. If \code{NULL} (default), all available prediction time steps are used.}
+
+\item{average}{Logical; if \code{TRUE} (default), diffusion is averaged over the
+selected time steps (geometric mean for fitted objects, arithmetic mean for
+simulated ones). If \code{FALSE}, one panel per selected time step is produced.}
+
 \item{cor}{Optional scaling factor controlling the size of the diffusion
 symbols. If \code{NULL}, the largest circle is automatically scaled so that its
 diameter equals one grid cell width.}
@@ -37,7 +46,9 @@ call. Default: \code{0.5}.}
 
 \item{lwd}{Line width used for the plotted symbols. Default: \code{1}.}
 
-\item{main}{Main title of the plot. Default: \code{"Diffusion"}.}
+\item{main}{Main title of the plot. Default: \code{"Diffusion"}. With several
+panels it is drawn once above them, and a vector with one entry per panel
+replaces the per-panel titles instead.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land masses are added using
 \code{\link[=plot_land]{plot_land()}}. Default: \code{FALSE}.}
@@ -49,7 +60,8 @@ diffusion), since a flat raster carries no information; the constant value
 is stated above the panel instead.}
 
 \item{auto_layout}{Logical; if \code{TRUE}, graphical parameters are set and
-restored automatically. Default: \code{TRUE}.}
+restored automatically; multiple panels are arranged using \code{\link[=n2mfrow]{n2mfrow()}}.
+Default: \code{TRUE}.}
 
 \item{add}{Logical; if \code{TRUE}, diffusion is added to an existing plot. If
 \code{FALSE} (default), a new plot is created.}
@@ -79,14 +91,20 @@ Invisibly returns \code{NULL}. Called for its side effect of producing a plot.
 \code{plot_diffusion()} plots the diffusion component over the spatial prediction
 grid for a fitted or simulated \code{admove} object.
 
-For fitted \code{admove} objects, the function plots the mean predicted diffusion
-across prediction times. For \code{admove_sim} objects, diffusion is reconstructed
-from the simulated covariates and parameter values and then averaged over
-prediction times.
+For fitted \code{admove} objects, the function plots the predicted diffusion at
+the selected prediction times, or their average. For \code{admove_sim} objects,
+diffusion is reconstructed from the simulated covariates and parameter
+values.
 }
 \details{
 Diffusion is represented by point sizes on the prediction grid, with larger
 symbols indicating higher diffusion. For fitted objects, diffusion is based
 on \code{x$pred$hD}. For simulated objects, diffusion is reconstructed from the
 simulation setup using \code{\link[=default_sim_funcs]{default_sim_funcs()}}.
+
+If \code{average = FALSE}, one panel per selected time step is produced, titled
+with its prediction time as a date at the resolution of the time units (e.g.
+\code{"Jan 2007"} for monthly units; \code{"t = 48.45"} if the time reference has no
+origin). The panels share their axes, the circle scale and the colour scale
+of diffusion, so they can be compared directly.
 }

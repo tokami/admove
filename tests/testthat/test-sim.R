@@ -186,9 +186,10 @@ test_that("arguments given explicitly win over the object in 'x'", {
 
   ## a new configuration and new parameters are used as given
   conf2 <- src$conf
-  conf2$use_advection <- TRUE
-  expect_true(sim_data(src, conf = conf2, simulate_cov = FALSE,
-                       n_ctags = 5, n_dtags = 1, verbose = FALSE)$conf$use_advection)
+  conf2$drift_scheme <- "central"
+  expect_equal(sim_data(src, conf = conf2, simulate_cov = FALSE,
+                        n_ctags = 5, n_dtags = 1, verbose = FALSE)$conf$drift_scheme,
+               "central")
 
   par2 <- src$par_true
   par2$alpha[] <- 0
