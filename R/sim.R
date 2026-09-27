@@ -2218,9 +2218,10 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' For \code{sim_engine = "kf"}, movement is simulated in continuous space by
 ##' combining taxis, advection, and diffusion increments at each time step.
 ##'
-##' For \code{sim_engine = "ctmc"}, movement is simulated on the spatial grid by
-##' constructing a transition-rate matrix from diffusion, taxis, and advection,
-##' and then propagating the tag distribution forward over one time step.
+##' For \code{sim_engine = "ctmc"}, movement is simulated on the spatial grid:
+##' the generator of the CTMC likelihood (the same taxis, diffusion and
+##' advection rates, built by the same code) is exponentiated over one time
+##' step, and the next cell is drawn from the resulting distribution.
 ##'
 ##' After simulation, observation error is added to all intermediate positions,
 ##' while the first and last positions are left unchanged.
@@ -2299,8 +2300,12 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   .check_ctmc_method(ctmc_method)
   sim_engine <- .get_engine_integer(.get_engine_name(sim_engine, "sim_engine"))
 
-  if (identical(ctmc_method, "expav")) {
-    mstar_template <- make_mstar_template(nextTo, ad = FALSE)
+  if (sim_engine == 2) {
+    ctx <- .sim_ctmc_ctx(conf, funcs, kappa, xygrid, nextTo, next_dist,
+                         ctmc_method)
+    template <- if (identical(ctmc_method, "expav")) {
+      make_mstar_template(nextTo, ad = FALSE)
+    } else NULL
   }
 
   while ((t + dt) < t1) {
@@ -2346,60 +2351,9 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
       dist_prob[celltable[cbind(cut(xy[1], xgr, include.lowest = TRUE),
                                 cut(xy[2], ygr, include.lowest = TRUE))]] <- 1
 
-      ## Set to zero
-      if (identical(ctmc_method, "expav")) {
-        Dstar <- Zstar <- Astar <- mstar_template
-        Dstar@x[] <- Zstar@x[] <- Astar@x[] <- 0
-      } else {
-        Dstar <- Zstar <- Astar <- matrix(0, nc, nc)
-      }
-
-      ## diffusion
-      D <- exp(funcs$dif(xygrid, t)) ## distance^2 / time
-      ggrad <- funcs$ddif(xygrid, t)  # ∇g = ∇log D
-      hD <- D * dt  ## (distance^2)
-      for (k in 1:4) {
-        j <- k + 1
-        ind <- which(!is.na(nextTo[, j]))
-        Dstar[cbind(ind, nextTo[ind, j])] <- hD[ind] / next_dist[k]^2
-      }
-
-      ## taxis
-      if (conf$use_taxis) {
-        move <- (D * (funcs$tax(xygrid, t) + ggrad)) * dt
-        Zstar <- fill_inst_mat(Zstar, move, nextTo, next_dist, conf$drift_scheme)
-      }
-
-      ## advection
-      if (conf$use_advection) {
-        move <- funcs$adv(xygrid, t) * dt
-        Astar <- fill_inst_mat(Astar, move, nextTo, next_dist, conf$drift_scheme)
-      }
-
-      ## movement rates
-      Mstar <- Dstar + Zstar + Astar
-
-      ## mass balance
-      Mstar[cbind(1:nc, 1:nc)] <- 0
-      Mstar[cbind(1:nc, 1:nc)] <- -RTMB::rowSums(Mstar)
-
-      ## Check
-      if (any(is.na(Mstar))) stop("NaN in Mstar!")
-
-      if (identical(ctmc_method, "expav")) {
-
-        p <- as.vector(RTMB::expAv(Mstar,
-                                   dist_prob,
-                                   transpose = TRUE,
-                                   uniformization = TRUE,
-                                   rescale_freq = 1))
-
-      } else {
-
-        M <- Matrix::expm(Mstar)
-        p <- as.vector(matrix(dist_prob, 1, nc) %*% M)
-
-      }
+      Q <- .ctmc_generator(ctx, t, template)
+      if (anyNA(Q)) stop("NaN in the CTMC generator!")
+      p <- .ctmc_step(ctx, Q, dt, dist_prob)
 
       p <- guard_neg(p)
       p <- p / sum(p)
@@ -2429,6 +2383,39 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   attr(ret, "n_stuck") <- n_stuck
 
   return(ret)
+}
+
+
+## The CTMC context the simulator steps with: the likelihood's own generator
+## and step (.ctmc_generator(), .ctmc_step() in R/ctmc.R) fed with the
+## simulation functions, so that simulated tags follow the model fitted to
+## them. The functions stand in for the habi objects and are made shape-safe,
+## since without covariates they return one value rather than one per cell.
+.sim_ctmc_ctx <- function(conf, funcs, kappa, xygrid, nextTo, next_dist,
+                          ctmc_method) {
+  ctx <- list(dat = list(use_taxis = isTRUE(conf$use_taxis),
+                         use_advection = isTRUE(conf$use_advection),
+                         drift_scheme = conf$drift_scheme,
+                         ctmc_method = ctmc_method,
+                         ctmc_nmax = conf$ctmc_nmax),
+              nc = nrow(xygrid),
+              xygrid = xygrid,
+              nextTo = nextTo,
+              next_dist = next_dist,
+              kappa = kappa,
+              habi = list(
+                tax = list(grad = function(xy, t) {
+                  matrix(funcs$tax(xy, t), nrow(xy), 2)
+                }),
+                dif = list(val = function(xy, t) {
+                  rep_len(funcs$dif(xy, t), nrow(xy))
+                }),
+                adv = list(val = function(xy, t) {
+                  matrix(funcs$adv(xy, t), nrow(xy), 2)
+                })))
+  ctx$counters <- new.env(parent = emptyenv())
+  ctx$counters$nstep <- 0L
+  ctx
 }
 
 

@@ -353,3 +353,48 @@ test_that("simulated observation error is estimated by the returned conf", {
   expect_equal(sim$conf$obs_var_type[1], "all_but_last")
   expect_false(all(is.na(sim$map$logSdO)))
 })
+
+
+test_that("the CTMC simulator steps with the likelihood's generator", {
+
+  grid <- create_grid(xrange = c(0, 1), yrange = c(0, 1), cellsize = 0.25,
+                      verbose = FALSE)
+  sim <- withr::with_seed(1, suppressMessages(suppressWarnings(
+    sim_data(grid = grid, n_dtags = 2, n_ctags = 5, trange = c(0, 1),
+             verbose = FALSE)
+  )))
+  conf <- sim$conf
+  conf$engine <- "ctmc"
+  fit <- suppressWarnings(suppressMessages(
+    admove(sim$dat, conf, sim$par, sim$map, verbose = FALSE)
+  ))
+
+  ## the generator the likelihood builds at the estimates ...
+  cc <- admove:::.ctmc_ctx_from_fit(fit, admove:::.nll_data(fit$dat, fit$conf))
+
+  ## ... and the one the simulator builds from a fit (sim_tags(fit = )): the
+  ## simulation functions at the estimates, kappa included. The simulator
+  ## used to drift with D * (grad h + grad log D) and no kappa.
+  par_est <- get_par_est(fit$par, fit$map, fit$opt)
+  funcs <- default_sim_funcs(fit$dat, fit$conf, par_est)
+  nextTo <- get_neighbours(grid)
+  ctx_sim <- admove:::.sim_ctmc_ctx(fit$conf, funcs, exp(par_est$logKappa),
+                                    fit$dat$grid$xygrid, nextTo,
+                                    c(0.25, 0.25, 0.25, 0.25), "expav")
+  template <- admove:::make_mstar_template(nextTo)
+
+  for (t in c(0.1, 0.55)) {
+    Q_fit <- admove:::.ctmc_generator(cc$ctx, t, template)
+    Q_sim <- admove:::.ctmc_generator(ctx_sim, t, template)
+    expect_gt(max(abs(Q_fit@x)), 0)
+    expect_equal(as.matrix(Q_sim), as.matrix(Q_fit))
+  }
+
+  ## and simulating from the fit runs on it
+  tg <- withr::with_seed(2, suppressMessages(suppressWarnings(
+    sim_tags("d", fit = fit, n_tags = 2, sim_engine = "ctmc", dt_tags = 0.05,
+             verbose = FALSE)
+  )))
+  expect_true(nrow(tg$tags) > 2)
+  expect_true(all(is.finite(tg$tags$x) & is.finite(tg$tags$y)))
+})

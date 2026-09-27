@@ -107,9 +107,10 @@ formulation.
 For \code{sim_engine = "kf"}, movement is simulated in continuous space by
 combining taxis, advection, and diffusion increments at each time step.
 
-For \code{sim_engine = "ctmc"}, movement is simulated on the spatial grid by
-constructing a transition-rate matrix from diffusion, taxis, and advection,
-and then propagating the tag distribution forward over one time step.
+For \code{sim_engine = "ctmc"}, movement is simulated on the spatial grid:
+the generator of the CTMC likelihood (the same taxis, diffusion and
+advection rates, built by the same code) is exponentiated over one time
+step, and the next cell is drawn from the resulting distribution.
 
 After simulation, observation error is added to all intermediate positions,
 while the first and last positions are left unchanged.
