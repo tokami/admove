@@ -101,7 +101,8 @@ on both components alike, so the direction of the field is kept.
 on the orientation of the grid.}
 \item{\code{adv_const}}{\code{FALSE} (default). \code{TRUE} adds an estimated constant
 drift (x, y) that needs no field, e.g. a persistent migration direction.
-It requires \code{use_advection = TRUE}.}
+Without an advection field in the data it switches \code{use_advection} on;
+with a field it requires \code{use_advection = TRUE}.}
 \item{\code{n_seasons_adv}}{Number of seasons of the advection coefficients
 (and of the constant drift), \code{1} by default. Values above 1 need a
 seasonal period, as for \code{n_seasons}.}

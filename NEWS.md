@@ -2,6 +2,14 @@
 
 ## Breaking changes
 
+* `seasonal_cov` moved from the configuration to the data:
+  `setup_data(seasonal_cov = TRUE)` (stored as `dat$seasonal_cov`) marks
+  covariate fields that repeat every period, such as monthly climatologies.
+  `check_conf()` now rejects `conf$seasonal_cov`. Previously `setup_data()`
+  could not know about it, so the default knots, the removal of tags on
+  missing covariate values and the starting values read every tag time beyond
+  the last layer from that layer (e.g. all tags from December).
+
 * **CTMC likelihood values change.** Two independent causes. The generator is
   now built once per covariate slice and scaled by the step, which is exact but
   re-associates the arithmetic (~3.6e-15 per entry). And with `"align"`/`"auto"`
@@ -72,6 +80,12 @@
 
 ## New features
 
+* `aggregate_cov()` averages covariate fields over blocks of cells
+  (`cellsize` or `factor`) and consecutive time slices (`time_factor`),
+  ignoring missing cells (`min_frac` sets how many a block needs). Covariates
+  much finer than a tag's step make the Kalman filter likelihood jagged in the
+  taxis parameters; averaging them to about the step length smooths it.
+
 * The CTMC engine now caches the generator and groups tags into **release
   events**. Tags that are never updated (mark-recapture, by default) are a pure
   forecast from their release cell, so tags released together share one forward
@@ -125,6 +139,25 @@
   divides by `crs_scale` first. See `?crs`.
 
 ## Bug fixes
+
+* `prep_cov()` stored the cell centres of `data.frame`, `Raster*` and
+  `SpatRaster` inputs rounded to two decimals. The likelihood interpolates on
+  these centres, so fine fields were shifted and unevenly spaced (1/12 degree
+  cells at steps of 0.08 and 0.09). The same rounding in `sim_cov()` moved the
+  start of time slices, e.g. to 0.33 instead of 1/3. Both now keep full
+  precision.
+
+* `prep_cov()` failed on a `data.frame` with a single covariate column: the
+  column name was read as the time of one slice. It now returns a one-element
+  named `admove_cov_list`, as with several columns.
+
+* `conf$adv_const = TRUE` was silently ignored by `admove()` without an
+  advection field: the drift is only estimated with `conf$use_advection = TRUE`,
+  which `default_conf()` sets to `FALSE` when the data have no field, and only
+  `check_conf()` (not called by `admove()`) caught the conflict. `adv_const`
+  now switches advection on when the data have no field. With a field,
+  `use_advection = FALSE` is kept and the conflict is an error in `admove()`,
+  `default_par()`, `default_map()` and `check_conf()` alike.
 
 
 # admove 0.1.5

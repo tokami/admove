@@ -3104,8 +3104,9 @@ plot_tag_pred <- function(x,
 ##'     misfit;
 ##'   \item a normal QQ plot, titled with the p-value of a Shapiro-Wilk test.
 ##' }
-##' P-values are green when at least 0.05 and red otherwise. Points are
-##' coloured by tag type.
+##' P-values are green when at least 0.05 and red otherwise. Tag types are
+##' told apart by symbol (open circle data-storage, triangle mark-resight,
+##' square mark-recapture).
 ##'
 ##' @param x A fitted object of class `admove`, as returned by [admove()].
 ##' @param pred Optional table from [tag_predictions()]. If `NULL` (default), it
@@ -3116,9 +3117,8 @@ plot_tag_pred <- function(x,
 ##'   tags. `NULL` (default) keeps all.
 ##' @param plot_land Logical; if `TRUE`, land is added to the map. Default
 ##'   `FALSE`.
-##' @param col Colours of the tag types, in the order data-storage,
-##'   mark-resight, mark-recapture. A single colour colours all points.
-##'   Default: `NULL`, the package colours.
+##' @param col Colour of the points in the scatter and QQ panels. Default
+##'   `"grey20"`. The map colours the residuals by sign instead.
 ##' @param ... Additional arguments passed to [plot()].
 ##'
 ##' @details
@@ -3144,7 +3144,7 @@ plot_tag_resid <- function(x,
                            type = c("osa", "forecast"),
                            tag_type = NULL,
                            plot_land = FALSE,
-                           col = NULL,
+                           col = "grey20",
                            ...) {
 
   type <- match.arg(type)
@@ -3168,13 +3168,11 @@ plot_tag_resid <- function(x,
     stop("No predicted positions left to plot.", call. = FALSE)
   }
 
-  ## tag types: colour in the scatter and QQ panels, symbol on the map
+  ## tag types by symbol, in one colour: colour is reserved for the sign of
+  ## the residuals on the map and for the p-values
   types <- intersect(c("d", "s", "c", "a"), unique(pred$tag_type))
-  if (is.null(col)) col <- .admove_cols(3)
-  col <- rep_len(col, 4)
-  names(col) <- c("d", "s", "c", "a")
-  pch_type <- c(d = 16, s = 17, c = 1, a = 15)
-  pt_col <- adjustcolor(col[pred$tag_type], 0.6)
+  pch_type <- c(d = 1, s = 2, c = 0, a = 5)
+  pt_col <- adjustcolor(col[1L], 0.7)
   pt_pch <- pch_type[pred$tag_type]
 
   t_obs <- if (!all(is.na(pred$date))) pred$date else pred$t
@@ -3201,7 +3199,7 @@ plot_tag_resid <- function(x,
   for (ax in c("x", "y")) {
     z <- zs[[ax]]
     plot(t_obs, z, xlab = lab_time, ylab = paste(ax, "residual"),
-         pch = 16, cex = 0.8, col = pt_col, ...)
+         pch = pt_pch, cex = 1, col = pt_col, ...)
     abline(h = 0, lty = 2)
     p <- if (length(z) >= 3L) stats::t.test(z)$p.value else NA
     p_title("Bias p-value", p)
@@ -3211,7 +3209,7 @@ plot_tag_resid <- function(x,
   ## 2: against the prediction horizon
   for (ax in c("x", "y")) {
     plot(pred$horizon, zs[[ax]], xlab = lab_hor, ylab = paste(ax, "residual"),
-         pch = 16, cex = 0.8, col = pt_col, ...)
+         pch = pt_pch, cex = 1, col = pt_col, ...)
     abline(h = 0, lty = 2)
     box(lwd = 1.5)
   }
@@ -3222,7 +3220,7 @@ plot_tag_resid <- function(x,
     plot(pred$x, pred$y, type = "n", asp = 1,
          xlab = map_labs[1], ylab = map_labs[2], ...)
     if (plot_land && inherits(x, "admove")) plot_land(sref = sref(x$dat))
-    points(pred$x, pred$y, pch = pt_pch, cex = 0.3 + 0.8 * abs(z),
+    points(pred$x, pred$y, pch = pt_pch, cex = 0.4 + 0.9 * abs(z), lwd = 1.2,
            col = ifelse(z >= 0, .admove_cols(type = "pos", alpha = 0.7),
                         .admove_cols(type = "neg", alpha = 0.7)))
     title(main = paste(ax, "residual"), font.main = 1, cex.main = 1)
@@ -3234,7 +3232,7 @@ plot_tag_resid <- function(x,
     z <- zs[[ax]]
     qq <- stats::qqnorm(z, plot.it = FALSE)
     plot(qq$x, qq$y, xlab = "theoretical quantiles", ylab = "sample quantiles",
-         pch = 16, cex = 0.8, col = pt_col, ...)
+         pch = pt_pch, cex = 1, col = pt_col, ...)
     abline(0, 1)
     zt <- if (length(z) > 5000L) .with_seed(1, sample(z, 5000L)) else z
     p <- if (length(zt) >= 3L) stats::shapiro.test(zt)$p.value else NA
@@ -3247,7 +3245,7 @@ plot_tag_resid <- function(x,
     par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0),
         new = TRUE)
     plot.new()
-    legend("top", legend = .tag_type_label(types), col = col[types],
+    legend("top", legend = .tag_type_label(types), col = col[1L],
            pch = pch_type[types], horiz = TRUE, bty = "n", cex = 0.9)
   }
 

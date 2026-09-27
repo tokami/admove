@@ -133,7 +133,7 @@ admove <- function(dat,
   dat <- res_sea$dat
   conf <- res_sea$conf
 
-  conf <- .adv_conf(conf)
+  conf <- .adv_conf(conf, dat, verbose)
 
   if(is.null(par)) par <- default_par(dat, conf)
   if(is.null(map)) map <- default_map(dat, conf, par)
@@ -993,9 +993,7 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 ##' }
 ##' The last two need [add_sdreport()] and are shown as not checked without it.
 ##' The results are stored in \code{fit$convergence} (\code{NA} = not
-##' checked). A note is added when two estimated parameters are correlated by
-##' more than 0.99 in absolute value, which usually means they are not
-##' separately identifiable; this is not part of the checks.
+##' checked).
 ##'
 ##' @return
 ##' A summary object, typically printed for inspection.
@@ -1032,13 +1030,6 @@ summarise_fit <- function(object, CI = 0.95, ...) {
     cat("NOTE: Model passed the checks that were run; run add_sdreport() for the rest.\n")
   }
 
-  pairs <- .high_correlations(x$sdrep)
-  if (length(pairs) > 0) {
-    cat(paste0("NOTE: Parameters correlated by more than 0.99 (possibly not separately identifiable):\n",
-               "      ", paste(utils::head(pairs, 5), collapse = ", "),
-               if (length(pairs) > 5) paste0(", ... and ", length(pairs) - 5, " more"),
-               "\n"))
-  }
 
   if (length(x$boundary_tags) > 0) {
     cat(paste0('NOTE: Predicted positions of ', length(x$boundary_tags),
@@ -1775,22 +1766,6 @@ plot_fit <- function(x,
     (is.finite(upper) & par >= upper - tol)
 
   .par_labels(names(par))[which(hit)]
-}
-
-
-## Pairs of estimated parameters with |correlation| > 0.99, as "a ~ b" labels
-.high_correlations <- function(sdrep, threshold = 0.99) {
-
-  if (!inherits(sdrep, "sdreport")) return(character(0))
-  cov <- as.matrix(sdrep$cov.fixed)
-  if (length(cov) < 4 || any(!is.finite(cov))) return(character(0))
-
-  cor <- suppressWarnings(stats::cov2cor(cov))
-  lab <- .par_labels(rownames(cov))
-  idx <- which(abs(cor) > threshold & upper.tri(cor), arr.ind = TRUE)
-  if (nrow(idx) == 0) return(character(0))
-
-  paste0(lab[idx[, 1]], " ~ ", lab[idx[, 2]])
 }
 
 

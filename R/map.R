@@ -88,7 +88,7 @@ default_map <- function(dat, conf, par){
                              seasonal = isTRUE(conf$seasonal_dif))
 
   ## Advection ------------------------------------------------
-  conf <- .adv_conf(conf)
+  conf <- .adv_conf(conf, dat)
   if (!is.null(par$gamma)) {
     map$gamma <- if (conf$use_advection) {
       .make_gamma_map(par$gamma, conf$adv_gamma)

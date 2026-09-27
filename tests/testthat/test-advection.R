@@ -94,6 +94,41 @@ test_that("default_map sets up gamma and the constant drift from conf", {
 })
 
 
+test_that("adv_const alone switches advection on without a field", {
+
+  ## default_conf() sets use_advection = FALSE without a field, and the drift
+  ## used to stay fixed at 0 when only adv_const was set
+  dat <- small_sim()$dat
+  conf <- default_conf(dat, verbose = FALSE)
+  expect_false(conf$use_advection)
+  conf$adv_const <- TRUE
+
+  par <- default_par(dat, conf, verbose = FALSE)
+  map <- default_map(dat, conf, par)
+  expect_equal(nlevels(map$adv_const), 2L)
+
+  expect_message(conf_c <- check_conf(conf, dat), "use_advection set to TRUE")
+  expect_true(conf_c$use_advection)
+
+  fit <- suppressWarnings(admove(dat, conf, run = FALSE, verbose = FALSE))
+  expect_true(fit$conf$use_advection)
+  expect_true("adv_const" %in% names(fit$obj$par))
+})
+
+
+test_that("adv_const with a field still needs use_advection", {
+
+  dat <- adv_dat()
+  conf <- default_conf(dat, verbose = FALSE)
+  conf$use_advection <- FALSE
+  conf$adv_const <- TRUE
+
+  expect_error(check_conf(conf, dat, verbose = FALSE), "map\\$gamma")
+  par <- default_par(dat, default_conf(dat, verbose = FALSE), verbose = FALSE)
+  expect_error(default_map(dat, conf, par), "use_advection = TRUE")
+})
+
+
 test_that(".make_adv combines fields, gamma, constant drift and seasons", {
 
   dat <- adv_dat(u = 0.4, v = 0.2)

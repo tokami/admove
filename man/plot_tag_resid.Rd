@@ -10,7 +10,7 @@ plot_tag_resid(
   type = c("osa", "forecast"),
   tag_type = NULL,
   plot_land = FALSE,
-  col = NULL,
+  col = "grey20",
   ...
 )
 }
@@ -29,9 +29,8 @@ tags. \code{NULL} (default) keeps all.}
 \item{plot_land}{Logical; if \code{TRUE}, land is added to the map. Default
 \code{FALSE}.}
 
-\item{col}{Colours of the tag types, in the order data-storage,
-mark-resight, mark-recapture. A single colour colours all points.
-Default: \code{NULL}, the package colours.}
+\item{col}{Colour of the points in the scatter and QQ panels. Default
+\code{"grey20"}. The map colours the residuals by sign instead.}
 
 \item{...}{Additional arguments passed to \code{\link[=plot]{plot()}}.}
 }
@@ -54,8 +53,9 @@ negative), symbol by tag type: clusters of one sign point to spatial
 misfit;
 \item a normal QQ plot, titled with the p-value of a Shapiro-Wilk test.
 }
-P-values are green when at least 0.05 and red otherwise. Points are
-coloured by tag type.
+P-values are green when at least 0.05 and red otherwise. Tag types are
+told apart by symbol (open circle data-storage, triangle mark-resight,
+square mark-recapture).
 }
 \details{
 Under the model the residuals are independent standard normal, so the

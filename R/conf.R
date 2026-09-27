@@ -89,7 +89,8 @@
 ##'     on the orientation of the grid.}
 ##'   \item{`adv_const`}{`FALSE` (default). `TRUE` adds an estimated constant
 ##'     drift (x, y) that needs no field, e.g. a persistent migration direction.
-##'     It requires `use_advection = TRUE`.}
+##'     Without an advection field in the data it switches `use_advection` on;
+##'     with a field it requires `use_advection = TRUE`.}
 ##'   \item{`n_seasons_adv`}{Number of seasons of the advection coefficients
 ##'     (and of the constant drift), `1` by default. Values above 1 need a
 ##'     seasonal period, as for `n_seasons`.}
@@ -380,9 +381,7 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
     stop("'conf$n_seasons_adv' must be a single number.", call. = FALSE)
   }
   if (conf$n_seasons_adv > 1L) .require_period(dat, conf$n_seasons_adv)
-  if (conf$adv_const && !conf$use_advection) {
-    stop("conf$adv_const = TRUE needs conf$use_advection = TRUE.", call. = FALSE)
-  }
+  conf <- .adv_conf(conf, dat, verbose)
 
   if (!is.null(conf$drift_scheme) &&
         !identical(conf$drift_scheme, "upwind") &&

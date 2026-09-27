@@ -169,7 +169,7 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
   ## Advection ----------------------------------------
   ## One entrainment coefficient per field and direction (x, y) and a constant
   ## drift, per advection season. Both enter linearly, so 0 is a fine start.
-  conf <- .adv_conf(conf)
+  conf <- .adv_conf(conf, dat)
   nsea_adv <- conf$n_seasons_adv
   if (length(dat$adv) > 0L) {
     par$gamma <- array(0, dim = c(2L, length(dat$adv), nsea_adv))

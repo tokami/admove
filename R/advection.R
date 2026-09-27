@@ -601,12 +601,32 @@ plot.admove_adv <- function(x, ...) {
 }
 
 
-## Fill advection settings missing from a configuration (e.g. one written by hand).
-.adv_conf <- function(conf) {
+## Fill advection settings missing from a configuration (e.g. one written by
+## hand). With 'dat', a constant drift (adv_const) switches advection on when
+## the data have no advection field: use_advection gates the drift too, and
+## default_conf() sets it FALSE without a field, so adv_const = TRUE alone was
+## silently fixed at 0. With a field, use_advection = FALSE is a deliberate
+## choice and the conflict is an error. Every consumer of conf (default_par(),
+## default_map(), admove(), the simulators) goes through here, so they agree.
+.adv_conf <- function(conf, dat = NULL, verbose = FALSE) {
   if (is.null(conf$adv_gamma)) conf$adv_gamma <- "shared"
   if (is.null(conf$adv_const)) conf$adv_const <- FALSE
   if (is.null(conf$n_seasons_adv)) conf$n_seasons_adv <- 1L
   if (is.null(conf$use_advection)) conf$use_advection <- FALSE
+  if (!is.null(dat) && isTRUE(conf$adv_const) && !isTRUE(conf$use_advection)) {
+    if (length(dat$adv) > 0L) {
+      stop("conf$adv_const = TRUE needs conf$use_advection = TRUE. The data ",
+           "have advection field(s), which use_advection = TRUE also ",
+           "switches on; to estimate only the constant drift, fix their ",
+           "coefficients with map$gamma <- factor(rep(NA, length(par$gamma))) ",
+           "and par$gamma at 0.", call. = FALSE)
+    }
+    conf$use_advection <- TRUE
+    if (verbose) {
+      message("conf$adv_const = TRUE: conf$use_advection set to TRUE to ",
+              "estimate the constant drift.")
+    }
+  }
   conf
 }
 

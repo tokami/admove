@@ -119,16 +119,6 @@ test_that(".at_bound finds estimates on a finite bound", {
 })
 
 
-test_that("highly correlated parameters are listed", {
-
-  fit <- .good_fit()
-  expect_equal(admove:::.high_correlations(fit$sdrep), character(0))
-
-  fit$sdrep$cov.fixed[1, 2] <- fit$sdrep$cov.fixed[2, 1] <- 0.999
-  expect_equal(admove:::.high_correlations(fit$sdrep), "alpha1 ~ alpha2")
-})
-
-
 test_that("a fit stores its convergence checks and summary lists them", {
 
   fit <- small_fit()

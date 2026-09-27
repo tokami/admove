@@ -51,7 +51,5 @@ all of them pass:
 }
 The last two need \code{\link[=add_sdreport]{add_sdreport()}} and are shown as not checked without it.
 The results are stored in \code{fit$convergence} (\code{NA} = not
-checked). A note is added when two estimated parameters are correlated by
-more than 0.99 in absolute value, which usually means they are not
-separately identifiable; this is not part of the checks.
+checked).
 }

@@ -702,10 +702,8 @@ sim_cov <- function(grid = NULL,
   }
 
   if(is.null(trange)) trange <- c(0, nt-1)
-  times <- sprintf("%.2f",
-                   seq(trange[1],
-                       trange[2],
-                       length.out = nt))
+  ## full precision: slices start exactly at these times (see t2index())
+  times <- as.character(seq(trange[1], trange[2], length.out = nt))
 
   tref <- create_tref(tref$origin, tref$units, tref$period)
 
@@ -1677,7 +1675,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   }
 
   ## advection: an n x 2 matrix of velocities at the n positions in xy
-  conf <- .adv_conf(conf)
+  conf <- .adv_conf(conf, dat)
   if (isTRUE(conf$use_advection)) {
     adv <- .make_adv(dat$adv, dat$time_adv, par$gamma, par$adv_const,
                      .get_period(dat))
@@ -1953,7 +1951,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   }
 
   if (is.null(conf)) conf <- default_conf(dat, verbose = FALSE)
-  conf <- .adv_conf(conf)
+  conf <- .adv_conf(conf, dat)
 
   n_tax <- if (!is.null(dat$knots_tax)) nrow(dat$knots_tax) else n_tax_default
   n_dif <- if (!is.null(dat$knots_dif)) nrow(dat$knots_dif) else 1L

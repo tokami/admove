@@ -72,6 +72,7 @@
 ##' corresponding to x, y, and time. When `layers = "covariates"` and
 ##' the input has multiple layers, a named list of class `admove_cov_list` with
 ##' one `admove_cov` element per layer, ready to pass directly to [setup_data()].
+##' A `data.frame` always gives such a list, also with a single covariate column.
 ##'
 ##' @details
 ##' If `x` is two-dimensional, it is converted to a 3D array with a single time
@@ -105,7 +106,8 @@ prep_cov <- function(x,
                      verbose = TRUE) {
 
   ## data.frame → named list of matrices (one per covariate column) ----------
-  if (inherits(x, "data.frame")) {
+  from_df <- inherits(x, "data.frame")
+  if (from_df) {
     nms <- names(x)
     x_col <- if ("x" %in% nms) "x" else if ("X" %in% nms) "X" else {
       num_nms <- nms[vapply(x, is.numeric, logical(1L))]
@@ -127,8 +129,10 @@ prep_cov <- function(x,
     yu <- sort(unique(x[[y_col]]))
     ix <- match(x[[x_col]], xu)
     iy <- match(x[[y_col]], yu)
-    x_lab <- sprintf("%.2f", xu)
-    y_lab <- sprintf("%.2f", yu)
+    ## full precision: the labels are the cell centres the likelihood
+    ## interpolates on, and rounding them shifts fine fields (e.g. 1/12 degree)
+    x_lab <- as.character(xu)
+    y_lab <- as.character(yu)
     cov_mats <- lapply(cov_cols, function(nm) {
       m <- matrix(NA_real_, length(xu), length(yu),
                   dimnames = list(x = x_lab, y = y_lab))
@@ -189,7 +193,9 @@ prep_cov <- function(x,
       if (is.null(nms_check)) nms_check <- as.character(seq_len(nl_check))
     }
 
-    if (!is.null(nl_check) && nl_check > 1L) {
+    ## a data.frame always splits, also with one covariate column, or its
+    ## column name would be read as the time of a single slice
+    if (!is.null(nl_check) && (nl_check > 1L || from_df)) {
       collected_msgs <- character(0)
       cov_list <- lapply(seq_len(nl_check), function(i) {
         layer_i <- if (inherits(x, "SpatRaster")) {
@@ -241,8 +247,8 @@ prep_cov <- function(x,
     nc <- raster::ncol(x)
     nl <- raster::nlayers(x)
 
-    x_lab <- sprintf("%.2f", raster::xFromCol(x, seq_len(nc)))
-    y_lab <- sprintf("%.2f", rev(raster::yFromRow(x, seq_len(nr))))
+    x_lab <- as.character(raster::xFromCol(x, seq_len(nc)))
+    y_lab <- as.character(rev(raster::yFromRow(x, seq_len(nr))))
 
     if (nl == 1L) {
       m <- raster::as.matrix(x)
@@ -290,8 +296,8 @@ prep_cov <- function(x,
     x_cent <- ext_r[1] + res_r[1]/2 + (0:(nc-1)) * res_r[1]
     y_cent <- ext_r[3] + res_r[2]/2 + (0:(nr-1)) * res_r[2]
 
-    x_lab <- sprintf("%.2f", x_cent)
-    y_lab <- sprintf("%.2f", y_cent)
+    x_lab <- as.character(x_cent)
+    y_lab <- as.character(y_cent)
 
     if (nl == 1L) {
 
@@ -1089,6 +1095,124 @@ fill_cov <- function(x, n_rings = 1, sd = 1, verbose = TRUE) {
 
 
 
+##' Aggregate covariate fields to coarser cells or time slices
+##'
+##' @description
+##' Average a covariate over blocks of cells, and optionally over consecutive
+##' time slices, e.g. a 0.25 degree field onto 1 degree cells or daily layers
+##' into weekly ones. Missing cells are left out of the block means.
+##'
+##' @param x A covariate: an `admove_cov` object (see [prep_cov()]), a list of
+##'   them (`admove_cov_list`), or a plain `[x, y, time]` array or `[x, y]`
+##'   matrix.
+##' @param cellsize Size of the new cells in the units of the cell centres
+##'   (the dimension names), one value for both axes or `c(x, y)`. Blocks are
+##'   anchored at multiples of `cellsize`, e.g. `cellsize = 1` on longitudes
+##'   gives cells from -100 to -99, -99 to -98, ..., centred at -99.5, ...
+##'   Each cell goes to the block containing its centre.
+##' @param factor Alternative to `cellsize`: the number of cells per block, one
+##'   whole number for both axes or `c(x, y)`. Blocks start at the first cell.
+##' @param time_factor Number of consecutive time slices to average, starting
+##'   at the first slice. Default `1`: no aggregation in time. Each new slice is
+##'   labelled by the start of its first slice, following the convention that
+##'   covariate slices are labelled by their start time.
+##' @param min_frac Smallest share of non-missing values a block needs, counted
+##'   over its cells and time slices; blocks below it are `NA`. Default `0`: a
+##'   block is `NA` only if all its values are missing.
+##' @param verbose Logical; if `TRUE` (default), report the old and new
+##'   dimensions.
+##'
+##' @details
+##' Covariates finer than the distance a tag moves in one step make the
+##' predicted mean of the Kalman filter jump between covariate cells. The
+##' likelihood then becomes jagged in the taxis parameters and the fit may not
+##' converge, even though it reports convergence. Averaging the covariate to
+##' cells of about that step length smooths the likelihood. See
+##' `dev/code_notes.org`, "Aggregating covariate fields".
+##'
+##' With the default `min_frac = 0`, a block at a coast gets the mean of its
+##' water cells, which moves the coastline outwards by up to a block, much like
+##' [fill_cov()]. Increase `min_frac` (e.g. `0.5`) to keep mostly-land blocks
+##' missing. Aggregating after [fill_cov()] averages the filled values too.
+##'
+##' Blocks at the edges of the field may have fewer cells; `min_frac` counts
+##' only the cells they have. The new cells lie on a regular lattice with
+##' centres in the middle of each block, also for these edge blocks. The mean
+##' is unweighted: in longitude and latitude, cells nearer the poles cover less
+##' area, which hardly matters within a block of a few degrees.
+##'
+##' @return `x` averaged to the new cells and time slices, with its class and
+##'   attributes (spatial and time reference) kept. The attribute `"filled"` of
+##'   [fill_cov()] is dropped, as it refers to the old cells.
+##'
+##' @examples
+##' cov <- skjepo$sim$cov
+##' dim(cov)
+##'
+##' ## blocks of 2 x 2 cells
+##' dim(aggregate_cov(cov, factor = 2))
+##'
+##' ## cells of 1500 x 1500 km (the field is stored in km) and half-years from
+##' ## quarters
+##' cov2 <- aggregate_cov(cov, cellsize = 1500, time_factor = 2)
+##' dimnames(cov2)[[3]]
+##'
+##' @seealso [fill_cov()], [prep_cov()]
+##'
+##' @export
+aggregate_cov <- function(x, cellsize = NULL, factor = NULL, time_factor = 1,
+                          min_frac = 0, verbose = TRUE) {
+
+  if (!is.null(cellsize) && !is.null(factor)) {
+    stop("Supply either 'cellsize' or 'factor', not both.", call. = FALSE)
+  }
+  if (!is.null(cellsize)) {
+    if (!is.numeric(cellsize) || !(length(cellsize) %in% 1:2) ||
+          any(!is.finite(cellsize)) || any(cellsize <= 0)) {
+      stop("'cellsize' must be one or two positive numbers.", call. = FALSE)
+    }
+    cellsize <- rep_len(cellsize, 2)
+  }
+  if (!is.null(factor)) {
+    if (!is.numeric(factor) || !(length(factor) %in% 1:2) ||
+          any(!is.finite(factor)) || any(factor < 1) || any(factor != round(factor))) {
+      stop("'factor' must be one or two whole numbers of at least 1.",
+           call. = FALSE)
+    }
+    factor <- rep_len(as.integer(factor), 2)
+  }
+  if (!is.numeric(time_factor) || length(time_factor) != 1L ||
+        !is.finite(time_factor) || time_factor < 1 ||
+        time_factor != round(time_factor)) {
+    stop("'time_factor' must be a single whole number of at least 1.",
+         call. = FALSE)
+  }
+  if (!is.numeric(min_frac) || length(min_frac) != 1L || is.na(min_frac) ||
+        min_frac < 0 || min_frac > 1) {
+    stop("'min_frac' must be a single number between 0 and 1.", call. = FALSE)
+  }
+  if (is.null(cellsize) && is.null(factor) && time_factor == 1) {
+    stop("Nothing to aggregate: supply 'cellsize', 'factor' or 'time_factor'.",
+         call. = FALSE)
+  }
+
+  if (is.list(x) && !is.array(x)) {
+    nms <- names(x)
+    for (i in seq_along(x)) {
+      lab <- if (is.null(nms) || nms[i] == "") paste0("covariate ", i) else
+        paste0("covariate '", nms[i], "'")
+      x[[i]] <- .aggregate_cov_one(x[[i]], cellsize, factor, time_factor,
+                                   min_frac, verbose, lab)
+    }
+    return(x)
+  }
+
+  .aggregate_cov_one(x, cellsize, factor, time_factor, min_frac, verbose,
+                     "covariate")
+}
+
+
+
 ## Internal functions ---------------------------------------------------------------
 
 ## Validate a number of rings for fill_cov(): a whole number >= 0 or Inf.
@@ -1192,6 +1316,142 @@ fill_cov <- function(x, n_rings = 1, sd = 1, verbose = TRUE) {
   if (!is.null(prev) && identical(dim(prev), d)) filled <- filled | prev
   attr(x, "filled") <- filled
   x
+}
+
+
+## Block assignment of cell centres for aggregate_cov(): the block id of every
+## cell (1, 2, ... in increasing order) and the centre of every block. Blocks
+## from 'cellsize' are anchored at its multiples, blocks from 'factor' at the
+## first cell; either way the new centres form a regular lattice.
+.cov_blocks <- function(centres, cellsize, factor, axis) {
+
+  n <- length(centres)
+  if (is.null(cellsize) && is.null(factor)) {
+    return(list(id = seq_len(n), centre = centres))
+  }
+  if (n > 1 && any(diff(centres) <= 0)) {
+    stop("The ", axis, " cell centres of the covariate must increase.",
+         call. = FALSE)
+  }
+  ## mean spacing: labels rounded for printing (e.g. "%.2f" on 0.25 degree
+  ## centres) give steps alternating 0.26 / 0.24, which fool a median
+  dx <- if (n > 1) (centres[n] - centres[1]) / (n - 1) else NA_real_
+
+  if (!is.null(factor)) {
+    id <- (seq_len(n) - 1L) %/% factor + 1L
+    nb <- max(id)
+    step <- if (is.finite(dx)) dx else 1
+    centre <- centres[1] + ((seq_len(nb) - 1L) * factor + (factor - 1) / 2) * step
+    return(list(id = id, centre = centre))
+  }
+
+  if (is.finite(dx) && cellsize < dx * (1 - 1e-3)) {
+    stop("'cellsize' (", signif(cellsize, 6), ") is smaller than the ", axis,
+         " cell size of the covariate (", signif(dx, 6), "); aggregate_cov() ",
+         "only makes cells coarser.", call. = FALSE)
+  }
+  ## the tolerance keeps a centre that sits on a block edge up to round-off
+  ## (e.g. 0.3 / 0.1) in the block above it, where it belongs exactly
+  b <- floor(centres / cellsize + 1e-9)
+  ub <- sort(unique(b))
+  ## judged on the blocks themselves, not on cellsize / dx, which rounded
+  ## labels make inexact; edge blocks may legitimately be partial
+  counts <- tabulate(match(b, ub))
+  inner <- counts[-c(1L, length(counts))]
+  if (length(unique(inner)) > 1L) {
+    warning("'cellsize' (", signif(cellsize, 6), ") is not a multiple of the ",
+            axis, " cell size of the covariate (", signif(dx, 4), "), so ",
+            "blocks contain different numbers of cells (",
+            paste(sort(unique(inner)), collapse = " or "), ").", call. = FALSE)
+  }
+  list(id = match(b, ub), centre = (ub + 0.5) * cellsize)
+}
+
+
+## Block means of one covariate array; see aggregate_cov(). Sums and counts of
+## the non-missing values are accumulated per block and time group, so a block
+## mean ignores missing cells and min_frac compares the count with the number
+## of cells and slices the block has.
+.aggregate_cov_one <- function(x, cellsize, factor, time_factor, min_frac,
+                               verbose, lab) {
+
+  d <- dim(x)
+  if (is.null(d) || !(length(d) %in% 2:3)) {
+    stop("Each covariate must be an [x, y, time] array or an [x, y] matrix.",
+         call. = FALSE)
+  }
+  nt <- if (length(d) == 3) d[3] else 1L
+  A <- array(as.numeric(unclass(x)), c(d[1], d[2], nt))
+  dn <- dimnames(x)
+
+  centres <- function(k) {
+    v <- if (!is.null(dn[[k]])) suppressWarnings(as.numeric(dn[[k]])) else NULL
+    if (is.null(v) || anyNA(v)) {
+      if (!is.null(cellsize)) {
+        stop("aggregate_cov(cellsize = ) needs numeric cell centres as ",
+             "dimension names; use 'factor' instead.", call. = FALSE)
+      }
+      v <- seq_len(d[k])
+    }
+    v
+  }
+  bx <- .cov_blocks(centres(1), cellsize[1], factor[1], "x")
+  by <- .cov_blocks(centres(2), cellsize[2], factor[2], "y")
+  tid <- (seq_len(nt) - 1L) %/% time_factor + 1L
+  nbx <- length(bx$centre)
+  nby <- length(by$centre)
+  ntg <- max(tid)
+
+  S <- array(0, c(nbx, nby, ntg))
+  N <- array(0, c(nbx, nby, ntg))
+  block_sum <- function(M) {
+    t(rowsum(t(rowsum(M, bx$id, reorder = TRUE)), by$id, reorder = TRUE))
+  }
+  for (k in seq_len(nt)) {
+    M <- matrix(A[, , k], d[1], d[2])
+    ok <- !is.na(M)
+    S[, , tid[k]] <- S[, , tid[k]] + block_sum(ifelse(ok, M, 0))
+    N[, , tid[k]] <- N[, , tid[k]] + block_sum(ok * 1)
+  }
+  size <- outer(tabulate(bx$id, nbx), tabulate(by$id, nby))
+  size <- array(size, c(nbx, nby, ntg)) *
+    rep(tabulate(tid, ntg), each = nbx * nby)
+  out <- ifelse(N > 0 & N >= min_frac * size - 1e-9, S / N, NA_real_)
+
+  first <- match(seq_len(ntg), tid)
+  dn_out <- list(as.character(bx$centre), as.character(by$centre))
+  if (length(d) == 3) {
+    dn_out[[3]] <- if (!is.null(dn[[3]])) dn[[3]][first] else NULL
+  } else {
+    out <- matrix(out, nbx, nby)
+  }
+  if (!is.null(names(dn))) names(dn_out) <- names(dn)[seq_along(dn_out)]
+  dimnames(out) <- dn_out
+
+  ax <- attributes(x)
+  if (!is.null(ax$time)) ax$time <- ax$time[first]
+  for (nm in setdiff(names(ax), c("dim", "dimnames", "filled"))) {
+    attr(out, nm) <- ax[[nm]]
+  }
+
+  if (verbose) {
+    fmt <- function(v) paste(signif(v, 3), collapse = " x ")
+    size_old <- vapply(1:2, function(k) {
+      v <- suppressWarnings(as.numeric(dn[[k]]))
+      n <- length(v)
+      if (n > 1 && !anyNA(v)) (v[n] - v[1]) / (n - 1) else NA_real_
+    }, numeric(1))
+    size_new <- c(if (nbx > 1) diff(bx$centre[1:2]) else NA_real_,
+                  if (nby > 1) diff(by$centre[1:2]) else NA_real_)
+    message(lab, ": ", d[1], " x ", d[2], " cells",
+            if (all(is.finite(size_old))) paste0(" of ", fmt(size_old)),
+            " -> ", nbx, " x ", nby,
+            if (all(is.finite(size_new))) paste0(" of ", fmt(size_new)),
+            if (ntg != nt) paste0("; ", nt, " -> ", ntg, " time slices"),
+            "; ", sum(is.na(out)), " NA.")
+  }
+
+  out
 }
 
 .get_cov_trange <- function(cov) {

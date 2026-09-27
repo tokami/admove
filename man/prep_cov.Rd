@@ -93,6 +93,7 @@ object of class \code{admove_cov}, stored as a 3D array with dimensions
 corresponding to x, y, and time. When \code{layers = "covariates"} and
 the input has multiple layers, a named list of class \code{admove_cov_list} with
 one \code{admove_cov} element per layer, ready to pass directly to \code{\link[=setup_data]{setup_data()}}.
+A \code{data.frame} always gives such a list, also with a single covariate column.
 }
 \description{
 \code{prep_cov()} converts covariate data into the standard array-based format
