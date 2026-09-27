@@ -30,6 +30,7 @@ sim_tags(
   knots_dif = NULL,
   n_knots_tax = NULL,
   n_knots_dif = NULL,
+  seasonal_cov = NULL,
   funcs = NULL,
   n_reject = 20,
   sim_engine = "kf",
@@ -141,6 +142,11 @@ set, so not at the tags as in \code{\link[=setup_data]{setup_data()}}). Ignored 
 knot matrix is supplied. If \code{NULL}, the knots of a supplied data
 object or model are kept, and otherwise the defaults of \code{\link[=setup_data]{setup_data()}} (3
 and 1) are used.}
+
+\item{seasonal_cov}{Optional logical, one value or one per covariate: whether
+the covariate fields repeat every seasonal period (see \code{\link[=setup_data]{setup_data()}}).
+Only used when no data object is supplied; otherwise \code{FALSE} if
+\code{NULL}.}
 
 \item{funcs}{Optional named list of simulation functions. If \code{NULL},
 defaults are created with \code{\link[=default_sim_funcs]{default_sim_funcs()}}.}

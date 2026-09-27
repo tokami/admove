@@ -216,7 +216,7 @@
                                    dat$yrange_cov, dat$time_cov,
                                    s, ds,
                                    dat$time_spline, per,
-                                   conf$seasonal_cov,
+                                   dat$seasonal_cov,
                                    conf$seasonal_spline)
 
   list(pref_funcs = pref_funcs,

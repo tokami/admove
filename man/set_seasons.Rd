@@ -39,10 +39,10 @@ Seasons are equal divisions of the cycle, anchored at the time origin of
 the origin. The cycle length must be set on the data beforehand, e.g. through
 \code{create_tref(period = 12)} or \code{period(dat) <- 12}.
 
-Seasonality of the covariate \emph{fields} is a separate question, controlled by
-\code{conf$seasonal_cov}: set that when a covariate is a climatology that
-should repeat every cycle, rather than a time series covering the whole
-study period.
+Seasonality of the covariate \emph{fields} is a separate question, set in the
+data with \code{setup_data(seasonal_cov = TRUE)} when a covariate is a
+climatology that should repeat every cycle, rather than a time series
+covering the whole study period.
 
 Diffusion stays constant across seasons unless \code{conf$seasonal_dif} is
 set to \code{TRUE}; see \code{\link[=default_map]{default_map()}}.

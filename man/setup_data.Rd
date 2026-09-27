@@ -8,6 +8,7 @@ setup_data(
   grid = NULL,
   cov = NULL,
   tags = NULL,
+  seasonal_cov = FALSE,
   trange = NULL,
   knots_tax = NULL,
   knots_dif = NULL,
@@ -36,6 +37,16 @@ it is coerced internally to a list.}
 \code{\link[=prep_ctags]{prep_ctags()}}, \code{\link[=prep_dtags]{prep_dtags()}}, or \code{\link[=prep_stags]{prep_stags()}}. Several tag objects can
 be supplied combined with \code{c(dtags, ctags)} or as a list,
 \code{list(dtags, ctags)}; both are merged with \code{\link[=combine_tags]{combine_tags()}}.}
+
+\item{seasonal_cov}{Logical, one value for all covariates or one per
+covariate: whether the covariate field repeats every seasonal period, as
+a climatology does (e.g. twelve monthly layers of long-term means with
+\code{period = 12}). Tag and model times are then wrapped into the cycle
+(\code{t \%\% period}) before a covariate slice is chosen, both here (default
+knots, removal of tag positions on missing covariate values) and in the
+likelihood. Requires a seasonal period in the time reference (see
+\code{\link[=create_tref]{create_tref()}}). Default \code{FALSE}: times beyond the last slice use the
+last slice.}
 
 \item{trange}{Optional numeric vector of length two giving the model time
 range. If \code{NULL}, the time range is inferred from available tags and

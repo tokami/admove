@@ -77,8 +77,9 @@ seasonal spline basis are derived from it and from the cycle length
 \code{period(dat)} when the model is set up, so they never have to be written into
 \code{dat} by hand. \code{seasonal_spline} is filled in from \code{n_seasons} and is
 retained for models that set breakpoints manually via \code{dat$time_spline}.
-\code{seasonal_cov} is a separate setting controlling whether the covariate
-\emph{fields} themselves repeat over the cycle, and stays \code{FALSE} by default.
+Whether the covariate \emph{fields} themselves repeat over the cycle (a
+climatology) is a property of the data, set with
+\code{setup_data(seasonal_cov = TRUE)}.
 
 \code{seasonal_dif} is a single logical controlling whether
 diffusion is estimated season by season, and is \strong{\code{FALSE} by default} even

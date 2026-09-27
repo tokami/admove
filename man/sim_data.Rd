@@ -31,6 +31,7 @@ sim_data(
   knots_dif = NULL,
   n_knots_tax = NULL,
   n_knots_dif = NULL,
+  seasonal_cov = NULL,
   release_events = NULL,
   n_release_events = 10,
   trange_rel = NULL,
@@ -149,6 +150,11 @@ set, so not at the tags as in \code{\link[=setup_data]{setup_data()}}). Ignored 
 knot matrix is supplied. If \code{NULL}, the knots of a supplied data
 object or model are kept, and otherwise the defaults of \code{\link[=setup_data]{setup_data()}} (3
 and 1) are used.}
+
+\item{seasonal_cov}{Optional logical, one value or one per covariate: whether
+the covariate fields repeat every seasonal period (see \code{\link[=setup_data]{setup_data()}}). If
+\code{NULL}, the setting of a supplied data object or model is kept for its
+covariate fields, and otherwise \code{FALSE}.}
 
 \item{release_events}{Optional data frame or matrix of release events. If
 \code{NULL}, release events are simulated internally using

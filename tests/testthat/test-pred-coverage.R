@@ -2,18 +2,19 @@
 
 
 ## Minimal data/conf pair carrying only what .check_pred_time_coverage() reads.
-make_cov_dat <- function(pred_time, cov_time = 10:20, spline_time = 0) {
+make_cov_dat <- function(pred_time, cov_time = 10:20, spline_time = 0,
+                         seasonal_cov = c(FALSE, FALSE)) {
   list(
     cov = list(depth = NULL, bt = NULL),
     time_cov = list(cov_time, cov_time),
+    seasonal_cov = seasonal_cov,
     time_spline = list(spline_time, spline_time),
     period = 12,
     pred = list(time = pred_time)
   )
 }
 
-cov_conf <- list(seasonal_cov = c(FALSE, FALSE),
-                 seasonal_spline = c(FALSE, FALSE))
+cov_conf <- list(seasonal_spline = c(FALSE, FALSE))
 
 
 test_that("prediction times inside the covariate coverage pass silently", {
@@ -75,10 +76,9 @@ test_that("seasonal covariates are judged on the wrapped time", {
 
   ## with seasonality the lookup is on t %% period, so absolute times far beyond
   ## the covariate range still resolve
-  dat <- make_cov_dat(30:35, cov_time = 0:11)
-  conf_sea <- list(seasonal_cov = c(TRUE, TRUE), seasonal_spline = c(FALSE, FALSE))
+  dat <- make_cov_dat(30:35, cov_time = 0:11, seasonal_cov = c(TRUE, TRUE))
 
-  expect_silent(admove:::.check_pred_time_coverage(dat, conf_sea))
+  expect_silent(admove:::.check_pred_time_coverage(dat, cov_conf))
 })
 
 

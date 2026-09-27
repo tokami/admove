@@ -77,6 +77,10 @@
 ##'   knot matrix is supplied. If \code{NULL}, the knots of a supplied data
 ##'   object or model are kept, and otherwise the defaults of [setup_data()] (3
 ##'   and 1) are used.
+##' @param seasonal_cov Optional logical, one value or one per covariate: whether
+##'   the covariate fields repeat every seasonal period (see [setup_data()]). If
+##'   \code{NULL}, the setting of a supplied data object or model is kept for its
+##'   covariate fields, and otherwise \code{FALSE}.
 ##' @param release_events Optional data frame or matrix of release events. If
 ##'   \code{NULL}, release events are simulated internally using
 ##'   [sim_release_events()].
@@ -175,6 +179,7 @@ sim_data <- function(x = NULL,
                      knots_dif = NULL,
                      n_knots_tax = NULL,
                      n_knots_dif = NULL,
+                     seasonal_cov = NULL,
                      ## release events
                      release_events = NULL,
                      n_release_events = 10,
@@ -222,6 +227,10 @@ sim_data <- function(x = NULL,
   conf_in <- inp$conf_in
   knots_tax_in <- inp$knots_tax_in
   knots_dif_in <- inp$knots_dif_in
+  seasonal_cov_in <- seasonal_cov
+  if (is.null(seasonal_cov)) {
+    seasonal_cov <- if (length(dat$seasonal_cov) > 0L) dat$seasonal_cov else FALSE
+  }
 
   ## Advection fields of a supplied model are kept unless replaced. A new field
   ## invalidates the data object (rebuilt below from the effective pieces, with
@@ -298,6 +307,7 @@ sim_data <- function(x = NULL,
     knots_tax <- knots_tax_in
     knots_dif <- knots_dif_in
     par <- par_in
+    if (is.null(seasonal_cov_in)) seasonal_cov <- FALSE
 
   }
 
@@ -306,6 +316,7 @@ sim_data <- function(x = NULL,
     dat <- setup_data(cov = cov,
                       grid = grid,
                       adv = adv,
+                      seasonal_cov = seasonal_cov,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
                       n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
@@ -465,6 +476,7 @@ sim_data <- function(x = NULL,
                     grid = grid,
                     tags = tags,
                     adv = dat$adv,
+                    seasonal_cov = seasonal_cov,
                     knots_tax = dat$knots_tax,
                     knots_dif = dat$knots_dif,
                     trange = trange)
@@ -839,6 +851,10 @@ sim_cov <- function(grid = NULL,
 ##'   knot matrix is supplied. If \code{NULL}, the knots of a supplied data
 ##'   object or model are kept, and otherwise the defaults of [setup_data()] (3
 ##'   and 1) are used.
+##' @param seasonal_cov Optional logical, one value or one per covariate: whether
+##'   the covariate fields repeat every seasonal period (see [setup_data()]).
+##'   Only used when no data object is supplied; otherwise \code{FALSE} if
+##'   \code{NULL}.
 ##' @param funcs Optional named list of simulation functions. If \code{NULL},
 ##'   defaults are created with [default_sim_funcs()].
 ##' @param n_reject Maximum number of attempts to redraw the diffusion part of
@@ -926,6 +942,7 @@ sim_tags <- function(tag_type,
                      knots_dif = NULL,
                      n_knots_tax = NULL,
                      n_knots_dif = NULL,
+                     seasonal_cov = NULL,
                      funcs = NULL,
                      n_reject = 20,
                      sim_engine = "kf",
@@ -973,6 +990,7 @@ sim_tags <- function(tag_type,
   knots_dif <- inp$knots_dif
   par_in <- inp$par_in
   conf_in <- inp$conf_in
+  if (is.null(seasonal_cov)) seasonal_cov <- FALSE
 
   cov <- .make_cov_list(cov)
 
@@ -1050,6 +1068,7 @@ sim_tags <- function(tag_type,
     dat <- setup_data(cov = cov,
                       grid = grid,
                       adv = adv,
+                      seasonal_cov = seasonal_cov,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
                       n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
@@ -1627,13 +1646,13 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
                           dat$yrange_cov, dat$time_cov,
                           pref_funcs$dif, pref_funcs$ddif,
                           dat$time_spline, period(dat),
-                          conf$seasonal_cov,
+                          dat$seasonal_cov,
                           conf$seasonal_spline)
     habi_tax <- .make_habi(liv, dat$xrange_cov,
                           dat$yrange_cov, dat$time_cov,
                           pref_funcs$tax, pref_funcs$dtax,
                           dat$time_spline, period(dat),
-                          conf$seasonal_cov,
+                          dat$seasonal_cov,
                           conf$seasonal_spline)
 
     dif_fun <- function(xy, t){
@@ -1986,7 +2005,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' @keywords internal
 .conf_fits_ncov <- function(conf, ncov) {
   if (is.null(conf)) return(TRUE)
-  for (nm in c("n_seasons", "seasonal_spline", "seasonal_cov")) {
+  for (nm in c("n_seasons", "seasonal_spline")) {
     v <- conf[[nm]]
     if (is.null(v) || length(v) <= 1L) next
     if (length(v) != ncov) return(FALSE)

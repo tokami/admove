@@ -467,7 +467,7 @@ default_par <- function(dat, conf = NULL, cov_taxis = NULL, verbose = TRUE) {
 
     ix <- .nearest_index(tags$x, xc)
     iy <- .nearest_index(tags$y, yc)
-    it <- as.integer(t2index(tags$t, dat$time_cov[[i]]))
+    it <- .cov_slice(tags$t, dat, i)
 
     vals <- rep(NA_real_, nrow(tags))
     gmag <- rep(NA_real_, nrow(tags))

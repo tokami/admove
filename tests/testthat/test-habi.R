@@ -18,6 +18,7 @@ make_habi_fit <- function() {
     yrange_cov = matrix(range(ygr), 1, 2),
     time_cov = list(0),
     time_spline = list(0),
+    seasonal_cov = FALSE,
     knots_tax = matrix(c(0, 1, 2), 3, 1),
     knots_dif = matrix(c(0, 1, 2), 3, 1),
     period = 1,
@@ -26,7 +27,7 @@ make_habi_fit <- function() {
                 time = 0)
   )
 
-  conf <- list(seasonal_cov = FALSE, seasonal_spline = FALSE)
+  conf <- list(seasonal_spline = FALSE)
 
   par <- list(alpha = array(c(0, 0.5, 1), c(3, 1, 1)),
               beta = array(c(0, 0.2, 0.4), c(3, 1, 1)),

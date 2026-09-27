@@ -32,7 +32,6 @@ test_that("default_conf returns expected names", {
       "ctmc_groups",
       "drift_scheme",
       "n_seasons",
-      "seasonal_cov",
       "seasonal_spline",
       "seasonal_dif",
       "smooth_method",
@@ -147,7 +146,6 @@ test_that("default_conf creates non-seasonal defaults with correct length", {
 
   conf <- default_conf(dat, verbose = FALSE)
 
-  expect_equal(conf$seasonal_cov, rep(FALSE, 5))
   expect_equal(conf$seasonal_spline, rep(FALSE, 5))
 })
 
@@ -161,7 +159,6 @@ test_that("default_conf uses length 1 seasonal defaults when cov is NULL", {
 
   conf <- default_conf(dat, verbose = FALSE)
 
-  expect_equal(conf$seasonal_cov, FALSE)
   expect_equal(conf$seasonal_spline, FALSE)
 })
 
@@ -196,8 +193,20 @@ test_that("check_conf fills in missing settings", {
   expect_false(conf_checked$use_taxis)
   expect_true("use_dtags" %in% names(conf_checked))
   expect_true("engine" %in% names(conf_checked))
-  expect_true("seasonal_cov" %in% names(conf_checked))
+  expect_false("seasonal_cov" %in% names(conf_checked))
   expect_true("seasonal_spline" %in% names(conf_checked))
+})
+
+
+test_that("check_conf rejects conf$seasonal_cov, which now lives in the data", {
+
+  dat <- list(
+    tags = data.frame(tag_type = c("d")),
+    cov = array(1:3, dim = c(3))
+  )
+
+  expect_error(check_conf(list(seasonal_cov = TRUE), dat, verbose = FALSE),
+               "setup_data\\(\\.\\.\\., seasonal_cov = TRUE\\)")
 })
 
 

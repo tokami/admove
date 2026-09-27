@@ -16,6 +16,15 @@
 ##' @param cov Optional covariate object or list of covariates. Covariates are
 ##'   typically prepared with [prep_cov()]. If a single covariate is supplied,
 ##'   it is coerced internally to a list.
+##' @param seasonal_cov Logical, one value for all covariates or one per
+##'   covariate: whether the covariate field repeats every seasonal period, as
+##'   a climatology does (e.g. twelve monthly layers of long-term means with
+##'   `period = 12`). Tag and model times are then wrapped into the cycle
+##'   (`t %% period`) before a covariate slice is chosen, both here (default
+##'   knots, removal of tag positions on missing covariate values) and in the
+##'   likelihood. Requires a seasonal period in the time reference (see
+##'   [create_tref()]). Default `FALSE`: times beyond the last slice use the
+##'   last slice.
 ##' @param tags Optional tag data, typically as returned by one or more of
 ##'   [prep_ctags()], [prep_dtags()], or [prep_stags()]. Several tag objects can
 ##'   be supplied combined with `c(dtags, ctags)` or as a list,
@@ -161,6 +170,7 @@
 setup_data <- function(grid = NULL,
                        cov = NULL,
                        tags = NULL,
+                       seasonal_cov = FALSE,
                        trange = NULL,
                        knots_tax = NULL,
                        knots_dif = NULL,
@@ -183,6 +193,7 @@ setup_data <- function(grid = NULL,
   res <- list()
 
   if (!is.null(cov)) cov <- .make_cov_list(cov)
+  seasonal_cov <- .check_seasonal_cov(seasonal_cov, length(cov))
 
   ## Advection fields go through the same harmonisation as the covariates (sref
   ## and tref, NA filling, grid pruning, tag and time checks) as extra entries of
@@ -277,6 +288,13 @@ setup_data <- function(grid = NULL,
   } else if (!is.null(tags)) {
     master_tref <- tref(tags)
   } else master_tref <- NULL
+
+  period_cov <- if (!is.null(master_tref)) master_tref$period
+  if (any(seasonal_cov) && is.null(.get_period(list(period = period_cov)))) {
+    stop("seasonal_cov = TRUE needs a seasonal period in the time reference, ",
+         "e.g. create_tref(..., period = 12) for monthly time units with an ",
+         "annual cycle.", call. = FALSE)
+  }
 
   if (shift_tref) {
 
@@ -412,11 +430,14 @@ setup_data <- function(grid = NULL,
 
     ## times
     res$time_cov <- lapply(res$cov, function(x) as.numeric(dimnames(x)[[3]]))
+    ## advection fields are never recycled
+    res$seasonal_cov <- c(seasonal_cov, rep(FALSE, length(adv_keys)))
 
   } else {
     res$xrange_cov <- NULL
     res$yrange_cov <- NULL
     res$time_cov <- NULL
+    res$seasonal_cov <- logical(0)
   }
 
   ## Tags --------------------------------------------
@@ -436,7 +457,7 @@ setup_data <- function(grid = NULL,
   ## t2index() > 0 are used), and drop the offending entries.
   if (!is.null(res$cov) && !is.null(res$tags) && nrow(res$tags) > 0) {
     bad <- rep(FALSE, nrow(res$tags))
-    for (v in .cov_at_tags(res)) {
+    for (v in .cov_at_tags(res, period_cov)) {
       bad <- bad | (is.na(v) & attr(v, "slice") > 0)
     }
     if (any(bad)) {
@@ -468,11 +489,14 @@ setup_data <- function(grid = NULL,
   ## labelled by their start, so a tag in the last month sits up to one slice
   ## spacing beyond the last label -- so only a substantial overshoot is
   ## flagged, and a single-slice covariate (a climatology) is skipped since it
-  ## is legitimately used for every time.
+  ## is legitimately used for every time. Seasonal covariates are checked on the
+  ## wrapped times, as t2index() reads them.
   if (!is.null(res$time_cov) && !is.null(res$tags) && nrow(res$tags) > 0) {
-    tag_min <- min(res$tags$t, na.rm = TRUE)
-    tag_max <- max(res$tags$t, na.rm = TRUE)
     for (i in seq_along(res$time_cov)) {
+      tt <- res$tags$t
+      if (isTRUE(res$seasonal_cov[i])) tt <- tt %% period_cov
+      tag_min <- min(tt, na.rm = TRUE)
+      tag_max <- max(tt, na.rm = TRUE)
       tc <- res$time_cov[[i]]
       cov_min <- min(tc, na.rm = TRUE)
       cov_max <- max(tc, na.rm = TRUE)
@@ -498,21 +522,22 @@ setup_data <- function(grid = NULL,
       tol <- stats::median(diff(sort(tc)), na.rm = TRUE)
       if (!is.finite(tol) || tol <= 0) tol <- 0
 
-      above <- which(res$tags$t > cov_max + tol)
+      above <- which(tt > cov_max + tol)
       if (length(above) > 0) {
         warning(
           length(above), " of ", nrow(res$tags), " tag observation",
           if (length(above) == 1) "" else "s",
           " lie beyond the last time slice of covariate cov[[", i,
-          "]]: those tag times span [", signif(min(res$tags$t[above]), 8),
-          ", ", signif(max(res$tags$t[above]), 8), "], covariate spans [",
+          "]]: those tag times span [", signif(min(tt[above]), 8),
+          ", ", signif(max(tt[above]), 8), "], covariate spans [",
           signif(cov_min, 5), ", ", signif(cov_max, 5), "]. ",
           "t2index() clamps them, so they are all evaluated against the LAST ",
           "covariate slice regardless of their date, silently and without ",
           "error. Fix: ensure the tags and the covariate use the same time ",
           "system, e.g. give the tags a real time reference in prep_tags() ",
           "via 'date_origin' / 'date_format' / 'date_decimal', or extend the ",
-          "covariate in time.",
+          "covariate in time. If the covariate is a climatology that repeats ",
+          "every period, use setup_data(..., seasonal_cov = TRUE).",
           call. = FALSE
         )
       }
@@ -541,9 +566,11 @@ setup_data <- function(grid = NULL,
       res$xrange_cov <- res$xrange_cov[keep, , drop = FALSE]
       res$yrange_cov <- res$yrange_cov[keep, , drop = FALSE]
       res$time_cov <- res$time_cov[keep]
+      res$seasonal_cov <- res$seasonal_cov[keep]
     } else {
       res$cov <- NULL
       res$xrange_cov <- res$yrange_cov <- res$time_cov <- NULL
+      res$seasonal_cov <- logical(0)
     }
     ## the knot defaults below read the covariates from 'cov'
     keep_local <- setdiff(seq_along(cov), match(adv_keys, names(cov)))
@@ -572,7 +599,7 @@ setup_data <- function(grid = NULL,
     knot_w <- NULL
     from <- "cov"
     if (knots_from == "tags" && !is.null(res$tags) && nrow(res$tags) > 0) {
-      at_tags <- .cov_at_tags(res)
+      at_tags <- .cov_at_tags(res, period_cov)
       ok <- vapply(at_tags, function(v) any(is.finite(v)), logical(1))
       if (verbose && any(!ok)) {
         message("No tag observation lies within ",
@@ -1040,13 +1067,24 @@ print.admove_data <- function(x, ...) {
 }
 
 
+## Slice of covariate i that times t read, wrapped into the cycle for a
+## seasonal covariate (dat$seasonal_cov) exactly as .make_habi() does. Any code
+## outside the likelihood that picks a covariate slice must go through this, or
+## it disagrees with the fit for climatologies.
+.cov_slice <- function(t, dat, i, period = .get_period(dat)) {
+  sea <- isTRUE(dat$seasonal_cov[i])
+  as.integer(t2index(t, dat$time_cov[[i]], period = period, seasonal = sea))
+}
+
+
 ## Covariate values at the tag observations, interpolated exactly as the
-## likelihood does (RTMB::interpol2Dfun, R = 1, on the slice t2index() picks).
+## likelihood does (RTMB::interpol2Dfun, R = 1, on the slice .cov_slice() picks).
 ## One vector per covariate, one value per row of `dat$tags`, with the slice
 ## index as attribute "slice": NA where the covariate is NA (the NA pruning in
 ## setup_data() relies on this) and where slice == 0 (tag time before the first
-## slice, never evaluated in the likelihood).
-.cov_at_tags <- function(dat) {
+## slice, never evaluated in the likelihood). `period` is passed by
+## setup_data(), whose result has no tref attached yet.
+.cov_at_tags <- function(dat, period = .get_period(dat)) {
 
   tags <- dat$tags
   xr <- dat$xrange_cov
@@ -1054,7 +1092,7 @@ print.admove_data <- function(x, ...) {
 
   res <- lapply(seq_along(dat$cov), function(i) {
     covi <- dat$cov[[i]]
-    it <- as.integer(t2index(tags$t, dat$time_cov[[i]]))
+    it <- .cov_slice(tags$t, dat, i, period)
     v <- rep(NA_real_, nrow(tags))
     for (j in sort(unique(it[it > 0]))) {
       rows <- which(it == j)
@@ -1070,6 +1108,29 @@ print.admove_data <- function(x, ...) {
   names(res) <- names(dat$cov)
 
   res
+}
+
+
+## setup_data(seasonal_cov): one logical per covariate.
+.check_seasonal_cov <- function(x, ncov) {
+
+  if (!is.logical(x) || anyNA(x) || length(x) == 0L) {
+    stop("'seasonal_cov' must be TRUE or FALSE, or one logical value per ",
+         "covariate.", call. = FALSE)
+  }
+  if (ncov == 0L) {
+    if (any(x)) stop("seasonal_cov = TRUE but no covariates are given.",
+                     call. = FALSE)
+    return(logical(0))
+  }
+  if (length(x) == 1L) return(rep(x, ncov))
+  if (length(x) != ncov) {
+    stop("'seasonal_cov' has length ", length(x), " but there ",
+         if (ncov == 1L) "is 1 covariate" else paste0("are ", ncov, " covariates"),
+         ". Supply a single value (recycled to all covariates) or one logical ",
+         "value per covariate.", call. = FALSE)
+  }
+  x
 }
 
 

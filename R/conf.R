@@ -65,8 +65,9 @@
 ##' `period(dat)` when the model is set up, so they never have to be written into
 ##' `dat` by hand. `seasonal_spline` is filled in from `n_seasons` and is
 ##' retained for models that set breakpoints manually via `dat$time_spline`.
-##' `seasonal_cov` is a separate setting controlling whether the covariate
-##' *fields* themselves repeat over the cycle, and stays `FALSE` by default.
+##' Whether the covariate *fields* themselves repeat over the cycle (a
+##' climatology) is a property of the data, set with
+##' `setup_data(seasonal_cov = TRUE)`.
 ##'
 ##' `seasonal_dif` is a single logical controlling whether
 ##' diffusion is estimated season by season, and is **`FALSE` by default** even
@@ -241,10 +242,10 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
 
   ## Number of seasons per covariate. 1 = no seasonality. The breakpoints of the
   ## seasonal spline basis are derived from this and from period(dat), so the
-  ## seasonal structure of the model lives entirely in conf.
+  ## seasonal structure of the model lives in conf (whether the covariate
+  ## fields repeat is data: dat$seasonal_cov).
   conf$n_seasons <- .expand_n_seasons(n_seasons, ncov)
 
-  conf$seasonal_cov <- rep(FALSE, ncov)
   conf$seasonal_spline <- conf$n_seasons > 1L
 
   if (any(conf$n_seasons > 1L)) {
@@ -325,6 +326,11 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   ## Check input
   if (!is.list(conf)) {
     stop("'conf' must be a list or NULL.", call. = FALSE)
+  }
+  if ("seasonal_cov" %in% names(conf)) {
+    stop("'conf$seasonal_cov' is no longer used: set it in the data with ",
+         "setup_data(..., seasonal_cov = TRUE), which also needs it for the ",
+         "default knots.", call. = FALSE)
   }
 
   ## Fill in missing settings
@@ -457,10 +463,10 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
 ##' the origin. The cycle length must be set on the data beforehand, e.g. through
 ##' \code{create_tref(period = 12)} or \code{period(dat) <- 12}.
 ##'
-##' Seasonality of the covariate *fields* is a separate question, controlled by
-##' \code{conf$seasonal_cov}: set that when a covariate is a climatology that
-##' should repeat every cycle, rather than a time series covering the whole
-##' study period.
+##' Seasonality of the covariate *fields* is a separate question, set in the
+##' data with \code{setup_data(seasonal_cov = TRUE)} when a covariate is a
+##' climatology that should repeat every cycle, rather than a time series
+##' covering the whole study period.
 ##'
 ##' Diffusion stays constant across seasons unless \code{conf$seasonal_dif} is
 ##' set to \code{TRUE}; see [default_map()].
@@ -657,7 +663,7 @@ set_seasons <- function(conf, dat, n, cov = NULL, verbose = TRUE) {
 
 .check_seasonal_lengths <- function(conf, dat) {
   ncov <- if (!is.null(dat$cov)) length(dat$cov) else 1L
-  for (nm in c("seasonal_spline", "seasonal_cov")) {
+  for (nm in "seasonal_spline") {
     v <- conf[[nm]]
     if (is.null(v)) next
     if (length(v) == 1L) {

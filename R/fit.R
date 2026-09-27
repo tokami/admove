@@ -797,7 +797,7 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 
   ncov <- length(dat$cov)
   per <- dat$period
-  sea_cov <- if (!is.null(conf$seasonal_cov)) conf$seasonal_cov else rep(FALSE, ncov)
+  sea_cov <- if (length(dat$seasonal_cov) == ncov) dat$seasonal_cov else rep(FALSE, ncov)
   sea_spl <- if (!is.null(conf$seasonal_spline)) conf$seasonal_spline else rep(FALSE, ncov)
 
   msg <- character(0)
@@ -1077,7 +1077,7 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 
   ## Seasonality
   ss <- x$conf$seasonal_spline
-  sc <- x$conf$seasonal_cov
+  sc <- x$dat$seasonal_cov
   if (isTRUE(any(ss, na.rm = TRUE)) || isTRUE(any(sc, na.rm = TRUE))) {
 
     per  <- tryCatch(period(x), error = function(e) NA_real_)
