@@ -585,7 +585,8 @@ print.admove_release_events <- function(x, ...) {
 
 ## One tag, propagated on its own lattice. The reference implementation: the
 ## release-event pass must reproduce it exactly for the tags it takes over.
-.ctmc_tag_pass <- function(ctx, i, loglik_tags, gen, time_mode, breaks) {
+.ctmc_tag_pass <- function(ctx, i, loglik_tags, gen, time_mode, breaks,
+                           record = NULL) {
 
   "c" <- RTMB::ADoverload("c")
   "[<-" <- RTMB::ADoverload("[<-")
@@ -628,6 +629,14 @@ print.admove_release_events <- function(x, ...) {
 
   if (nts < 2) stop("Something went wrong (nts < 2).")
 
+  ## tag_predictions() reads the distributions off this same pass, so that what
+  ## it shows is what the likelihood scores. Plain numeric only: nll() never
+  ## passes 'record', and nothing recorded may feed back into the likelihood.
+  if (!is.null(record)) {
+    record$ts <- ts
+    record$dist <- vector("list", nrow(tag))
+  }
+
   ## Loop over time
   for (t in 2:nts) {
 
@@ -639,6 +648,10 @@ print.admove_release_events <- function(x, ...) {
     if (t %in% observed) {
 
       ind_obs <- which(observed == t) + 1
+
+      ## the distribution each of these rows is scored against: before its
+      ## update, without observation error
+      if (!is.null(record)) record$dist[ind_obs] <- list(pred_dist)
 
       ## multiple observation in same time
       for (j in seq_along(ind_obs)) {
@@ -814,6 +827,56 @@ print.admove_release_events <- function(x, ...) {
 }
 
 
+## The CTMC context of nll(), rebuilt from a fit's estimates in plain numbers,
+## with its generator cache: what tag_predictions() and release_predictions()
+## step with. `tmb_all` is .nll_data() of the fit, possibly edited (e.g.
+## do_update switched off). Must build the same pieces as the ctx in nll().
+.ctmc_ctx_from_fit <- function(fit, tmb_all) {
+
+  grid <- fit$dat$grid
+  if (is.null(grid)) {
+    stop("The fit has no grid (fit$dat$grid), which the CTMC needs.",
+         call. = FALSE)
+  }
+  par_est <- get_par_est(fit$par, fit$map, fit$opt)
+  nextTo <- get_neighbours(grid)
+  ctx <- list(dat = tmb_all,
+              nc = nrow(grid$xygrid),
+              xygrid = grid$xygrid,
+              cs = grid$cellsize,
+              nextTo = nextTo,
+              next_dist = c(grid$cellsize[1], grid$cellsize[1],
+                            grid$cellsize[2], grid$cellsize[2]),
+              kappa = exp(par_est$logKappa),
+              sdO = exp(par_est$logSdO),
+              habi = .get_habi(fit))
+  ctx$counters <- new.env(parent = emptyenv())
+  ctx$counters$nstep <- 0L
+
+  template <- if (identical(tmb_all$ctmc_method, "expav")) {
+    make_mstar_template(nextTo)
+  } else {
+    NULL
+  }
+
+  list(ctx = ctx, gen = .ctmc_gen_cache(ctx, template))
+}
+
+
+## Time-lattice settings of the CTMC passes, shared by .ctmc_loglik() and
+## tag_predictions(): a distribution shown there must be the one the likelihood
+## scores, so both have to step on the same lattice.
+.ctmc_lattice <- function(dat) {
+  time_mode <- ifelse(is.null(dat$dt) || is.na(dat$dt),
+                      "fill_gaps", "fixed_dt")
+  ## "off" reproduces the per-tag lattice: .build_time_breaks() falls back to
+  ## build_time() when there are no breaks to insert
+  mode <- .ctmc_mode(dat)
+  breaks <- if (identical(mode, "off")) numeric(0) else .ctmc_breaks(dat)
+  list(time_mode = time_mode, mode = mode, breaks = breaks)
+}
+
+
 ## Entry point from nll(). Returns loglik_tags with the CTMC contributions added.
 .ctmc_loglik <- function(ctx, loglik_tags) {
 
@@ -822,8 +885,10 @@ print.admove_release_events <- function(x, ...) {
 
   dat <- ctx$dat
 
-  time_mode <- ifelse(is.null(dat$dt) || is.na(dat$dt),
-                      "fill_gaps", "fixed_dt")
+  lat <- .ctmc_lattice(dat)
+  time_mode <- lat$time_mode
+  breaks <- lat$breaks
+  mode <- lat$mode
 
   template <- if (identical(dat$ctmc_method, "expav")) {
     make_mstar_template(ctx$nextTo, ad = TRUE)
@@ -838,11 +903,6 @@ print.admove_release_events <- function(x, ...) {
   ctx$counters$nstep <- 0L
 
   gen <- .ctmc_gen_cache(ctx, template)
-
-  ## "off" reproduces the per-tag lattice: .build_time_breaks() falls back to
-  ## build_time() when there are no breaks to insert
-  mode <- .ctmc_mode(dat)
-  breaks <- if (identical(mode, "off")) numeric(0) else .ctmc_breaks(dat)
 
   part <- if (identical(mode, "auto")) {
     .ctmc_partition(ctx)

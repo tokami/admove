@@ -16,6 +16,14 @@ plot_tag_pred(
   plot_grid = TRUE,
   col_obs = "grey20",
   col_pred = "dodgerblue3",
+  dist = NULL,
+  n_time_steps = 6L,
+  col = NULL,
+  min_prob = 1e-04,
+  legend = TRUE,
+  land_col = grey(0.85),
+  land_border = grey(0.3),
+  asp = 1,
   xlab = NULL,
   ylab = NULL,
   ...
@@ -52,6 +60,27 @@ prediction (a dense fan for a long track), \code{FALSE} draws no lines.}
 
 \item{col_obs, col_pred}{Colours of the observed and predicted positions.}
 
+\item{dist}{CTMC fits only: \code{TRUE} draws the probability maps, \code{FALSE} the
+map from the predicted means. Default: \code{NULL}, maps for a single tag.}
+
+\item{n_time_steps}{CTMC maps: maximum number of observations shown per
+tag. Default \code{6}.}
+
+\item{col}{CTMC maps: colour palette. Default: \code{NULL}, the light purple
+palette for estimated quantities shared with \code{\link[=plot_taxis]{plot_taxis()}} and the other
+plots of estimates.}
+
+\item{min_prob}{CTMC maps: smallest cell probability drawn; smaller ones are
+left blank. Default \code{1e-4}.}
+
+\item{legend}{CTMC maps: if \code{TRUE} (default), one colour bar for all panels.}
+
+\item{land_col, land_border}{CTMC maps: fill of the land (drawn underneath
+the probabilities) and its coastline (drawn on top).}
+
+\item{asp}{CTMC maps: target aspect ratio passed to \code{\link[grDevices:n2mfrow]{grDevices::n2mfrow()}}
+for the panels of a single tag. Default \code{1}.}
+
 \item{xlab, ylab}{Axis labels of the map panel. Default to the spatial units.}
 
 \item{...}{Additional arguments passed to \code{\link[=plot]{plot()}} for the map panel.}
@@ -69,6 +98,14 @@ time with the prediction interval. With several tags it is a single map with,
 per tag, a line from the starting position to the observed position and one
 to the predicted position, which is the natural view for mark-recapture tags.
 
+With the CTMC engine the prediction is a probability for every grid cell,
+drawn as maps (\code{dist = TRUE}, the default for a single tag): one panel per
+observation, at most \code{n_time_steps} evenly spread over the track, the
+probability on a log10 colour scale shared by all panels, the observation
+marked. A single tag is spread over a grid of panels, several tags get one
+row each. \code{dist = FALSE} draws the maps above from the mean and spread of
+the distributions instead.
+
 Every prediction belongs to one observation, at the same time: the predicted
 track therefore ends at the time of the last observation. A few pairs along
 the track are marked, dated and joined by a line, and their times are marked
@@ -77,5 +114,5 @@ Only the release (conditioned on, not predicted) and observations excluded
 from the fit have no prediction.
 }
 \seealso{
-\code{\link[=tag_predictions]{tag_predictions()}}, \code{\link[=plot_tag_resid]{plot_tag_resid()}}, \code{\link[=plot_tag_dist]{plot_tag_dist()}}
+\code{\link[=tag_predictions]{tag_predictions()}}, \code{\link[=plot_tag_resid]{plot_tag_resid()}}, \code{\link[=plot_release_pred]{plot_release_pred()}}
 }

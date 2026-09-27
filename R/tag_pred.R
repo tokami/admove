@@ -8,10 +8,12 @@
 ##' standardised residuals. This is the table behind [plot_tag_pred()],
 ##' [plot_tag_resid()] and [summarise_tag_pred()].
 ##'
-##' The predictions are the ones the likelihood itself evaluates, reported by
-##' `nll()` rather than recomputed, so they include the estimated observation
-##' error, the per-tag-type update rules (`conf$do_update`) and the boundary
-##' treatment (`conf$kf_boundary`).
+##' The predictions are the ones the likelihood itself evaluates, so they
+##' include the estimated observation error, the per-tag-type update rules
+##' (`conf$do_update`) and the boundary treatment (`conf$kf_boundary`). With
+##' the Kalman filter they are reported by `nll()`; with the CTMC engine they
+##' come from the likelihood's own forward pass, which also gives the full
+##' probability distribution over the grid cells, drawn by [plot_tag_pred()].
 ##'
 ##' @param fit A fitted object of class `admove`, as returned by [admove()].
 ##' @param type Which prediction to return:
@@ -25,23 +27,33 @@
 ##'       forecast over the whole time at liberty. Needs a second model build
 ##'       and is therefore slower.}
 ##'   }
-##' @param i Optional tag indices (as in [add_tag_dist()]) or tag ids to restrict
-##'   the table to. For `type = "forecast"` a small subset is much faster,
-##'   because only those tags are built.
+##' @param i Optional tag indices (into the tags split by id) or tag ids to
+##'   restrict the table to. A small subset is much faster for
+##'   `type = "forecast"` with the Kalman filter, where only those tags are
+##'   built, and always with the CTMC engine, where every tag is a forward pass.
 ##' @param verbose Logical; if `TRUE` (default), messages about progress are
 ##'   printed.
 ##'
 ##' @details
-##' Predicted positions are only available for the Kalman filter engine
-##' (`conf$engine = 1`), which tracks a mean and a variance per tag. The CTMC
-##' engine carries a distribution over grid cells instead; use [add_tag_dist()]
-##' and [plot_tag_dist()] for it.
+##' With the Kalman filter (`conf$engine = "kf"`) the prediction is Gaussian
+##' with independent x and y, so `z_x` and `z_y` should behave like standard
+##' normal draws and `d2 = z_x^2 + z_y^2` like a chi-squared variable with 2
+##' degrees of freedom. `inside_50` and `inside_95` compare `d2` with its
+##' quantiles, i.e. they say whether the observation falls inside the 50% and
+##' 95% prediction ellipse.
 ##'
-##' The prediction is Gaussian with independent x and y, so `z_x` and `z_y`
-##' should behave like standard normal draws and `d2 = z_x^2 + z_y^2` like a
-##' chi-squared variable with 2 degrees of freedom. `inside_50` and `inside_95`
-##' compare `d2` with its quantiles, i.e. they say whether the observation falls
-##' inside the 50% and 95% prediction ellipse.
+##' With the CTMC engine (`conf$engine = "ctmc"`) the prediction is a
+##' probability for every grid cell: the distribution each observation is
+##' scored against in the likelihood, before its update. `pred_x`, `pred_y`
+##' are its mean over the cell centres, and `sd_x`, `sd_y` its spread,
+##' including the position within a cell (a cell of width \eqn{h} adds
+##' \eqn{h^2/12}, as the CTMC does not resolve positions within a cell) and
+##' the observation error where the likelihood applies one. The residual
+##' columns treat this as Gaussian, which is an approximation: the distribution
+##' can be skewed or multimodal, e.g. along a coast. `logdens` is the
+##' likelihood term of the observation divided by the cell area, a density
+##' comparable with the Kalman filter's. The distributions themselves are kept
+##' in `attr(, "ctmc")` for [plot_tag_pred()]; subsetting the rows drops them.
 ##'
 ##' The first observation of each tag is its release: it is conditioned on, not
 ##' predicted, and therefore not in the table.
@@ -87,15 +99,12 @@ tag_predictions <- function(fit,
   .check_class(fit, "admove")
   type <- match.arg(type)
 
-  if (!identical(.get_engine_integer(fit$conf$engine), 1L)) {
-    stop("Predicted tag positions are only available for the Kalman filter ",
-         "engine (conf$engine = 1). The CTMC engine carries a distribution ",
-         "over grid cells instead: see add_tag_dist() and plot_tag_dist().",
-         call. = FALSE)
-  }
-
   tags <- .split_tags(fit$dat$tags)
   ids <- .resolve_tag_ids(i, names(tags))
+
+  if (identical(.get_engine_integer(.get_engine_name(fit$conf$engine)), 2L)) {
+    return(.ctmc_tag_pred(fit, ids, type))
+  }
 
   if (identical(type, "osa")) {
     rep <- .pred_report(fit)
@@ -367,6 +376,12 @@ summarise_tag_pred <- function(..., by = "tag_type", type = c("osa", "forecast")
   out$inside_95 <- out$d2 <= stats::qchisq(0.95, df = 2)
   out$logdens <- stats::dnorm(out$res_x, 0, out$sd_x, log = TRUE) +
     stats::dnorm(out$res_y, 0, out$sd_y, log = TRUE)
+  if (!is.null(rep$pred_logdens) && nrow(out) > 0L) {
+    out$logdens <- unlist(lapply(seq_along(tags), function(k) {
+      ind <- offset[k] + seq_len(nrow(tags[[k]]))
+      rep$pred_logdens[ind][rep$pred_set[ind] == 1]
+    }))
+  }
   out$type <- type
 
   date <- tryCatch(time_2_date(out$t, tref = tr), error = function(e) NULL)
@@ -376,4 +391,97 @@ summarise_tag_pred <- function(..., by = "tag_type", type = c("osa", "forecast")
           "x", "y", "x_from", "y_from", "pred_x", "pred_y", "sd_x", "sd_y",
           "res_x", "res_y", "dist", "z_x", "z_y", "d2",
           "inside_50", "inside_95", "logdens", "type")]
+}
+
+
+## CTMC counterpart of the reported KF predictions: the cell distribution each
+## observation is scored against, recorded off the likelihood's own pass
+## (.ctmc_tag_pass(record = )), summarised into the columns of the KF table.
+## "forecast" switches the updates off, as .forecast_report() does for the KF.
+## The distributions go into attr(, "ctmc") for plot_tag_pred().
+## See dev/code_notes.org, "Tag location distributions".
+.ctmc_tag_pred <- function(fit, ids, type) {
+
+  dat <- fit$dat
+  grid <- dat$grid
+  tmb_all <- .nll_data(dat, fit$conf)
+  if (identical(type, "forecast")) tmb_all$do_update[] <- FALSE
+  tags <- tmb_all$tags
+
+  cc <- .ctmc_ctx_from_fit(fit, tmb_all)
+  ctx <- cc$ctx
+  lat <- .ctmc_lattice(tmb_all)
+
+  xc <- grid$xygrid[, 1]
+  yc <- grid$xygrid[, 2]
+  cs <- grid$cellsize
+  nobs <- vapply(tags, nrow, integer(1))
+  nall <- sum(nobs)
+  offset <- c(0L, cumsum(nobs))
+  rep <- list(pred_x = numeric(nall), pred_y = numeric(nall),
+              pred_var_x = numeric(nall), pred_var_y = numeric(nall),
+              pred_logdens = numeric(nall), pred_set = numeric(nall))
+  dist <- list()
+
+  for (idx in match(ids, names(tags))) {
+
+    tag <- tags[[idx]]
+    rec <- new.env(parent = emptyenv())
+    .ctmc_tag_pass(ctx, idx, rep(0, length(tags)), cc$gen,
+                   lat$time_mode, lat$breaks, record = rec)
+    if (is.null(rec$dist)) next
+
+    ev <- .tag_events(tag)
+    last_ev <- max(ev)
+    tt <- as.integer(tag$tag_type)
+    p0 <- rep(0, ctx$nc)
+    p0[tag$ic[1]] <- 1
+    prob <- matrix(p0, ctx$nc, nrow(tag))
+
+    for (j in seq_len(nrow(tag))[-1]) {
+      p <- rec$dist[[j]]
+      if (is.null(p)) next
+      prob[, j] <- p
+      if (is.na(tag$ic[j]) || tag$use[j] == 0) next
+
+      mx <- sum(p * xc)
+      my <- sum(p * yc)
+      ## spread over the cells, the position within a cell (uniform: the CTMC
+      ## does not resolve it), and the observation error where the likelihood
+      ## applies one to this row
+      ## same condition as in .ctmc_obs_dist()
+      ovt <- tmb_all$obs_var_type[tt[j]]
+      obs_err <- (ovt == 1 && ev[j] != last_ev) || ovt == 2 || ovt == 3
+      this_dist <- .ctmc_obs_dist(ctx, tag, j, tt[j], ev, last_ev)
+      so <- if (!obs_err) c(0, 0) else if (ovt == 3) {
+        c(tag$sdx[j], tag$sdy[j])
+      } else ctx$sdO[, tt[j]]
+
+      k <- offset[idx] + j
+      rep$pred_x[k] <- mx
+      rep$pred_y[k] <- my
+      rep$pred_var_x[k] <- sum(p * (xc - mx)^2) + cs[1]^2 / 12 + so[1]^2
+      rep$pred_var_y[k] <- sum(p * (yc - my)^2) + cs[2]^2 / 12 + so[2]^2
+      ## the likelihood term of the row, as a density per unit area so that it
+      ## compares with the KF's Gaussian density
+      rep$pred_logdens[k] <- log(sum(p * this_dist)) - log(cs[1] * cs[2])
+      rep$pred_set[k] <- 1
+    }
+
+    dist[[names(tags)[idx]]] <- list(prob = prob, tag = tag)
+  }
+
+  out <- .tag_pred_table(tags, rep, tref(fit), type)
+  out <- out[out$id %in% ids, , drop = FALSE]
+  rownames(out) <- NULL
+
+  if (nrow(out) == 0L) {
+    warning("No predicted positions available for the selected tag(s).",
+            call. = FALSE)
+  }
+
+  attr(out, "ctmc") <- list(dist = dist, grid = grid,
+                            xg = x_centers(grid), yg = y_centers(grid),
+                            type = type)
+  out
 }

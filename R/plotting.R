@@ -2085,267 +2085,116 @@ plot_compare <- function(fit, ...,
 
 
 
-##' Plot predicted location distributions for a single tag
-##'
-##' @description
-##' Displays the model's predicted spatial location distribution alongside the
-##' observed track for a single archival tag. The predicted distributions must
-##' be precomputed by [add_tag_dist()] before calling this function; an
-##' informative error is raised otherwise.
-##'
-##' The plot is arranged as a grid: one row per tag, one column per time step.
-##' Time steps are evenly spaced across each tag's observation sequence. The
-##' release observation (first time step) is shown without a density background
-##' because the location is known exactly at release.
-##'
-##' @param x A fitted object of class `admove` with `$tag_dist` added by
-##'   [add_tag_dist()].
-##' @param select Tags to display, as indices into the tag list or as tag ids.
-##'   `NULL` (default) shows all computed tags (subject to `n_tags`).
-##' @param i Alias for `select`, for consistency with [add_tag_dist()] and
-##'   [tag_predictions()]. Only one of the two may be given.
-##' @param n_tags Maximum number of tags to display (rows). `NULL` shows all
-##'   selected tags.
-##' @param n_time_steps Number of time steps (columns) per tag. Default is `6`.
-##' @param plot_land Logical; if `TRUE`, land masses are added. Default is
-##'   `FALSE`.
-##' @param plot_contour Logical; if `TRUE`, contour lines are added on top of
-##'   the predicted density image. Default is `FALSE`.
-##' @param xlab Label for the x-axis. If `NULL` (default), `"x"` with the
-##'   spatial units in brackets, e.g. `"x [km]"` (`"lon [°]"` for degrees).
-##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
-##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
-##' @param asp Target aspect ratio passed to [grDevices::n2mfrow()] when a
-##'   single tag is displayed, controlling the shape of the time-step panel
-##'   grid (larger values favour more columns). Ignored when several tags are
-##'   shown (each tag keeps its own row). Default is `1`.
-##'
-##' @return
-##' Invisibly returns `NULL`. Called for its side effect of producing plots.
-##'
-##' @seealso [add_tag_dist()]
-##'
-##' @importFrom mvtnorm dmvnorm
-##'
-##' @export
-plot_tag_dist <- function(x,
-                          select = NULL,
-                          i = NULL,
-                          n_tags = NULL,
-                          n_time_steps = 6L,
-                          plot_land = FALSE,
-                          plot_contour = FALSE,
-                          xlab = NULL,
-                          ylab = NULL,
-                          asp = 1) {
+## CTMC probability maps of tag predictions, for plot_tag_pred(): one panel per
+## shown observation (at most n_time_steps, evenly spread over the tag), with
+## a single tag spread over a grid of panels and several tags one row each.
+## `info` is attr(tag_predictions(), "ctmc"). The release panel shows the track
+## only: the location is known there.
+.plot_tag_pred_maps <- function(x, info, ids, n_time_steps, plot_land,
+                                land_col, land_border, col, min_prob, legend,
+                                xlab, ylab, asp) {
 
-  map_labs <- .map_labs(x)
-  if (is.null(xlab)) xlab <- map_labs[1]
-  if (is.null(ylab)) ylab <- map_labs[2]
+  if (is.null(col)) col <- .est_col()
+  if (!is.numeric(min_prob) || length(min_prob) != 1L || !(min_prob > 0) ||
+        min_prob >= 1)
+    stop("'min_prob' must be a single number in (0, 1).", call. = FALSE)
 
-  if (is.null(x$tag_dist))
-    stop("No precomputed tag distributions found in this object.\n",
-         "  Run add_tag_dist() first, e.g.:\n",
-         "    fit <- add_tag_dist(fit, i = 1)")
-
-  ## An empty (rather than absent) store means add_tag_dist() ran but skipped
-  ## every tag it was given -- it warns and moves on, for instance when a tag is
-  ## recaptured inside the first time step. Without this guard the emptiness
-  ## only surfaces further down as max(integer(0)) = -Inf, and the user sees an
-  ## opaque "invalid value specified for graphical parameter \"mfrow\"".
-  if (length(x$tag_dist) == 0L)
-    stop("The tag distributions in this object are empty: add_tag_dist() ran ",
-         "but skipped every tag it was given.\n",
-         "  It skips a tag when the prediction cannot be built, e.g. when the ",
-         "tag is recaptured within the first time step (it warns when it does).\n",
-         "  Try a finer time step, e.g.:\n",
-         "    fit <- add_tag_dist(fit, i = 1, dt = 0.05)")
-
-  if (!is.null(i)) {
-    if (!is.null(select)) {
-      stop("Give either 'select' or its alias 'i', not both.", call. = FALSE)
-    }
-    select <- i
+  ids <- ids[ids %in% names(info$dist)]
+  if (length(ids) == 0L) {
+    stop("No predicted distributions for the requested tag(s).", call. = FALSE)
   }
+  dl <- info$dist[ids]
+  grid <- info$grid
 
-  td_store <- x$tag_dist
-
-  ## handle old single-entry format (list with $engine at top level)
-  if (!is.null(td_store$engine)) {
-    td_store <- setNames(list(td_store), as.character(td_store$i))
-  }
-
-  available <- names(td_store)
-
-  ## resolve which tags to show: keys are indices into the tag list, but tag
-  ## ids are accepted as well (and are what the user usually has at hand)
-  if (is.null(select)) {
-    sel_keys <- available
-  } else {
-    sel_keys <- as.character(select)
-    ids <- vapply(td_store, function(td) as.character(td$tag$id[1]), character(1))
-    by_id <- match(sel_keys, ids)
-    sel_keys <- ifelse(sel_keys %in% available, sel_keys,
-                       ifelse(is.na(by_id), NA_character_, available[by_id]))
-    missing_keys <- as.character(select)[is.na(sel_keys)]
-    if (length(missing_keys) > 0L)
-      stop("Tag(s) ", .format_ids(missing_keys),
-           " have no precomputed distribution. Available: ",
-           .format_ids(available), " (or their ids: ", .format_ids(ids), ").")
-  }
-  if (!is.null(n_tags)) sel_keys <- head(sel_keys, n_tags)
-
-  if (length(sel_keys) == 0L)
-    stop("No tags left to plot after applying 'select' / 'n_tags'. ",
-         "Available: ", .format_ids(available), ".")
-
-  n_row <- length(sel_keys)
-  ## columns are capped at the most observations any selected tag has, so
-  ## n_time_steps acts as an upper bound rather than a fixed width (avoids
-  ## trailing blank panels when tags have fewer time steps than n_time_steps)
-  max_nobs <- max(vapply(sel_keys,
-                         function(k) nrow(td_store[[k]]$tag), integer(1L)))
+  n_row <- length(ids)
+  ## columns are capped at the most observations any shown tag has, so
+  ## n_time_steps is an upper bound rather than a fixed width
+  max_nobs <- max(vapply(dl, function(d) nrow(d$tag), integer(1)))
   n_col <- min(as.integer(n_time_steps), max_nobs)
+  panel_obs <- function(d) {
+    nobs <- nrow(d$tag)
+    if (n_col >= nobs) seq_len(nobs) else round(seq(1L, nobs, length.out = n_col))
+  }
 
-  ## draw a single time-step panel for tag `td` at observation index `j`,
-  ## honouring the requested axis styles (shared by both layouts below)
-  draw_panel <- function(td, ind.tag, j, xaxt, yaxt) {
-    tag <- td$tag
-    engine <- td$engine
+  ## one log10 colour scale for every panel shown: a distribution spreads out
+  ## over time, so its later panels would wash out on a linear scale
+  pmax_shown <- max(vapply(dl, function(d) {
+    j <- setdiff(panel_obs(d), 1L)
+    if (length(j) == 0L) 0 else max(d$prob[, j])
+  }, numeric(1)))
+  zlim <- if (pmax_shown > min_prob) log10(c(min_prob, pmax_shown)) else NULL
+  use_legend <- legend && !is.null(zlim)
 
-    xrange <- td$xrange + c(-0.1, 0.1) * diff(td$xrange)
-    yrange <- td$yrange + c(-0.1, 0.1) * diff(td$yrange)
+  on_grid <- function(p) {
+    ct <- grid$celltable
+    ok <- !is.na(ct)
+    ct[ok] <- p[ct[ok]]
+    ct
+  }
+  xrange <- grid$xrange + c(-0.05, 0.05) * diff(grid$xrange)
+  yrange <- grid$yrange + c(-0.05, 0.05) * diff(grid$yrange)
+  sr <- if (plot_land) sref(x$dat)
+  tr <- tref(x)
 
-    is_release <- (j == 1L)
+  draw_panel <- function(d, shown, j, lab) {
+    tag <- d$tag
+    plot(NA, NA, xlim = xrange, ylim = yrange, asp = 1,
+         xaxt = "n", yaxt = "n", xlab = "", ylab = "")
+    .prob_image(info$xg, info$yg, if (j > 1L) on_grid(d$prob[, j]),
+                zlim, col, sr, land_col, land_border)
+    points(tag$x[shown], tag$y[shown], type = "b",
+           col = adjustcolor("grey20", 0.3))
 
-    plot(NA, NA,
-         xlim = xrange, ylim = yrange,
-         xaxt = xaxt, yaxt = yaxt,
-         asp = 1, xlab = "", ylab = "")
-
-    if (plot_land) plot_land(sref = sref(x$dat))
-
-    ## no density at release: location is known exactly
-    if (!is_release) {
-      if (engine == 2L) {
-
-        image(td$xg, td$yg, td$dens_list[[j]],
-              xlim = xrange, ylim = yrange,
-              col = adjustcolor(terrain.colors(100), 0.4),
-              asp = 1, add = TRUE)
-
-      } else {
-
-        tagi <- td$traj[td$ind.track[j], ]
-        mu <- as.numeric(tagi[1:2])
-        Sigma <- matrix(c(tagi[3], 0, 0, tagi[4]), 2L, 2L)
-
-        xg <- seq(xrange[1L], xrange[2L], length.out = 150L)
-        yg <- seq(yrange[1L], yrange[2L], length.out = 150L)
-        Z <- matrix(mvtnorm::dmvnorm(as.matrix(expand.grid(xg, yg)), mu, Sigma),
-                    length(xg), length(yg))
-
-        image(xg, yg, Z,
-              xlim = xrange, ylim = yrange,
-              col = adjustcolor(terrain.colors(100), 0.4),
-              asp = 1, add = TRUE)
-
-        if (plot_contour && all(!is.na(Z)))
-          contour(xg, yg, Z, nlevels = 4, add = TRUE)
-      }
-    }
-
-    points(tag$x[ind.tag], tag$y[ind.tag],
-           type = "b", col = adjustcolor("grey20", 0.2))
-
-    ## When the final observation is ambiguous, every candidate position is a
-    ## possible recovery. Draw them all, sized by probability, so the panel does
-    ## not imply the tag was recovered at whichever candidate happens to be
-    ## stored in this row.
-    ev_tag <- .tag_events(tag)
-    sib <- which(ev_tag == ev_tag[j])
+    ## an ambiguous observation: every candidate position is a possible
+    ## recovery, drawn sized by probability, so the panel does not imply the
+    ## tag was recovered at the candidate that happens to be in this row
+    ev <- .tag_events(tag)
+    sib <- which(ev == ev[j])
     if (length(sib) > 1L) {
       pr <- .na_zero(tag[["prob"]][sib])
       if (max(pr) <= 0) pr <- rep(1, length(sib))
       pr <- pr / max(pr)
-      points(tag$x[sib], tag$y[sib],
-             col = adjustcolor("dodgerblue3", 0.5), pch = 1,
-             cex = 0.6 + 1.0 * pr)
+      points(tag$x[sib], tag$y[sib], col = adjustcolor("dodgerblue3", 0.5),
+             pch = 1, cex = 0.6 + 1.0 * pr)
     }
-
-    points(tag$x[j], tag$y[j],
-           col = "dodgerblue3", pch = 16, cex = 1.2)
-
-    legend("topright", legend = round(tag[j, 1L], 3),
-           title.font = 2, cex = 0.8, pch = NA, x.intersp = -0.5,
-           bg = "white")
-
+    points(tag$x[j], tag$y[j], col = "dodgerblue3", pch = 16, cex = 1.2)
+    title(main = lab, line = 0.3, font.main = 1, cex.main = 0.9)
     box(lwd = 1.5)
   }
 
-  opar <- par(no.readonly = TRUE)
-  on.exit(suppressWarnings(graphics::par(opar)))
+  mfrow <- if (n_row == 1L) n2mfrow(n_col, asp = asp) else c(n_row, n_col)
+  one <- n_row == 1L
+  par(mfrow = mfrow, mar = c(0.2, 0.2, 1.4, 0.2),
+      oma = c(3.5, 4, if (one) 2 else 0.5, if (use_legend) 5 else 1),
+      mgp = c(2, 0.5, 0), tcl = -0.3)
 
-  if (n_row == 1L) {
-    ## single tag: spread the time steps over a compact grid rather than a
-    ## single long row of panels
-    td <- td_store[[sel_keys[1L]]]
-    nobs <- nrow(td$tag)
-    ind.tag <- if (n_col >= nobs) {
-      seq_len(nobs)
-    } else {
-      round(seq(1L, nobs, length.out = n_col))
-    }
-    n_panel <- length(ind.tag)
-
-    mfrow <- n2mfrow(n_panel, asp = asp)
-    nr <- mfrow[1L]; nc <- mfrow[2L]
-    par(mfrow = mfrow, mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
-
-    for (p in seq_len(nr * nc)) {
-      if (p > n_panel) {
+  nc <- mfrow[2L]
+  n_grid <- prod(mfrow)
+  p <- 0L
+  for (r in seq_len(n_row)) {
+    d <- dl[[r]]
+    shown <- panel_obs(d)
+    lab_t <- .time_labels(d$tag$t, tr)
+    lab_t[1L] <- paste(lab_t[1L], "(release)")
+    for (q in seq_len(n_col)) {
+      p <- p + 1L
+      if (q > length(shown)) {
         plot.new()
         next
       }
-      ## mfrow fills by rows; x-axis on the bottom-most panel of each column,
-      ## y-axis on the first column
+      j <- shown[q]
+      draw_panel(d, shown, j, paste0(if (!one) paste0(ids[r], ": "), lab_t[j]))
       col_p <- ((p - 1L) %% nc) + 1L
-      xaxt <- if (p + nc > n_panel) "s" else "n"
-      yaxt <- if (col_p == 1L) "s" else "n"
-      draw_panel(td, ind.tag, ind.tag[p], xaxt, yaxt)
-    }
-  } else {
-    ## multiple tags: one row per tag, one column per time step
-    par(mfrow = c(n_row, n_col), mar = c(0.1, 0.1, 0.1, 0.1), oma = c(4, 4, 1, 1))
-
-    for (r in seq_len(n_row)) {
-
-      td <- td_store[[sel_keys[r]]]
-      nobs <- nrow(td$tag)
-      ind.tag <- if (n_col >= nobs) {
-        seq_len(nobs)
-      } else {
-        round(seq(1L, nobs, length.out = n_col))
-      }
-
-      for (c in seq_len(n_col)) {
-
-        xaxt <- if (r == n_row) "s" else "n"
-        yaxt <- if (c == 1L)   "s" else "n"
-
-        if (c > length(ind.tag)) {
-          ## pad with a blank panel to keep the grid regular
-          plot.new()
-          next
-        }
-
-        draw_panel(td, ind.tag, ind.tag[c], xaxt, yaxt)
-      }
+      if (p + nc > n_grid) axis(1)
+      if (col_p == 1L) axis(2)
     }
   }
+  for (q in seq_len(n_grid - p)) plot.new()
 
   mtext(xlab, 1, 2, outer = TRUE)
-  mtext(ylab, 2, 2, outer = TRUE)
+  mtext(ylab, 2, 2.5, outer = TRUE)
+  if (one) mtext(paste("Tag", ids[1L]), 3, 0.5, outer = TRUE, font = 2)
+  if (use_legend) .log_color_bar(col, zlim, "probability")
 
   invisible(NULL)
 }
@@ -2360,6 +2209,40 @@ add_lab <- function(lab){
   legend("topleft", legend = lab,
          bg = "white", x.intersp = -0.4,
          cex = 1.8, text.font = 2)
+}
+
+
+## Cell probabilities (or expected counts) on a log10 colour scale, into an
+## open panel: land filled underneath, the image, the coastline on top. Opaque
+## land over the image would hide the probability of cells that straddle the
+## coast. Values below zlim[1] (log10) are left blank. `z` is a matrix on the
+## grid (NULL draws land only); `sref` NULL draws no land.
+.prob_image <- function(xg, yg, z, zlim, col, sref = NULL,
+                        land_col = grey(0.85), land_border = grey(0.3)) {
+
+  if (!is.null(sref)) plot_land(sref = sref, col = land_col, border = NA)
+
+  if (!is.null(z) && !is.null(zlim)) {
+    lz <- log10(z)
+    lz[!is.finite(lz) | lz < zlim[1]] <- NA
+    image(xg, yg, pmin(lz, zlim[2]), zlim = zlim, col = col, add = TRUE)
+  }
+
+  if (!is.null(sref)) {
+    plot_land(sref = sref, col = NA, border = land_border, verbose = FALSE)
+  }
+
+  invisible(NULL)
+}
+
+
+## Ticks at whole powers of ten for a log10 colour bar, labelled with the
+## values; one call for the shared bar of several panels.
+.log_color_bar <- function(col, zlim, lab) {
+  at <- ceiling(zlim[1]):floor(zlim[2])
+  if (length(at) < 2L) at <- NULL
+  .color_bar_outer(col, zlim, lab = lab, at = at,
+                   fmt = function(a) formatC(10^a, format = "g"))
 }
 
 
@@ -3069,6 +2952,14 @@ plot_pref_grid <- function(x,
 ##' per tag, a line from the starting position to the observed position and one
 ##' to the predicted position, which is the natural view for mark-recapture tags.
 ##'
+##' With the CTMC engine the prediction is a probability for every grid cell,
+##' drawn as maps (`dist = TRUE`, the default for a single tag): one panel per
+##' observation, at most `n_time_steps` evenly spread over the track, the
+##' probability on a log10 colour scale shared by all panels, the observation
+##' marked. A single tag is spread over a grid of panels, several tags get one
+##' row each. `dist = FALSE` draws the maps above from the mean and spread of
+##' the distributions instead.
+##'
 ##' Every prediction belongs to one observation, at the same time: the predicted
 ##' track therefore ends at the time of the last observation. A few pairs along
 ##' the track are marked, dated and joined by a line, and their times are marked
@@ -3096,13 +2987,27 @@ plot_pref_grid <- function(x,
 ##' @param plot_land Logical; if `TRUE` (default), land masses are added.
 ##' @param plot_grid Logical; if `TRUE` (default), the model grid is outlined.
 ##' @param col_obs,col_pred Colours of the observed and predicted positions.
+##' @param dist CTMC fits only: `TRUE` draws the probability maps, `FALSE` the
+##'   map from the predicted means. Default: `NULL`, maps for a single tag.
+##' @param n_time_steps CTMC maps: maximum number of observations shown per
+##'   tag. Default `6`.
+##' @param col CTMC maps: colour palette. Default: `NULL`, the light purple
+##'   palette for estimated quantities shared with [plot_taxis()] and the other
+##'   plots of estimates.
+##' @param min_prob CTMC maps: smallest cell probability drawn; smaller ones are
+##'   left blank. Default `1e-4`.
+##' @param legend CTMC maps: if `TRUE` (default), one colour bar for all panels.
+##' @param land_col,land_border CTMC maps: fill of the land (drawn underneath
+##'   the probabilities) and its coastline (drawn on top).
+##' @param asp CTMC maps: target aspect ratio passed to [grDevices::n2mfrow()]
+##'   for the panels of a single tag. Default `1`.
 ##' @param xlab,ylab Axis labels of the map panel. Default to the spatial units.
 ##' @param ... Additional arguments passed to [plot()] for the map panel.
 ##'
 ##' @return
 ##' Invisibly returns the prediction table that was plotted.
 ##'
-##' @seealso [tag_predictions()], [plot_tag_resid()], [plot_tag_dist()]
+##' @seealso [tag_predictions()], [plot_tag_resid()], [plot_release_pred()]
 ##'
 ##' @export
 plot_tag_pred <- function(x,
@@ -3116,6 +3021,14 @@ plot_tag_pred <- function(x,
                           plot_grid = TRUE,
                           col_obs = "grey20",
                           col_pred = "dodgerblue3",
+                          dist = NULL,
+                          n_time_steps = 6L,
+                          col = NULL,
+                          min_prob = 1e-4,
+                          legend = TRUE,
+                          land_col = grey(0.85),
+                          land_border = grey(0.3),
+                          asp = 1,
                           xlab = NULL,
                           ylab = NULL,
                           ...) {
@@ -3127,13 +3040,21 @@ plot_tag_pred <- function(x,
   if (is.null(type)) type <- if (length(ids) == 1L) "forecast" else "osa"
   type <- match.arg(type, c("osa", "forecast"))
 
-  if (is.null(pred)) {
+  is_ctmc <- identical(.get_engine_integer(.get_engine_name(x$conf$engine)), 2L)
+  if (is.null(dist)) dist <- length(ids) == 1L
+  maps <- is_ctmc && isTRUE(dist)
+
+  ## the maps need the distributions, which subsetting a table drops
+  if (is.null(pred) || (maps && is.null(attr(pred, "ctmc")))) {
     pred <- tag_predictions(x, type = type, i = ids, verbose = FALSE)
   } else {
+    available <- unique(pred$id)
+    ctmc <- attr(pred, "ctmc")
     pred <- pred[pred$id %in% ids, , drop = FALSE]
+    attr(pred, "ctmc") <- ctmc
     if (nrow(pred) == 0L) {
       stop("None of the requested tag(s) are in 'pred'. Available: ",
-           .format_ids(unique(pred$id)), ".", call. = FALSE)
+           .format_ids(available), ".", call. = FALSE)
     }
   }
 
@@ -3149,7 +3070,11 @@ plot_tag_pred <- function(x,
   opar <- par(no.readonly = TRUE)
   on.exit(suppressWarnings(graphics::par(opar)))
 
-  if (length(ids) == 1L) {
+  if (maps) {
+    .plot_tag_pred_maps(x, attr(pred, "ctmc"), ids, n_time_steps, plot_land,
+                        land_col, land_border, col, min_prob, legend,
+                        xlab, ylab, asp)
+  } else if (length(ids) == 1L) {
     .plot_tag_pred_single(x, pred, level, n_ellipse, link, plot_land, plot_grid,
                           col_obs, col_pred, xlab, ylab, ...)
   } else {

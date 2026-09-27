@@ -104,17 +104,6 @@ test_that("tags can be selected by index and by id, and bad input is caught", {
 })
 
 
-test_that("tag_predictions refuses the CTMC engine", {
-
-  fit <- small_fit(report = TRUE)
-  fit$conf$engine <- 2L
-
-  expect_error(tag_predictions(fit), "Kalman filter")
-  expect_error(add_tag_dist(fit_kf <- within(fit, conf$engine <- 1L)),
-               "CTMC engine")
-})
-
-
 test_that("summarise_tag_pred computes the skill measures", {
 
   pred <- data.frame(tag_type = c("c", "c", "d", "d"),
@@ -181,7 +170,7 @@ test_that("the prediction plots draw without error", {
 })
 
 
-test_that("add_tag_dist and plot_tag_dist accept tag ids (CTMC)", {
+test_that("tag_predictions runs the likelihood's own CTMC pass", {
 
   grid <- create_grid(xrange = c(0, 1), yrange = c(0, 1), cellsize = 0.25,
                       verbose = FALSE)
@@ -189,28 +178,70 @@ test_that("add_tag_dist and plot_tag_dist accept tag ids (CTMC)", {
     sim_data(grid = grid, n_dtags = 2, n_ctags = 5, trange = c(0, 1),
              verbose = FALSE)
   )))
-
   conf <- sim$conf
   conf$engine <- "ctmc"
   fit <- suppressWarnings(suppressMessages(
     admove(sim$dat, conf, sim$par, sim$map, verbose = FALSE)
   ))
-
-  ## the name survives the fit, while nll() saw the integer code
-  expect_equal(fit$conf$engine, "ctmc")
-
+  ll_fit <- fit$obj$report(fit$opt$par)$loglik_tags
   ids <- names(admove:::.split_tags(fit$dat$tags))
-  fit <- suppressWarnings(suppressMessages(add_tag_dist(fit, i = ids[1])))
+  area <- prod(fit$dat$grid$cellsize)
 
-  expect_named(fit$tag_dist, "1")
-  expect_equal(as.character(fit$tag_dist[[1]]$tag$id[1]), ids[1])
+  ## "osa" is what the likelihood scores: the rows' likelihood terms (logdens
+  ## is per unit area) add up to every tag's term of the fit, grouped
+  ## mark-recapture tags too, up to the rounding of their shared pass
+  osa <- tag_predictions(fit, type = "osa")
+  ll_osa <- tapply(osa$logdens + log(area), factor(osa$id, levels = ids), sum)
+  expect_equal(unname(as.numeric(ll_osa)), ll_fit, tolerance = 1e-8)
+
+  ## the distributions: one column per tag row, each summing to 1, and the
+  ## predicted mean is their mean over the cell centres
+  info <- attr(osa, "ctmc")
+  expect_named(info$dist, ids, ignore.order = TRUE)
+  d1 <- info$dist[[ids[1]]]
+  expect_equal(ncol(d1$prob), nrow(d1$tag))
+  expect_equal(unname(colSums(d1$prob)), rep(1, nrow(d1$tag)))
+  r1 <- osa[osa$id == ids[1], ]
+  expect_equal(r1$pred_x, colSums(d1$prob[, r1$obs, drop = FALSE] *
+                                    fit$dat$grid$xygrid[, 1]))
+  expect_true(all(r1$sd_x > 0))
+
+  ## "forecast" switches the updates off: identical for tags that are never
+  ## updated, different for an archival tag after its first update
+  fc <- tag_predictions(fit, type = "forecast")
+  types <- vapply(fc_d <- attr(fc, "ctmc")$dist,
+                  function(d) as.character(d$tag$tag_type[1]), character(1))
+  k_c <- names(types)[types == "c"][1]
+  k_d <- names(types)[types == "d" &
+                        vapply(fc_d, function(d) nrow(d$tag), 1L) > 2][1]
+  expect_equal(fc_d[[k_c]]$prob, info$dist[[k_c]]$prob)
+  p_fc <- fc_d[[k_d]]$prob
+  p_osa <- info$dist[[k_d]]$prob
+  expect_gt(max(abs(p_fc[, ncol(p_fc)] - p_osa[, ncol(p_osa)])), 1e-3)
+
+  ## selection by id and by index
+  expect_setequal(unique(tag_predictions(fit, i = ids[2:3])$id), ids[2:3])
+  expect_named(attr(tag_predictions(fit, i = 1), "ctmc")$dist, ids[1])
+
+  ## independent of the prediction times: a window that covers none of the
+  ## tags used to fail with "NA/NaN argument"
+  fit_w <- fit
+  fit_w$dat$pred$time <- max(fit$dat$tags$t) + 1:3
+  fit_w$pred$mstar <- NULL
+  expect_equal(attr(tag_predictions(fit_w, i = 1), "ctmc")$dist[[1]]$prob,
+               info$dist[[ids[1]]]$prob)
 
   pdf(NULL)
   on.exit(dev.off())
 
-  ## selection by id, by index, and the alias for 'select'
-  expect_silent(plot_tag_dist(fit, i = ids[1]))
-  expect_silent(plot_tag_dist(fit, select = 1))
-  expect_error(plot_tag_dist(fit, select = 1, i = ids[1]), "not both")
-  expect_error(plot_tag_dist(fit, i = "nope"), "no precomputed distribution")
+  ## maps for one tag and for several, the mean map on request, a supplied
+  ## table (whose maps survive the subsetting), and the residual panels
+  expect_silent(plot_tag_pred(fit, i = ids[1], plot_land = FALSE))
+  expect_silent(plot_tag_pred(fit, i = 1:3, type = "osa", dist = TRUE,
+                              plot_land = FALSE))
+  expect_silent(plot_tag_pred(fit, i = 1:3, type = "osa", dist = FALSE,
+                              plot_land = FALSE, plot_grid = FALSE))
+  expect_silent(plot_tag_pred(fit, i = ids[k_d == names(fc_d)], pred = fc,
+                              plot_land = FALSE))
+  expect_silent(plot_tag_resid(fit, pred = osa))
 })

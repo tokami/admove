@@ -48,14 +48,6 @@
 ##'   quantities.
 ##' @param do_report Logical; if \code{TRUE} (default), \code{obj$report()} is
 ##'   run to extract reported RTMB quantities.
-##' @param do_tag_dist Logical; if \code{TRUE}, predicted location distributions
-##'   are precomputed for all tags via [add_tag_dist()] and stored in
-##'   \code{fit$tag_dist} (consumed by [plot_tag_dist()]). Default is
-##'   \code{FALSE}, as this is per-tag expensive and only needed for tag-location
-##'   visualisation; it requires the CTMC engine and a prediction grid, and runs
-##'   after the steps above. Compute distributions for selected tags later with
-##'   \code{add_tag_dist(fit, i = ...)}. With the Kalman filter the predicted
-##'   positions come from [tag_predictions()] instead.
 ##' @param save_covariance Logical; if \code{TRUE}, the covariance matrix from
 ##'   [RTMB::sdreport()] is retained. This may substantially increase memory use.
 ##' @param ad_hessian Logical; if \code{TRUE} (default), the exact AD Hessian
@@ -108,7 +100,6 @@ admove <- function(dat,
                    do_predictions = TRUE,
                    do_sdreport = TRUE,
                    do_report = TRUE,
-                   do_tag_dist = FALSE,
                    save_covariance = FALSE,
                    ad_hessian = TRUE,
                    dbg = FALSE,
@@ -238,12 +229,7 @@ admove <- function(dat,
     }
   }
 
-  ## Combine conf and dat. nll() reads the integer codes of the engine and the
-  ## observation-variance types, while conf keeps the names the user set.
-  tmb_all <- c(dat, conf)
-  tmb_all$engine <- engine_int
-  tmb_all$obs_var_type <- obs_var_type_int
-  tmb_all$tags <- split(dat$tags, dat$tags$id)
+  tmb_all <- .nll_data(dat, conf)
   tmb_all$dbg <- dbg
 
   if(verbose) message("Building the model, that can take a few minutes.")
@@ -410,26 +396,6 @@ admove <- function(dat,
     warning(.convergence_message(res, res$convergence), call. = FALSE)
   } else if (verbose) {
     message(.convergence_message(res, res$convergence))
-  }
-
-  if (do_tag_dist) {
-
-    if (identical(engine_int, 1L)) {
-
-      if (verbose) message("Tag location distributions are a CTMC feature; ",
-                           "see tag_predictions() for the Kalman filter.")
-
-    } else if (is.null(dat$pred$grid$igrid)) {
-
-      if (verbose) message("No prediction grid provided; skipping tag distributions.")
-
-    } else {
-
-      if (verbose) message("Computing tag location distributions.")
-
-      res <- add_tag_dist(res)
-
-    }
   }
 
   return(res)
@@ -974,158 +940,18 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
 }
 
 
-##' Compute predicted location distributions for one or more tags
-##'
-##' @description
-##' Propagates the model's predicted spatial location distribution for one or
-##' more archival tags from release to recovery time with the CTMC forward pass
-##' (`conf$engine = "ctmc"`). Results are stored in `fit$tag_dist` (a named list keyed
-##' by tag index) and consumed by [plot_tag_dist()]. Separating the expensive
-##' computation from rendering means plot aesthetics can be changed without
-##' re-running the model.
-##'
-##' The Kalman filter (`conf$engine = "kf"`) carries a mean and a variance rather
-##' than a distribution over cells, and the predictions it evaluates are
-##' reported by the likelihood itself: use [tag_predictions()],
-##' [plot_tag_pred()] and [plot_tag_resid()] for it.
-##'
-##' Successive calls accumulate into the same list, so distributions can be
-##' added in batches without discarding earlier results.
-##'
-##' Tags recaptured within a single time step (engine 1) or with fewer than two
-##' position records are skipped with a warning rather than stopping.
-##'
-##' @param fit A fitted object of class `admove`, as returned by [admove()].
-##' @param i Tag indices or tag ids to process, as in [tag_predictions()].
-##'   `NULL` (default) processes all tags.
-##' @param dt Unused; kept for backward compatibility.
-##' @param engine Optional override of the engine stored in `fit$conf$engine`.
-##'   Must select the CTMC engine (`"ctmc"`, or its alias `2`).
-##' @param xrel0,yrel0 Optional coordinates overriding the release location
-##'   for CTMC-based predictions (applied to every tag in `i`).
-##'
-##' @return
-##' A copy of `fit` with `$tag_dist` set to a named list (one entry per
-##' successfully processed tag index) containing the precomputed distributions
-##' and metadata required by [plot_tag_dist()].
-##'
-##' @seealso [plot_tag_dist()], [tag_predictions()]
-##'
-##' @export
-add_tag_dist <- function(fit, i = NULL, dt = 0.5,
-                         engine = NULL, xrel0 = NULL, yrel0 = NULL) {
-
-  .check_class(fit, "admove")
-
-  dat <- fit$dat
-  conf <- fit$conf
-
-  if (inherits(dat$tags, "data.frame")) {
-    tags <- split(dat$tags, dat$tags$id)
-  } else {
-    tags <- dat$tags
-  }
-
-  ## indices or ids, resolved to indices into the tag list
-  i <- match(.resolve_tag_ids(i, names(tags)), names(tags))
-
-  if (is.null(engine)) engine <- conf$engine
-  engine <- .get_engine_integer(.get_engine_name(engine, "engine"))
-
-  ## The Kalman filter tracks a mean and a variance, not a distribution over
-  ## cells, and the predictions it evaluates are reported by nll() itself.
-  ## Rebuilding them here duplicated the filter and drew the prediction on top
-  ## of the observation it was updated with, so this path now points at the
-  ## functions that read the reported predictions instead.
-  if (identical(engine, 1L)) {
-    stop("add_tag_dist() is for the CTMC engine (conf$engine = \"ctmc\"), which ",
-         "carries a distribution over grid cells.\n",
-         "  For the Kalman filter use the reported predictions:\n",
-         "    pred <- tag_predictions(fit)            # table of predicted vs observed\n",
-         "    plot_tag_pred(fit, i = 1)               # one tag: map and coordinates over time\n",
-         "    plot_tag_resid(fit, tag_type = \"c\")     # residuals, coverage, error vs horizon",
-         call. = FALSE)
-  }
-
-  ## accumulate into existing list; convert old single-entry format if needed
-  tag_dist_list <- fit$tag_dist
-  if (is.null(tag_dist_list)) {
-    tag_dist_list <- list()
-  } else if (!is.null(tag_dist_list$engine)) {
-    old_i <- tag_dist_list$i
-    tag_dist_list <- setNames(list(tag_dist_list), as.character(old_i))
-  }
-
-  skipped <- integer(0L)
-
-  ## CTMC generator list: reuse the one add_predictions() already stored, and
-  ## build it only once (it does not depend on the tag), falling back to a fresh
-  ## computation only if predictions were not run
-  mstar <- if (!is.null(fit$pred$mstar)) fit$pred$mstar else calc_mstar(fit)
-
-  for (idx in i) {
-
-    tag <- tags[[idx]]
-    ind <- which(apply(!is.na(tag[, 1:3]), 1, all))
-
-    if (length(ind) < 2L) {
-      warning("Tag ", idx, " has fewer than 2 non-missing (t, x, y) observations; skipping.",
-              call. = FALSE)
-      skipped <- c(skipped, idx)
-      next
-    }
-
-    tag <- tag[ind, ]
-    xrel <- if (!is.null(xrel0)) xrel0 else tag[1, 2]
-    yrel <- if (!is.null(yrel0)) yrel0 else tag[1, 3]
-    trel <- tag[1, 1]
-    ## max(), not the last row: when the final observation is ambiguous its
-    ## candidate positions may be listed in any order and at different times,
-    ## so the distribution must be propagated to the latest of them.
-    trec <- max(tag[, 1], na.rm = TRUE)
-
-    tall <- dat$pred$time
-
-    itrel <- as.integer(cut(trel, tall, include.lowest = TRUE))
-    itrec <- as.integer(cut(trec, tall, include.lowest = TRUE))
-    tind <- sapply(tag$t, function(tt) which.min(abs(tall[itrel:itrec] - tt)))
-    nt <- max(itrec) - itrel + 1L
-
-    dist_prob <- matrix(0, nt + 1L, nrow(dat$pred$grid$xygrid))
-    icrel <- dat$pred$grid$celltable[cbind(cut(xrel, dat$pred$grid$xgr),
-                                           cut(yrel, dat$pred$grid$ygr))]
-    dist_prob[1L, icrel] <- 1
-
-    for (k in seq_len(nt)) {
-      m <- as.matrix(Matrix::expm(
-        mstar[[itrel + k - 1L]] * diff(dat$pred$time)[itrel + k - 1L]))
-      dist_prob[k + 1L, ] <- as.vector(dist_prob[k, ] %*% m)
-    }
-
-    dens_list <- vector("list", nrow(tag))
-    for (k in seq_along(tind)) {
-      ct <- dat$pred$grid$celltable
-      ct[which(!is.na(ct))] <- dist_prob[tind[k], ]
-      dens_list[[k]] <- ct
-    }
-
-    tag_dist_list[[as.character(idx)]] <- list(
-      engine = engine,
-      tag = tag,
-      i = idx,
-      dens_list = dens_list,
-      xg = x_centers(dat$pred$grid),
-      yg = y_centers(dat$pred$grid),
-      xrange = dat$grid$xrange,
-      yrange = dat$grid$yrange
-    )
-  }
-
-  if (length(skipped) > 0L)
-    message(length(skipped), " tag(s) skipped: ", .format_ids(skipped))
-
-  fit$tag_dist <- tag_dist_list
-  fit
+## The data list nll() is taped with: dat and conf combined, the engine and the
+## observation-variance types as the integer codes nll() reads (conf keeps the
+## names the user set), and the tags split per id. tag_predictions() and
+## release_predictions() rebuild it from a fit, so it must stay the one
+## construction of it.
+.nll_data <- function(dat, conf) {
+  res <- c(dat, conf)
+  res$engine <- .get_engine_integer(.get_engine_name(conf$engine))
+  res$obs_var_type <- .get_obs_var_type_integer(
+    .get_obs_var_type_name(conf$obs_var_type))
+  res$tags <- split(dat$tags, dat$tags$id)
+  res
 }
 
 

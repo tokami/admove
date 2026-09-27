@@ -741,6 +741,48 @@ plot_cov <- function(x,
 
 
 
+## Vertical colour bar in the right outer margin, over the height of the
+## figure region, for panels sharing one scale (needs a right outer margin of
+## about 5 lines). `at` are the tick positions (default: pretty()), and `fmt`
+## turns them into labels, e.g. from a log scale back to the values.
+.color_bar_outer <- function(col, zlim, lab = NULL, at = NULL, fmt = format,
+                             cex = 0.7) {
+
+  op <- par(xpd = NA)
+  on.exit(par(op))
+  omi <- par("omi")
+  din <- par("din")
+  x0n <- 1 - (omi[4] - 0.12) / din[1]
+  x1n <- x0n + 0.15 / din[1]
+  y0n <- omi[1] / din[2] + 0.1 * (1 - (omi[1] + omi[3]) / din[2])
+  y1n <- 1 - omi[3] / din[2] - 0.1 * (1 - (omi[1] + omi[3]) / din[2])
+  x0 <- grconvertX(x0n, from = "ndc", to = "user")
+  x1 <- grconvertX(x1n, from = "ndc", to = "user")
+  y0 <- grconvertY(y0n, from = "ndc", to = "user")
+  y1 <- grconvertY(y1n, from = "ndc", to = "user")
+
+  n <- length(col)
+  yb <- seq(y0, y1, length.out = n + 1)
+  rect(x0, yb[-(n + 1)], x1, yb[-1], col = col, border = NA)
+  rect(x0, y0, x1, y1, border = grey(0.3))
+
+  if (is.null(at)) at <- pretty(zlim)
+  at <- at[at >= zlim[1] & at <= zlim[2]]
+  yat <- y0 + (at - zlim[1]) / diff(zlim) * (y1 - y0)
+  segments(x1, yat, x1 + 0.3 * (x1 - x0), yat, col = grey(0.3))
+  text(x1 + 0.5 * (x1 - x0), yat, labels = fmt(at), adj = c(0, 0.5), cex = cex,
+       col = "black")
+  if (!is.null(lab) && nzchar(lab)) {
+    text(x0, y1 + 0.5 * strheight("M", cex = cex), lab, adj = c(0, 0), cex = cex,
+         col = "black")
+  }
+
+  invisible(NULL)
+}
+
+
+
+
 ##' Summarise covariate fields
 ##'
 ##' @description

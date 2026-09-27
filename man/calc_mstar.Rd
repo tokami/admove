@@ -51,6 +51,6 @@ in, leaving a pure per-time-unit generator. The taxis drift velocity is
 coefficient.
 }
 \seealso{
-\code{\link[=add_predictions]{add_predictions()}}, \code{\link[=add_tag_dist]{add_tag_dist()}}
+\code{\link[=add_predictions]{add_predictions()}}, \code{\link[=release_predictions]{release_predictions()}}
 }
 \keyword{internal}

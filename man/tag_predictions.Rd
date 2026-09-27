@@ -21,9 +21,10 @@ forecast over the whole time at liberty. Needs a second model build
 and is therefore slower.}
 }}
 
-\item{i}{Optional tag indices (as in \code{\link[=add_tag_dist]{add_tag_dist()}}) or tag ids to restrict
-the table to. For \code{type = "forecast"} a small subset is much faster,
-because only those tags are built.}
+\item{i}{Optional tag indices (into the tags split by id) or tag ids to
+restrict the table to. A small subset is much faster for
+\code{type = "forecast"} with the Kalman filter, where only those tags are
+built, and always with the CTMC engine, where every tag is a forward pass.}
 
 \item{verbose}{Logical; if \code{TRUE} (default), messages about progress are
 printed.}
@@ -56,22 +57,33 @@ position that was observed, together with the prediction uncertainty and
 standardised residuals. This is the table behind \code{\link[=plot_tag_pred]{plot_tag_pred()}},
 \code{\link[=plot_tag_resid]{plot_tag_resid()}} and \code{\link[=summarise_tag_pred]{summarise_tag_pred()}}.
 
-The predictions are the ones the likelihood itself evaluates, reported by
-\code{nll()} rather than recomputed, so they include the estimated observation
-error, the per-tag-type update rules (\code{conf$do_update}) and the boundary
-treatment (\code{conf$kf_boundary}).
+The predictions are the ones the likelihood itself evaluates, so they
+include the estimated observation error, the per-tag-type update rules
+(\code{conf$do_update}) and the boundary treatment (\code{conf$kf_boundary}). With
+the Kalman filter they are reported by \code{nll()}; with the CTMC engine they
+come from the likelihood's own forward pass, which also gives the full
+probability distribution over the grid cells, drawn by \code{\link[=plot_tag_pred]{plot_tag_pred()}}.
 }
 \details{
-Predicted positions are only available for the Kalman filter engine
-(\code{conf$engine = 1}), which tracks a mean and a variance per tag. The CTMC
-engine carries a distribution over grid cells instead; use \code{\link[=add_tag_dist]{add_tag_dist()}}
-and \code{\link[=plot_tag_dist]{plot_tag_dist()}} for it.
+With the Kalman filter (\code{conf$engine = "kf"}) the prediction is Gaussian
+with independent x and y, so \code{z_x} and \code{z_y} should behave like standard
+normal draws and \code{d2 = z_x^2 + z_y^2} like a chi-squared variable with 2
+degrees of freedom. \code{inside_50} and \code{inside_95} compare \code{d2} with its
+quantiles, i.e. they say whether the observation falls inside the 50\% and
+95\% prediction ellipse.
 
-The prediction is Gaussian with independent x and y, so \code{z_x} and \code{z_y}
-should behave like standard normal draws and \code{d2 = z_x^2 + z_y^2} like a
-chi-squared variable with 2 degrees of freedom. \code{inside_50} and \code{inside_95}
-compare \code{d2} with its quantiles, i.e. they say whether the observation falls
-inside the 50\% and 95\% prediction ellipse.
+With the CTMC engine (\code{conf$engine = "ctmc"}) the prediction is a
+probability for every grid cell: the distribution each observation is
+scored against in the likelihood, before its update. \code{pred_x}, \code{pred_y}
+are its mean over the cell centres, and \code{sd_x}, \code{sd_y} its spread,
+including the position within a cell (a cell of width \eqn{h} adds
+\eqn{h^2/12}, as the CTMC does not resolve positions within a cell) and
+the observation error where the likelihood applies one. The residual
+columns treat this as Gaussian, which is an approximation: the distribution
+can be skewed or multimodal, e.g. along a coast. \code{logdens} is the
+likelihood term of the observation divided by the cell area, a density
+comparable with the Kalman filter's. The distributions themselves are kept
+in \code{attr(, "ctmc")} for \code{\link[=plot_tag_pred]{plot_tag_pred()}}; subsetting the rows drops them.
 
 The first observation of each tag is its release: it is conditioned on, not
 predicted, and therefore not in the table.

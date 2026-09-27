@@ -1,5 +1,5 @@
 
-##' @importFrom grDevices adjustcolor col2rgb grey hcl.colors n2mfrow rgb terrain.colors
+##' @importFrom grDevices adjustcolor col2rgb grey hcl.colors n2mfrow rgb
 ##' @importFrom graphics abline arrows axis box contour identify image layout legend lines mtext par plot.new points polygon rect segments text title grconvertX grconvertY
 ##' @importFrom stats approx dist median qnorm quantile rnorm runif setNames
 ##' @importFrom utils capture.output head packageDescription tail
@@ -877,7 +877,7 @@ build_time <- function(t_obs,
 ##' @return A list of length \code{nt} of sparse (\code{"dgCMatrix"}) CTMC
 ##'   generator matrices, each \code{nc x nc} in units of 1 / time.
 ##'
-##' @seealso [add_predictions()], [add_tag_dist()]
+##' @seealso [add_predictions()], [release_predictions()]
 ##'
 ##' @keywords internal
 calc_mstar <- function(fit) {
