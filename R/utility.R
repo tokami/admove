@@ -87,6 +87,20 @@ utils::globalVariables(c("get_cov", "get_sim_par", "get_sim_funcs"))
   }
 }
 
+## Evaluate `code` with the random number generator seeded, then restore the
+## caller's random stream (or its absence), so internal randomisation is
+## reproducible without side effects.
+.with_seed <- function(seed, code) {
+  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+    old <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+    on.exit(assign(".Random.seed", old, envir = globalenv()))
+  } else {
+    on.exit(rm(".Random.seed", envir = globalenv()))
+  }
+  set.seed(seed)
+  code
+}
+
 .is_empty <- function(x){
   is.null(x) || length(x) == 0
 }

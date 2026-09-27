@@ -31,6 +31,11 @@
 ##'   restrict the table to. A small subset is much faster for
 ##'   `type = "forecast"` with the Kalman filter, where only those tags are
 ##'   built, and always with the CTMC engine, where every tag is a forward pass.
+##' @param seed CTMC engine only: seed of the randomisation in the quantile
+##'   residuals of observations without observation error (see Details), set
+##'   locally so the caller's random numbers are not affected. `NULL` uses the
+##'   current random stream. Default `1`, so repeated calls give the same
+##'   residuals; try a few seeds to check that conclusions do not depend on it.
 ##' @param verbose Logical; if `TRUE` (default), messages about progress are
 ##'   printed.
 ##'
@@ -48,12 +53,40 @@
 ##' are its mean over the cell centres, and `sd_x`, `sd_y` its spread,
 ##' including the position within a cell (a cell of width \eqn{h} adds
 ##' \eqn{h^2/12}, as the CTMC does not resolve positions within a cell) and
-##' the observation error where the likelihood applies one. The residual
-##' columns treat this as Gaussian, which is an approximation: the distribution
-##' can be skewed or multimodal, e.g. along a coast. `logdens` is the
-##' likelihood term of the observation divided by the cell area, a density
-##' comparable with the Kalman filter's. The distributions themselves are kept
-##' in `attr(, "ctmc")` for [plot_tag_pred()]; subsetting the rows drops them.
+##' the observation error where the likelihood applies one; `res_x`, `res_y`
+##' and `dist` are measured from that mean. These describe the prediction but
+##' are not standardised residuals, since the distribution can be skewed or
+##' multimodal (e.g. along a coast).
+##'
+##' `z_x` and `z_y` are instead quantile residuals of the whole distribution,
+##' by the Rosenblatt transform: `z_x` from the distribution of the grid
+##' column (x) of the observation, `z_y` from the distribution of its row (y)
+##' within that column. Under the model they are independent standard normal
+##' whatever the shape of the distribution, so `d2`, `inside_50` and
+##' `inside_95` are exact checks. For an observation without observation error
+##' the likelihood only uses its grid cell, a discrete outcome, and the
+##' residual is randomised within the probability of that cell (randomised
+##' quantile residuals, Dunn and Smyth 1996; as one-step-ahead residuals of
+##' state-space models, Thygesen et al. 2017; see `seed`). With observation
+##' error the position is continuous (uniform within a cell plus the normal
+##' error, as in the likelihood) and no randomisation is needed.
+##'
+##' `logdens` is the likelihood term of the observation divided by the cell
+##' area, a density comparable with the Kalman filter's. The distributions
+##' themselves are kept in `attr(, "ctmc")` for [plot_tag_pred()]; subsetting
+##' the rows drops them.
+##'
+##' @references
+##' Dunn, P. K. and Smyth, G. K. (1996). Randomized quantile residuals.
+##' *Journal of Computational and Graphical Statistics* 5: 236--244.
+##'
+##' Rosenblatt, M. (1952). Remarks on a multivariate transformation. *Annals
+##' of Mathematical Statistics* 23: 470--472.
+##'
+##' Thygesen, U. H., Albertsen, C. M., Berg, C. W., Kristensen, K. and
+##' Nielsen, A. (2017). Validation of ecological state space models using the
+##' Laplace approximation. *Environmental and Ecological Statistics* 24:
+##' 317--339.
 ##'
 ##' The first observation of each tag is its release: it is conditioned on, not
 ##' predicted, and therefore not in the table.
@@ -94,6 +127,7 @@
 tag_predictions <- function(fit,
                             type = c("osa", "forecast"),
                             i = NULL,
+                            seed = 1,
                             verbose = TRUE) {
 
   .check_class(fit, "admove")
@@ -103,7 +137,7 @@ tag_predictions <- function(fit,
   ids <- .resolve_tag_ids(i, names(tags))
 
   if (identical(.get_engine_integer(.get_engine_name(fit$conf$engine)), 2L)) {
-    return(.ctmc_tag_pred(fit, ids, type))
+    return(.ctmc_tag_pred(fit, ids, type, seed))
   }
 
   if (identical(type, "osa")) {
@@ -371,16 +405,23 @@ summarise_tag_pred <- function(..., by = "tag_type", type = c("osa", "forecast")
   out$dist <- sqrt(out$res_x^2 + out$res_y^2)
   out$z_x <- out$res_x / out$sd_x
   out$z_y <- out$res_y / out$sd_y
+  ## per-row values of a flat report vector, in the order of the table rows
+  set_rows <- function(v) unlist(lapply(seq_along(tags), function(k) {
+    ind <- offset[k] + seq_len(nrow(tags[[k]]))
+    v[ind][rep$pred_set[ind] == 1]
+  }))
+  ## CTMC: quantile residuals of the cell distribution instead
+  if (!is.null(rep$pred_zx) && nrow(out) > 0L) {
+    out$z_x <- set_rows(rep$pred_zx)
+    out$z_y <- set_rows(rep$pred_zy)
+  }
   out$d2 <- out$z_x^2 + out$z_y^2
   out$inside_50 <- out$d2 <= stats::qchisq(0.5, df = 2)
   out$inside_95 <- out$d2 <= stats::qchisq(0.95, df = 2)
   out$logdens <- stats::dnorm(out$res_x, 0, out$sd_x, log = TRUE) +
     stats::dnorm(out$res_y, 0, out$sd_y, log = TRUE)
   if (!is.null(rep$pred_logdens) && nrow(out) > 0L) {
-    out$logdens <- unlist(lapply(seq_along(tags), function(k) {
-      ind <- offset[k] + seq_len(nrow(tags[[k]]))
-      rep$pred_logdens[ind][rep$pred_set[ind] == 1]
-    }))
+    out$logdens <- set_rows(rep$pred_logdens)
   }
   out$type <- type
 
@@ -400,7 +441,13 @@ summarise_tag_pred <- function(..., by = "tag_type", type = c("osa", "forecast")
 ## "forecast" switches the updates off, as .forecast_report() does for the KF.
 ## The distributions go into attr(, "ctmc") for plot_tag_pred().
 ## See dev/code_notes.org, "Tag location distributions".
-.ctmc_tag_pred <- function(fit, ids, type) {
+.ctmc_tag_pred <- function(fit, ids, type, seed = 1) {
+
+  ## the quantile residuals of exact positions are randomised: a local seed
+  ## makes them reproducible without touching the caller's random stream
+  if (!is.null(seed)) {
+    return(.with_seed(seed, .ctmc_tag_pred(fit, ids, type, seed = NULL)))
+  }
 
   dat <- fit$dat
   grid <- dat$grid
@@ -420,7 +467,8 @@ summarise_tag_pred <- function(..., by = "tag_type", type = c("osa", "forecast")
   offset <- c(0L, cumsum(nobs))
   rep <- list(pred_x = numeric(nall), pred_y = numeric(nall),
               pred_var_x = numeric(nall), pred_var_y = numeric(nall),
-              pred_logdens = numeric(nall), pred_set = numeric(nall))
+              pred_logdens = numeric(nall), pred_set = numeric(nall),
+              pred_zx = numeric(nall), pred_zy = numeric(nall))
   dist <- list()
 
   for (idx in match(ids, names(tags))) {
@@ -465,6 +513,9 @@ summarise_tag_pred <- function(..., by = "tag_type", type = c("osa", "forecast")
       ## the likelihood term of the row, as a density per unit area so that it
       ## compares with the KF's Gaussian density
       rep$pred_logdens[k] <- log(sum(p * this_dist)) - log(cs[1] * cs[2])
+      z <- .ctmc_quantile_resid(p, grid, tag$ic[j], tag$x[j], tag$y[j], so)
+      rep$pred_zx[k] <- z[1]
+      rep$pred_zy[k] <- z[2]
       rep$pred_set[k] <- 1
     }
 
@@ -484,4 +535,58 @@ summarise_tag_pred <- function(..., by = "tag_type", type = c("osa", "forecast")
                             xg = x_centers(grid), yg = y_centers(grid),
                             type = type)
   out
+}
+
+
+## Quantile residuals of one observation under a CTMC cell distribution `p`:
+## the Rosenblatt transform (x from its marginal, then y given x), exactly
+## N(0, 1) and independent under the model whatever the shape of p. See
+## dev/code_notes.org, "Tag location distributions and release predictions".
+##
+## Without observation error (`sd` 0) the likelihood only uses the cell `ic`
+## of the observation, so the residual is the randomised quantile residual of
+## that discrete outcome (Dunn & Smyth 1996): uniform between the CDF values
+## at the cell's edges, x over grid columns, y over the cells of the observed
+## column. With observation error the likelihood treats the position as
+## uniform within a cell plus N(0, sd^2) (the cell-integrated normal of
+## .ctmc_obs_dist()), which is continuous: its CDF at the observed position,
+## no randomisation.
+.ctmc_quantile_resid <- function(p, grid, ic, x_obs, y_obs, sd = c(0, 0),
+                                 eps = 1e-10) {
+
+  ix <- grid$igrid$idx
+  iy <- grid$igrid$idy
+
+  if (all(sd == 0)) {
+
+    i0 <- ix[ic]
+    col <- ix == i0
+    lo_x <- sum(p[ix < i0])
+    u_x <- stats::runif(1, lo_x, lo_x + sum(p[col]))
+    pcol <- sum(p[col])
+    u_y <- if (pcol > 0) {
+      lo_y <- sum(p[col & iy < iy[ic]]) / pcol
+      stats::runif(1, lo_y, lo_y + p[ic] / pcol)
+    } else NA_real_
+
+  } else {
+
+    ## Uniform(a, b) + N(0, s^2): CDF and density
+    G <- function(v, a, b, s) {
+      psi <- function(z) z * stats::pnorm(z) + stats::dnorm(z)
+      s / (b - a) * (psi((v - a) / s) - psi((v - b) / s))
+    }
+    g <- function(v, a, b, s) {
+      (stats::pnorm((v - a) / s) - stats::pnorm((v - b) / s)) / (b - a)
+    }
+    ax <- grid$xgr[ix]
+    bx <- grid$xgr[ix + 1L]
+    ay <- grid$ygr[iy]
+    by <- grid$ygr[iy + 1L]
+    u_x <- sum(p * G(x_obs, ax, bx, sd[1]))
+    w <- p * g(x_obs, ax, bx, sd[1])
+    u_y <- if (sum(w) > 0) sum(w * G(y_obs, ay, by, sd[2])) / sum(w) else NA_real_
+  }
+
+  stats::qnorm(pmin(pmax(c(u_x, u_y), eps), 1 - eps))
 }

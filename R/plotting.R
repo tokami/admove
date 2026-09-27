@@ -3089,11 +3089,23 @@ plot_tag_pred <- function(x,
 ##' Plot prediction residuals of tag positions
 ##'
 ##' @description
-##' Diagnostics for the predicted tag positions of [tag_predictions()]: whether
-##' the predicted displacements match the observed ones, whether the
-##' standardised residuals are standard normal, whether the prediction ellipses
-##' have the right coverage, and whether the errors grow with the prediction
-##' horizon.
+##' Residual diagnostics for the predicted tag positions of
+##' [tag_predictions()], with the standardised residuals in x (left column) and
+##' y (right column):
+##' \enumerate{
+##'   \item against the time of the observation, titled with the p-value of a
+##'     t-test for a mean of zero (bias);
+##'   \item against the prediction horizon (time since release, or since the
+##'     previous observation one step ahead): residuals that spread out with
+##'     the horizon mean the errors grow faster than the model expects;
+##'   \item on a map at the observed positions, symbol size proportional to
+##'     the absolute residual and colour by its sign (blue positive, red
+##'     negative), symbol by tag type: clusters of one sign point to spatial
+##'     misfit;
+##'   \item a normal QQ plot, titled with the p-value of a Shapiro-Wilk test.
+##' }
+##' P-values are green when at least 0.05 and red otherwise. Points are
+##' coloured by tag type.
 ##'
 ##' @param x A fitted object of class `admove`, as returned by [admove()].
 ##' @param pred Optional table from [tag_predictions()]. If `NULL` (default), it
@@ -3102,36 +3114,37 @@ plot_tag_pred <- function(x,
 ##'   `"osa"`.
 ##' @param tag_type Optional tag types to keep, e.g. `"c"` for mark-recapture
 ##'   tags. `NULL` (default) keeps all.
-##' @param col Colour of the points.
+##' @param plot_land Logical; if `TRUE`, land is added to the map. Default
+##'   `FALSE`.
+##' @param col Colours of the tag types, in the order data-storage,
+##'   mark-resight, mark-recapture. A single colour colours all points.
+##'   Default: `NULL`, the package colours.
 ##' @param ... Additional arguments passed to [plot()].
 ##'
 ##' @details
-##' The four panels are
-##' \enumerate{
-##'   \item predicted against observed displacement, in x and y, with the 1:1
-##'     line: points along the line mean the model gets the direction and
-##'     distance of movement right;
-##'   \item a normal QQ plot of the standardised residuals `z_x` and `z_y`:
-##'     points on the line mean the prediction uncertainty has the right size;
-##'   \item the share of observations inside the 50% and 95% prediction
-##'     ellipses, against those nominal levels;
-##'   \item the squared standardised distance `d2` against the prediction
-##'     horizon, with the median and the 95% quantile of its chi-squared
-##'     reference distribution: a rising cloud means the errors grow faster than
-##'     the model expects.
-##' }
+##' Under the model the residuals are independent standard normal, so the
+##' points should scatter evenly around zero with no trend, the map should
+##' show no clusters of one sign, and the QQ plot should follow the line. The
+##' tests treat the residuals as independent, which tags released together do
+##' not quite satisfy (they share a trajectory), so the p-values are
+##' optimistic. The Shapiro-Wilk test takes at most 5000 values; above that it
+##' is applied to a random subsample of 5000.
+##'
+##' For the CTMC engine the residuals of observations without observation error
+##' are randomised (see [tag_predictions()] and its `seed`).
 ##'
 ##' @return
 ##' Invisibly returns the prediction table that was plotted.
 ##'
-##' @seealso [tag_predictions()], [plot_tag_pred()]
+##' @seealso [tag_predictions()], [plot_tag_pred()], [summarise_tag_pred()]
 ##'
 ##' @export
 plot_tag_resid <- function(x,
                            pred = NULL,
                            type = c("osa", "forecast"),
                            tag_type = NULL,
-                           col = "dodgerblue3",
+                           plot_land = FALSE,
+                           col = NULL,
                            ...) {
 
   type <- match.arg(type)
@@ -3146,63 +3159,101 @@ plot_tag_resid <- function(x,
     pred <- pred[pred$tag_type %in% tag_type, , drop = FALSE]
   }
 
+  ok <- is.finite(pred$z_x) & is.finite(pred$z_y)
+  if (any(!ok)) {
+    message(sum(!ok), " observation(s) without a finite residual are not shown.")
+    pred <- pred[ok, , drop = FALSE]
+  }
   if (nrow(pred) == 0L) {
     stop("No predicted positions left to plot.", call. = FALSE)
   }
 
+  ## tag types: colour in the scatter and QQ panels, symbol on the map
+  types <- intersect(c("d", "s", "c", "a"), unique(pred$tag_type))
+  if (is.null(col)) col <- .admove_cols(3)
+  col <- rep_len(col, 4)
+  names(col) <- c("d", "s", "c", "a")
+  pch_type <- c(d = 16, s = 17, c = 1, a = 15)
+  pt_col <- adjustcolor(col[pred$tag_type], 0.6)
+  pt_pch <- pch_type[pred$tag_type]
+
+  t_obs <- if (!all(is.na(pred$date))) pred$date else pred$t
+  lab_time <- if (!all(is.na(pred$date))) "time of observation" else
+    .axis_lab("time of observation", .pred_units(x, "time"))
+  lab_hor <- .axis_lab("prediction horizon", .pred_units(x, "time"))
+  map_labs <- if (inherits(x, "admove")) .map_labs(x) else c("x", "y")
+
+  p_title <- function(lab, p) {
+    title(main = paste0(lab, ": ", if (is.na(p)) "n < 3" else format.pval(p, 3)),
+          col.main = if (!is.na(p) && p < 0.05) .admove_cols(type = "sig") else
+            .admove_cols(type = "notsig"),
+          font.main = 2, cex.main = 1)
+  }
+
   opar <- par(no.readonly = TRUE)
   on.exit(suppressWarnings(graphics::par(opar)))
-  par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+  par(mfrow = c(4, 2), mar = c(4, 4, 2.5, 1), mgp = c(2.2, 0.6, 0),
+      oma = c(0, 0, if (length(types) > 1L) 1.5 else 0, 0))
 
-  ## 1: predicted vs observed displacement
-  dx_obs <- pred$x - pred$x_from
-  dy_obs <- pred$y - pred$y_from
-  dx_pred <- pred$pred_x - pred$x_from
-  dy_pred <- pred$pred_y - pred$y_from
-  rng <- range(c(dx_obs, dy_obs, dx_pred, dy_pred), na.rm = TRUE)
+  zs <- list(x = pred$z_x, y = pred$z_y)
 
-  plot(dx_obs, dx_pred, xlim = rng, ylim = rng,
-       xlab = "observed displacement", ylab = "predicted displacement",
-       main = "Displacement", pch = 16, cex = 0.7,
-       col = adjustcolor(col, 0.5), ...)
-  points(dy_obs, dy_pred, pch = 1, cex = 0.7, col = adjustcolor("grey20", 0.5))
-  abline(0, 1, lwd = 1.5)
-  abline(h = 0, v = 0, col = grey(0.8))
-  legend("topleft", legend = c("x", "y"), pch = c(16, 1),
-         col = c(adjustcolor(col, 0.5), adjustcolor("grey20", 0.5)),
-         bty = "n", cex = 0.9)
-  box(lwd = 1.5)
+  ## 1: against time, with a test for bias
+  for (ax in c("x", "y")) {
+    z <- zs[[ax]]
+    plot(t_obs, z, xlab = lab_time, ylab = paste(ax, "residual"),
+         pch = 16, cex = 0.8, col = pt_col, ...)
+    abline(h = 0, lty = 2)
+    p <- if (length(z) >= 3L) stats::t.test(z)$p.value else NA
+    p_title("Bias p-value", p)
+    box(lwd = 1.5)
+  }
 
-  ## 2: normal QQ plot of the standardised residuals
-  z <- c(pred$z_x, pred$z_y)
-  z <- z[is.finite(z)]
-  qqnorm(z, main = "Standardised residuals", pch = 16, cex = 0.7,
-         col = adjustcolor(col, 0.5), xlab = "normal quantiles", ylab = "z")
-  qqline(z, lwd = 1.5)
-  box(lwd = 1.5)
+  ## 2: against the prediction horizon
+  for (ax in c("x", "y")) {
+    plot(pred$horizon, zs[[ax]], xlab = lab_hor, ylab = paste(ax, "residual"),
+         pch = 16, cex = 0.8, col = pt_col, ...)
+    abline(h = 0, lty = 2)
+    box(lwd = 1.5)
+  }
 
-  ## 3: coverage of the prediction ellipses
-  cover <- c("50%" = mean(pred$inside_50, na.rm = TRUE),
-             "95%" = mean(pred$inside_95, na.rm = TRUE))
-  bp <- barplot(cover, ylim = c(0, 1), col = adjustcolor(col, 0.5),
-                ylab = "share inside", main = "Ellipse coverage")
-  segments(bp - 0.4, c(0.5, 0.95), bp + 0.4, c(0.5, 0.95), lwd = 2)
-  text(bp, cover, labels = round(cover, 2), pos = 3, cex = 0.9, xpd = NA)
-  legend("bottomright", legend = "nominal", lwd = 2, bty = "n", cex = 0.9)
-  box(lwd = 1.5)
+  ## 3: map, size by |z| and colour by sign
+  for (ax in c("x", "y")) {
+    z <- zs[[ax]]
+    plot(pred$x, pred$y, type = "n", asp = 1,
+         xlab = map_labs[1], ylab = map_labs[2], ...)
+    if (plot_land && inherits(x, "admove")) plot_land(sref = sref(x$dat))
+    points(pred$x, pred$y, pch = pt_pch, cex = 0.3 + 0.8 * abs(z),
+           col = ifelse(z >= 0, .admove_cols(type = "pos", alpha = 0.7),
+                        .admove_cols(type = "neg", alpha = 0.7)))
+    title(main = paste(ax, "residual"), font.main = 1, cex.main = 1)
+    box(lwd = 1.5)
+  }
 
-  ## 4: squared standardised distance against the prediction horizon
-  plot(pred$horizon, pred$d2,
-       xlab = .axis_lab("prediction horizon", .pred_units(x, "time")),
-       ylab = "d2", main = "Error vs horizon",
-       pch = 16, cex = 0.7, col = adjustcolor(col, 0.5), log = "y")
-  abline(h = qchisq(c(0.5, 0.95), df = 2), lwd = c(1.5, 1.5), lty = c(1, 2))
-  legend("topright", legend = c("median", "95%"), lwd = 1.5, lty = c(1, 2),
-         bty = "n", cex = 0.9)
-  box(lwd = 1.5)
+  ## 4: normal QQ plot, with a test for normality
+  for (ax in c("x", "y")) {
+    z <- zs[[ax]]
+    qq <- stats::qqnorm(z, plot.it = FALSE)
+    plot(qq$x, qq$y, xlab = "theoretical quantiles", ylab = "sample quantiles",
+         pch = 16, cex = 0.8, col = pt_col, ...)
+    abline(0, 1)
+    zt <- if (length(z) > 5000L) .with_seed(1, sample(z, 5000L)) else z
+    p <- if (length(zt) >= 3L) stats::shapiro.test(zt)$p.value else NA
+    p_title(if (length(z) > 5000L) "Shapiro p-value (5000 sampled)" else
+      "Shapiro p-value", p)
+    box(lwd = 1.5)
+  }
+
+  if (length(types) > 1L) {
+    par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0),
+        new = TRUE)
+    plot.new()
+    legend("top", legend = .tag_type_label(types), col = col[types],
+           pch = pch_type[types], horiz = TRUE, bty = "n", cex = 0.9)
+  }
 
   invisible(pred)
 }
+
 
 
 ## Internal functions ---------------------------------------------------------------

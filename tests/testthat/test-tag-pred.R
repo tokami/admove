@@ -191,6 +191,18 @@ test_that("tag_predictions runs the likelihood's own CTMC pass", {
   ## is per unit area) add up to every tag's term of the fit, grouped
   ## mark-recapture tags too, up to the rounding of their shared pass
   osa <- tag_predictions(fit, type = "osa")
+
+  ## quantile residuals: reproducible by seed, randomised for these exact
+  ## positions, and the caller's random stream is left alone
+  set.seed(42)
+  r_before <- runif(1)
+  set.seed(42)
+  expect_identical(tag_predictions(fit, type = "osa")$z_x, osa$z_x)
+  expect_identical(runif(1), r_before)
+  expect_false(identical(tag_predictions(fit, type = "osa", seed = 2)$z_x,
+                         osa$z_x))
+  expect_true(all(is.finite(osa$z_x) & is.finite(osa$z_y)))
+
   ll_osa <- tapply(osa$logdens + log(area), factor(osa$id, levels = ids), sum)
   expect_equal(unname(as.numeric(ll_osa)), ll_fit, tolerance = 1e-8)
 
@@ -244,4 +256,73 @@ test_that("tag_predictions runs the likelihood's own CTMC pass", {
   expect_silent(plot_tag_pred(fit, i = ids[k_d == names(fc_d)], pred = fc,
                               plot_land = FALSE))
   expect_silent(plot_tag_resid(fit, pred = osa))
+})
+
+
+test_that("CTMC quantile residuals are N(0, 1) under the predicted distribution", {
+
+  grid <- create_grid(xrange = c(0, 1), yrange = c(0, 1), cellsize = 0.2,
+                      verbose = FALSE)
+  nc <- nrow(grid$xygrid)
+  ix <- grid$igrid$idx
+  iy <- grid$igrid$idy
+
+  ## skewed and bimodal: most mass in one corner, a second mode opposite, and
+  ## one cell without mass (e.g. unreachable)
+  p <- exp(-3 * (ix + iy)) + 0.3 * exp(-2 * ((ix - 5)^2 + (iy - 4)^2))
+  p[13] <- 0
+  p <- p / sum(p)
+
+  n <- 3000
+  z <- withr::with_seed(1, {
+    ic <- sample.int(nc, n, replace = TRUE, prob = p)
+    x <- runif(n, grid$xgr[ix[ic]], grid$xgr[ix[ic] + 1L])
+    y <- runif(n, grid$ygr[iy[ic]], grid$ygr[iy[ic] + 1L])
+
+    ## exact positions: only the cell counts, randomised within it
+    z0 <- t(vapply(seq_len(n), function(k)
+      admove:::.ctmc_quantile_resid(p, grid, ic[k], x[k], y[k]), numeric(2)))
+
+    ## with observation error: continuous, uniform in the cell plus N(0, sd^2)
+    sd <- c(0.15, 0.1)
+    xo <- x + rnorm(n, 0, sd[1])
+    yo <- y + rnorm(n, 0, sd[2])
+    z1 <- t(vapply(seq_len(n), function(k)
+      admove:::.ctmc_quantile_resid(p, grid, ic[k], xo[k], yo[k], sd),
+      numeric(2)))
+    list(z0 = z0, z1 = z1)
+  })
+
+  for (zz in z) {
+    expect_true(all(is.finite(zz)))
+    expect_gt(suppressWarnings(ks.test(zz[, 1], "pnorm"))$p.value, 0.01)
+    expect_gt(suppressWarnings(ks.test(zz[, 2], "pnorm"))$p.value, 0.01)
+    expect_lt(abs(cor(zz[, 1], zz[, 2])), 0.06)
+  }
+})
+
+
+test_that("plot_tag_resid handles many residuals, mixed tag types and NA", {
+
+  n <- 6000
+  pred <- withr::with_seed(1, data.frame(
+    tag_type = sample(c("d", "c"), n, replace = TRUE),
+    t = runif(n, 0, 10), date = as.POSIXct(NA), horizon = runif(n, 0, 5),
+    x = runif(n), y = runif(n), z_x = rnorm(n), z_y = rnorm(n),
+    stringsAsFactors = FALSE))
+  pred$z_x[1] <- NA
+
+  pdf(NULL)
+  on.exit(dev.off())
+
+  ## more than 5000 residuals: Shapiro-Wilk on a subsample, without touching
+  ## the caller's random numbers
+  set.seed(7)
+  r <- runif(1)
+  set.seed(7)
+  expect_message(out <- plot_tag_resid(NULL, pred = pred), "not shown")
+  expect_identical(runif(1), r)
+  expect_equal(nrow(out), n - 1L)
+  expect_s3_class(plot_tag_resid(NULL, pred = pred[-1, ], tag_type = "c"),
+                  "data.frame")
 })

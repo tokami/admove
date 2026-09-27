@@ -9,7 +9,8 @@ plot_tag_resid(
   pred = NULL,
   type = c("osa", "forecast"),
   tag_type = NULL,
-  col = "dodgerblue3",
+  plot_land = FALSE,
+  col = NULL,
   ...
 )
 }
@@ -25,7 +26,12 @@ is computed with \code{type}.}
 \item{tag_type}{Optional tag types to keep, e.g. \code{"c"} for mark-recapture
 tags. \code{NULL} (default) keeps all.}
 
-\item{col}{Colour of the points.}
+\item{plot_land}{Logical; if \code{TRUE}, land is added to the map. Default
+\code{FALSE}.}
+
+\item{col}{Colours of the tag types, in the order data-storage,
+mark-resight, mark-recapture. A single colour colours all points.
+Default: \code{NULL}, the package colours.}
 
 \item{...}{Additional arguments passed to \code{\link[=plot]{plot()}}.}
 }
@@ -33,28 +39,36 @@ tags. \code{NULL} (default) keeps all.}
 Invisibly returns the prediction table that was plotted.
 }
 \description{
-Diagnostics for the predicted tag positions of \code{\link[=tag_predictions]{tag_predictions()}}: whether
-the predicted displacements match the observed ones, whether the
-standardised residuals are standard normal, whether the prediction ellipses
-have the right coverage, and whether the errors grow with the prediction
-horizon.
+Residual diagnostics for the predicted tag positions of
+\code{\link[=tag_predictions]{tag_predictions()}}, with the standardised residuals in x (left column) and
+y (right column):
+\enumerate{
+\item against the time of the observation, titled with the p-value of a
+t-test for a mean of zero (bias);
+\item against the prediction horizon (time since release, or since the
+previous observation one step ahead): residuals that spread out with
+the horizon mean the errors grow faster than the model expects;
+\item on a map at the observed positions, symbol size proportional to
+the absolute residual and colour by its sign (blue positive, red
+negative), symbol by tag type: clusters of one sign point to spatial
+misfit;
+\item a normal QQ plot, titled with the p-value of a Shapiro-Wilk test.
+}
+P-values are green when at least 0.05 and red otherwise. Points are
+coloured by tag type.
 }
 \details{
-The four panels are
-\enumerate{
-\item predicted against observed displacement, in x and y, with the 1:1
-line: points along the line mean the model gets the direction and
-distance of movement right;
-\item a normal QQ plot of the standardised residuals \code{z_x} and \code{z_y}:
-points on the line mean the prediction uncertainty has the right size;
-\item the share of observations inside the 50\% and 95\% prediction
-ellipses, against those nominal levels;
-\item the squared standardised distance \code{d2} against the prediction
-horizon, with the median and the 95\% quantile of its chi-squared
-reference distribution: a rising cloud means the errors grow faster than
-the model expects.
-}
+Under the model the residuals are independent standard normal, so the
+points should scatter evenly around zero with no trend, the map should
+show no clusters of one sign, and the QQ plot should follow the line. The
+tests treat the residuals as independent, which tags released together do
+not quite satisfy (they share a trajectory), so the p-values are
+optimistic. The Shapiro-Wilk test takes at most 5000 values; above that it
+is applied to a random subsample of 5000.
+
+For the CTMC engine the residuals of observations without observation error
+are randomised (see \code{\link[=tag_predictions]{tag_predictions()}} and its \code{seed}).
 }
 \seealso{
-\code{\link[=tag_predictions]{tag_predictions()}}, \code{\link[=plot_tag_pred]{plot_tag_pred()}}
+\code{\link[=tag_predictions]{tag_predictions()}}, \code{\link[=plot_tag_pred]{plot_tag_pred()}}, \code{\link[=summarise_tag_pred]{summarise_tag_pred()}}
 }

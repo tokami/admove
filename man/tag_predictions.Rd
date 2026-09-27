@@ -4,7 +4,13 @@
 \alias{tag_predictions}
 \title{Predicted and observed tag positions}
 \usage{
-tag_predictions(fit, type = c("osa", "forecast"), i = NULL, verbose = TRUE)
+tag_predictions(
+  fit,
+  type = c("osa", "forecast"),
+  i = NULL,
+  seed = 1,
+  verbose = TRUE
+)
 }
 \arguments{
 \item{fit}{A fitted object of class \code{admove}, as returned by \code{\link[=admove]{admove()}}.}
@@ -25,6 +31,12 @@ and is therefore slower.}
 restrict the table to. A small subset is much faster for
 \code{type = "forecast"} with the Kalman filter, where only those tags are
 built, and always with the CTMC engine, where every tag is a forward pass.}
+
+\item{seed}{CTMC engine only: seed of the randomisation in the quantile
+residuals of observations without observation error (see Details), set
+locally so the caller's random numbers are not affected. \code{NULL} uses the
+current random stream. Default \code{1}, so repeated calls give the same
+residuals; try a few seeds to check that conclusions do not depend on it.}
 
 \item{verbose}{Logical; if \code{TRUE} (default), messages about progress are
 printed.}
@@ -78,15 +90,28 @@ scored against in the likelihood, before its update. \code{pred_x}, \code{pred_y
 are its mean over the cell centres, and \code{sd_x}, \code{sd_y} its spread,
 including the position within a cell (a cell of width \eqn{h} adds
 \eqn{h^2/12}, as the CTMC does not resolve positions within a cell) and
-the observation error where the likelihood applies one. The residual
-columns treat this as Gaussian, which is an approximation: the distribution
-can be skewed or multimodal, e.g. along a coast. \code{logdens} is the
-likelihood term of the observation divided by the cell area, a density
-comparable with the Kalman filter's. The distributions themselves are kept
-in \code{attr(, "ctmc")} for \code{\link[=plot_tag_pred]{plot_tag_pred()}}; subsetting the rows drops them.
+the observation error where the likelihood applies one; \code{res_x}, \code{res_y}
+and \code{dist} are measured from that mean. These describe the prediction but
+are not standardised residuals, since the distribution can be skewed or
+multimodal (e.g. along a coast).
 
-The first observation of each tag is its release: it is conditioned on, not
-predicted, and therefore not in the table.
+\code{z_x} and \code{z_y} are instead quantile residuals of the whole distribution,
+by the Rosenblatt transform: \code{z_x} from the distribution of the grid
+column (x) of the observation, \code{z_y} from the distribution of its row (y)
+within that column. Under the model they are independent standard normal
+whatever the shape of the distribution, so \code{d2}, \code{inside_50} and
+\code{inside_95} are exact checks. For an observation without observation error
+the likelihood only uses its grid cell, a discrete outcome, and the
+residual is randomised within the probability of that cell (randomised
+quantile residuals, Dunn and Smyth 1996; as one-step-ahead residuals of
+state-space models, Thygesen et al. 2017; see \code{seed}). With observation
+error the position is continuous (uniform within a cell plus the normal
+error, as in the likelihood) and no randomisation is needed.
+
+\code{logdens} is the likelihood term of the observation divided by the cell
+area, a density comparable with the Kalman filter's. The distributions
+themselves are kept in \code{attr(, "ctmc")} for \code{\link[=plot_tag_pred]{plot_tag_pred()}}; subsetting
+the rows drops them.
 }
 \examples{
 \donttest{
@@ -96,6 +121,21 @@ head(pred)
 summarise_tag_pred(pred)
 }
 
+}
+\references{
+Dunn, P. K. and Smyth, G. K. (1996). Randomized quantile residuals.
+\emph{Journal of Computational and Graphical Statistics} 5: 236--244.
+
+Rosenblatt, M. (1952). Remarks on a multivariate transformation. \emph{Annals
+of Mathematical Statistics} 23: 470--472.
+
+Thygesen, U. H., Albertsen, C. M., Berg, C. W., Kristensen, K. and
+Nielsen, A. (2017). Validation of ecological state space models using the
+Laplace approximation. \emph{Environmental and Ecological Statistics} 24:
+317--339.
+
+The first observation of each tag is its release: it is conditioned on, not
+predicted, and therefore not in the table.
 }
 \seealso{
 \code{\link[=plot_tag_pred]{plot_tag_pred()}}, \code{\link[=plot_tag_resid]{plot_tag_resid()}}, \code{\link[=summarise_tag_pred]{summarise_tag_pred()}}
