@@ -15,6 +15,7 @@ plot_pref_grid(
   main = NULL,
   col = NULL,
   legend = NULL,
+  scale = c("shared", "panel"),
   ci = 0.95,
   plot_land = FALSE,
   auto_layout = TRUE,
@@ -50,12 +51,18 @@ selected seasonal components before plotting. Default is \code{FALSE}.}
 \item{main}{Optional main title for the plot panels.}
 
 \item{col}{Colour palette for the preference surface. Default: \code{NULL}, the
-light purple palette for estimated quantities shared with \code{\link[=plot_taxis]{plot_taxis()}},
+light teal palette for estimated quantities shared with \code{\link[=plot_taxis]{plot_taxis()}},
 \code{\link[=plot_advection]{plot_advection()}} and \code{\link[=plot_diffusion]{plot_diffusion()}}.}
 
-\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn to the right of each
-panel. All panels share one colour scale. Default: \code{NULL}, which means
-\code{TRUE} when \code{auto_layout = TRUE} and \code{add = FALSE}.}
+\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn (see \code{scale}).
+Default: \code{NULL}, which means \code{TRUE} when \code{auto_layout = TRUE} and
+\code{add = FALSE}.}
+
+\item{scale}{Colour scale of a figure with several panels: \code{"shared"}
+(default), one range for all panels and a single colour bar to the right
+of the figure; \code{"panel"}, each panel coloured over its own range with its
+own colour bar, e.g. when one covariate or season is much weaker than the
+others and would look flat on the shared scale.}
 
 \item{ci}{Currently not used (the surfaces are drawn without confidence
 intervals). Default is \code{0.95}.}

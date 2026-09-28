@@ -41,7 +41,7 @@ the expected number of animals per cell (the probability times \code{n}).}
 blank. The colours are on a log10 scale, shared by all panels. Default:
 \code{1e-4}.}
 
-\item{col}{Colour palette. Default: \code{NULL}, the light purple palette for
+\item{col}{Colour palette. Default: \code{NULL}, the light teal palette for
 estimated quantities shared with \code{\link[=plot_taxis]{plot_taxis()}} and the other plots of
 estimates.}
 

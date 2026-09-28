@@ -9,7 +9,7 @@ plot_pref_func(
   type = "taxis",
   select = NULL,
   main = NULL,
-  cols = .admove_cols(10),
+  cols = "black",
   lwd = 1,
   ci = 0.95,
   auto_layout = TRUE,
@@ -40,8 +40,8 @@ plot_pref_func(
 character vector with one title per panel. If \code{NULL}, covariate names are
 used where available.}
 
-\item{cols}{Colours used for the plotted preference functions. Defaults to
-\code{admove:::.admove_cols(10)}.}
+\item{cols}{Colours used for the plotted preference functions (lines, with
+the confidence band in the same colour, transparent). Default: \code{"black"}.}
 
 \item{lwd}{Line width. Default is \code{1}.}
 

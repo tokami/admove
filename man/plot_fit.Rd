@@ -10,7 +10,7 @@ plot_fit(
   quantity = c("pref", "taxis", "advection", "pref_dif", "dif", "par"),
   plot_land = FALSE,
   auto_layout = TRUE,
-  col = .admove_cols(10),
+  col = .est_line_cols(10),
   cor_tax = NULL,
   cor_dif = NULL,
   cor_adv = NULL,
@@ -59,7 +59,8 @@ using \code{\link[=plot_land]{plot_land()}}. Default: \code{FALSE}.}
 restored automatically, and plots are arranged in a multi-panel layout.
 Default: \code{TRUE}.}
 
-\item{col}{Colours used in the plots. Defaults to \code{.admove_cols(10)}.}
+\item{col}{Colours used in the plots. Defaults to \code{.est_line_cols(10)}:
+black, then colours that stay visible on the estimate surfaces.}
 
 \item{cor_tax}{Optional scaling factor for taxis arrows. If \code{NULL},
 a default scaling is used internally.}

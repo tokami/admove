@@ -157,6 +157,7 @@ test_that("the prediction plots draw without error", {
                   "data.frame")
   expect_s3_class(plot_tag_resid(fit, pred = pred), "data.frame")
   expect_s3_class(plot_tag_resid(fit, pred = pred, tag_type = "c"), "data.frame")
+  expect_s3_class(plot_tag_resid(fit, pred = pred, map_at = "from"), "data.frame")
 
   ## the pairing cues: dated pairs only, every pair, or none
   for (lk in list(TRUE, "all", FALSE)) {
@@ -308,8 +309,8 @@ test_that("plot_tag_resid handles many residuals, mixed tag types and NA", {
   pred <- withr::with_seed(1, data.frame(
     tag_type = sample(c("d", "c"), n, replace = TRUE),
     t = runif(n, 0, 10), date = as.POSIXct(NA), horizon = runif(n, 0, 5),
-    x = runif(n), y = runif(n), z_x = rnorm(n), z_y = rnorm(n),
-    stringsAsFactors = FALSE))
+    x = runif(n), y = runif(n), pred_x = runif(n), pred_y = runif(n),
+    z_x = rnorm(n), z_y = rnorm(n), stringsAsFactors = FALSE))
   pred$z_x[1] <- NA
 
   pdf(NULL)
@@ -325,4 +326,8 @@ test_that("plot_tag_resid handles many residuals, mixed tag types and NA", {
   expect_equal(nrow(out), n - 1L)
   expect_s3_class(plot_tag_resid(NULL, pred = pred[-1, ], tag_type = "c"),
                   "data.frame")
+  expect_s3_class(plot_tag_resid(NULL, pred = pred[-1, ], map_at = "obs"),
+                  "data.frame")
+  expect_error(plot_tag_resid(NULL, pred = pred[-1, ], map_at = "from"),
+               "x_from")
 })

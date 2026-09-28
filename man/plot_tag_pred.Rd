@@ -15,7 +15,7 @@ plot_tag_pred(
   plot_land = TRUE,
   plot_grid = TRUE,
   col_obs = "grey20",
-  col_pred = "dodgerblue3",
+  col_pred = "#0081A9",
   dist = NULL,
   n_time_steps = 6L,
   col = NULL,
@@ -66,7 +66,7 @@ map from the predicted means. Default: \code{NULL}, maps for a single tag.}
 \item{n_time_steps}{CTMC maps: maximum number of observations shown per
 tag. Default \code{6}.}
 
-\item{col}{CTMC maps: colour palette. Default: \code{NULL}, the light purple
+\item{col}{CTMC maps: colour palette. Default: \code{NULL}, the light teal
 palette for estimated quantities shared with \code{\link[=plot_taxis]{plot_taxis()}} and the other
 plots of estimates.}
 

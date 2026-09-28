@@ -1222,7 +1222,8 @@ summarise_fit <- function(object, CI = 0.95, ...) {
 ##' @param auto_layout Logical; if `TRUE`, graphical parameters are set and
 ##'   restored automatically, and plots are arranged in a multi-panel layout.
 ##'   Default: `TRUE`.
-##' @param col Colours used in the plots. Defaults to `.admove_cols(10)`.
+##' @param col Colours used in the plots. Defaults to `.est_line_cols(10)`:
+##'   black, then colours that stay visible on the estimate surfaces.
 ##' @param cor_tax Optional scaling factor for taxis arrows. If `NULL`,
 ##'   a default scaling is used internally.
 ##' @param cor_dif Optional scaling factor for diffusion symbols. If `NULL`,
@@ -1257,7 +1258,7 @@ plot_fit <- function(x,
                                   "par"),
                      plot_land = FALSE,
                      auto_layout = TRUE,
-                     col = .admove_cols(10),
+                     col = .est_line_cols(10),
                      cor_tax = NULL,
                      cor_dif = NULL,
                      cor_adv = NULL,

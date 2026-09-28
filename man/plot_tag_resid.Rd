@@ -9,6 +9,7 @@ plot_tag_resid(
   pred = NULL,
   type = c("osa", "forecast"),
   tag_type = NULL,
+  map_at = c("pred", "from", "obs"),
   plot_land = FALSE,
   col = "grey20",
   ...
@@ -25,6 +26,11 @@ is computed with \code{type}.}
 
 \item{tag_type}{Optional tag types to keep, e.g. \code{"c"} for mark-recapture
 tags. \code{NULL} (default) keeps all.}
+
+\item{map_at}{Positions at which the residuals are mapped: \code{"pred"}
+(default) the predicted mean, \code{"from"} the position the prediction
+starts from (the previous observation for \code{"osa"}, the release for
+\code{"forecast"}), or \code{"obs"} the observed position. See Details.}
 
 \item{plot_land}{Logical; if \code{TRUE}, land is added to the map. Default
 \code{FALSE}.}
@@ -47,10 +53,10 @@ t-test for a mean of zero (bias);
 \item against the prediction horizon (time since release, or since the
 previous observation one step ahead): residuals that spread out with
 the horizon mean the errors grow faster than the model expects;
-\item on a map at the observed positions, symbol size proportional to
-the absolute residual and colour by its sign (blue positive, red
-negative), symbol by tag type: clusters of one sign point to spatial
-misfit;
+\item on a map at the positions chosen by \code{map_at}, symbol size
+proportional to the absolute residual and colour by its sign (blue
+positive, red negative), symbol by tag type: clusters of one sign point
+to spatial misfit;
 \item a normal QQ plot, titled with the p-value of a Shapiro-Wilk test.
 }
 P-values are green when at least 0.05 and red otherwise. Tag types are
@@ -65,6 +71,13 @@ tests treat the residuals as independent, which tags released together do
 not quite satisfy (they share a trajectory), so the p-values are
 optimistic. The Shapiro-Wilk test takes at most 5000 values; above that it
 is applied to a random subsample of 5000.
+
+Do not judge spatial misfit from a map at the observed positions
+(\code{map_at = "obs"}): the residual is the observed minus the predicted
+position, so it grows with the observed position even for a correct model
+(positive in x where animals were observed far east, negative far west).
+Mapped at the predicted or the starting position, the residuals of a
+correct model show no spatial pattern.
 
 For the CTMC engine the residuals of observations without observation error
 are randomised (see \code{\link[=tag_predictions]{tag_predictions()}} and its \code{seed}).

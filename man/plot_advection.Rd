@@ -18,6 +18,7 @@ plot_advection(
   image_bg = TRUE,
   col_bg = NULL,
   legend = NULL,
+  scale = c("shared", "panel"),
   auto_layout = TRUE,
   add = FALSE,
   xlab = NULL,
@@ -65,16 +66,23 @@ is the same in every cell, since a flat raster carries no information; the
 constant value is stated above the panel instead.}
 
 \item{col_bg}{Colour palette for the image of advection magnitude. Default:
-\code{NULL}, a light purple sequential palette shared by \code{\link[=plot_taxis]{plot_taxis()}},
+\code{NULL}, a light teal sequential palette shared by \code{\link[=plot_taxis]{plot_taxis()}},
 \code{\link[=plot_advection]{plot_advection()}}, \code{\link[=plot_diffusion]{plot_diffusion()}} and \code{\link[=plot_pref_grid]{plot_pref_grid()}}, so that
 estimated quantities are set apart from the input data drawn by \code{\link[=plot_cov]{plot_cov()}}
 and \code{\link[=plot_adv_field]{plot_adv_field()}}.}
 
-\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn to the right of each
-panel, labelled with the units (space units per time unit, e.g. \code{km/month}).
+\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn (see \code{scale}),
+labelled with the units (space units per time unit, e.g. \code{km/month}).
 Default: \code{NULL}, which means \code{TRUE} when \code{auto_layout = TRUE} and \code{FALSE}
 otherwise (when the caller controls the margins, there may be no room for
 the bar). Never drawn with \code{add = TRUE} or \code{image_bg = FALSE}.}
+
+\item{scale}{Colour scale of a figure with several panels: \code{"shared"}
+(default), one range for all panels and a single colour bar to the right
+of the figure; \code{"panel"}, each panel coloured over its own range with its
+own colour bar, e.g. when one time step or season is much weaker than the
+others and would look flat on the shared scale. The arrow lengths stay on
+one scale either way.}
 
 \item{auto_layout}{Logical; if \code{TRUE}, the plotting layout is set
 automatically. If multiple time steps are plotted and \code{average = FALSE},
@@ -127,7 +135,8 @@ plotted. Otherwise, one panel per selected time step is produced unless
 \code{add = TRUE}, titled with its prediction time as a date at the resolution of
 the time units (e.g. \code{"Jan 2007"} for monthly units; \code{"t = 48.45"} if the
 time reference has no origin). The panels share their axes, the arrow scale
-and the colour scale of the magnitude, so they can be compared directly.
+and (with \code{scale = "shared"}) the colour scale of the magnitude, so they can
+be compared directly.
 }
 \seealso{
 \code{\link[=plot_taxis]{plot_taxis()}}, \code{\link[=plot_diffusion]{plot_diffusion()}}, \code{\link[=plot_adv_field]{plot_adv_field()}} for the

@@ -10,7 +10,7 @@ plot_compare(
   quantity = c("pref", "taxis", "advection", "dif", "par"),
   plot_land = FALSE,
   auto_layout = TRUE,
-  col = .admove_cols(10),
+  col = .est_line_cols(10),
   cor_dif = NULL,
   cor_tax = NULL,
   asp = 2,
@@ -42,7 +42,7 @@ using \code{\link[=plot_land]{plot_land()}}. Default is \code{FALSE}.}
 parameters are set automatically. Default is \code{TRUE}.}
 
 \item{col}{Colours used for the different objects being compared. Defaults to
-\code{admove:::.admove_cols(10)}.}
+\code{admove:::.est_line_cols(10)}, starting with black.}
 
 \item{cor_dif}{Optional scaling factor for diffusion symbols. If \code{NULL},
 the default internal scaling is used.}
@@ -76,7 +76,10 @@ automatically. For spatial quantities, land can optionally be added via
 \code{\link[=plot_land]{plot_land()}}. Simulated objects of class \code{admove_sim} can be compared
 directly with fitted objects of class \code{admove}.
 
-When \code{plot.legend = 1}, a shared legend is drawn below the plots. If the
-input objects are unnamed, fitted objects are labelled sequentially and
-simulated objects are labelled \code{"Sim"}.
+When \code{plot.legend = 1}, a shared legend is drawn below the plots. Objects
+passed with a name (e.g. \code{plot_compare(KF = fit1, CTMC = fit2)}) are
+labelled by it; unnamed fitted objects are labelled \code{"Fit 1"}, \code{"Fit 2"},
+... in order, and unnamed simulated objects \code{"Sim"}. When naming only some
+objects, keep the first one unnamed: R assigns the first unnamed object to
+\code{fit}, which moves it to the front. Alternatively pass a named list.
 }

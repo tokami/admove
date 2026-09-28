@@ -23,6 +23,7 @@ plot_cov(
   col = hcl.colors(100, "viridis"),
   zlim = NULL,
   legend = NULL,
+  scale = c("shared", "panel"),
   titles = NULL,
   land_col = grey(0.85),
   land_border = grey(0.5),
@@ -77,15 +78,22 @@ spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).
 \item{col}{Colour palette for the covariate values. Default:
 \code{hcl.colors(100, "viridis")}.}
 
-\item{zlim}{Optional numeric range of values mapped onto \code{col}. Default:
-\code{NULL}, in which case the range over all plotted time steps of a covariate
-is used, so that time steps of the same covariate share one colour scale.
+\item{zlim}{Optional numeric range of values mapped onto \code{col}, used for all
+panels (implies \code{scale = "shared"}). Default: \code{NULL}, in which case the
+range over all plotted time steps of a covariate is used (see \code{scale}).
 With several covariates (\code{i} a vector), each covariate gets its own scale.}
 
-\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn to the right of each
-panel. Default: \code{NULL}, which means \code{TRUE} when \code{auto_layout = TRUE} and
-\code{FALSE} otherwise (when the caller controls the margins, there may be no
-room for the bar).}
+\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn (see \code{scale}).
+Default: \code{NULL}, which means \code{TRUE} when \code{auto_layout = TRUE} and \code{FALSE}
+otherwise (when the caller controls the margins, there may be no room for
+the bar).}
+
+\item{scale}{Colour scale when several time steps of one covariate are
+plotted: \code{"shared"} (default), one range for all panels and a single
+colour bar to the right of the figure; \code{"panel"}, each time step coloured
+over its own range with its own colour bar, e.g. to see the spatial
+pattern within each month rather than the seasonal change. Several
+covariates (\code{i} a vector) always get one scale and bar each.}
 
 \item{titles}{Optional character vector of panel titles, one per panel.
 Default: \code{NULL}, in which case covariate names (or \code{"Covariate i"}) are

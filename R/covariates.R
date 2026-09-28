@@ -455,14 +455,20 @@ prep_cov <- function(x,
 ##' @param ylim ylim
 ##' @param col Colour palette for the covariate values. Default:
 ##'   `hcl.colors(100, "viridis")`.
-##' @param zlim Optional numeric range of values mapped onto `col`. Default:
-##'   `NULL`, in which case the range over all plotted time steps of a covariate
-##'   is used, so that time steps of the same covariate share one colour scale.
+##' @param zlim Optional numeric range of values mapped onto `col`, used for all
+##'   panels (implies `scale = "shared"`). Default: `NULL`, in which case the
+##'   range over all plotted time steps of a covariate is used (see `scale`).
 ##'   With several covariates (`i` a vector), each covariate gets its own scale.
-##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
-##'   panel. Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and
-##'   `FALSE` otherwise (when the caller controls the margins, there may be no
-##'   room for the bar).
+##' @param legend Logical; if `TRUE`, a colour bar is drawn (see `scale`).
+##'   Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and `FALSE`
+##'   otherwise (when the caller controls the margins, there may be no room for
+##'   the bar).
+##' @param scale Colour scale when several time steps of one covariate are
+##'   plotted: `"shared"` (default), one range for all panels and a single
+##'   colour bar to the right of the figure; `"panel"`, each time step coloured
+##'   over its own range with its own colour bar, e.g. to see the spatial
+##'   pattern within each month rather than the seasonal change. Several
+##'   covariates (`i` a vector) always get one scale and bar each.
 ##' @param titles Optional character vector of panel titles, one per panel.
 ##'   Default: `NULL`, in which case covariate names (or `"Covariate i"`) are
 ##'   used for several covariates and the start time of each slice for several
@@ -510,6 +516,7 @@ plot_cov <- function(x,
                      col = hcl.colors(100, "viridis"),
                      zlim = NULL,
                      legend = NULL,
+                     scale = c("shared", "panel"),
                      titles = NULL,
                      land_col = grey(0.85),
                      land_border = grey(0.5),
@@ -522,6 +529,9 @@ plot_cov <- function(x,
   xlim0 <- xlim
   ylim0 <- ylim
   if (is.null(legend)) legend <- isTRUE(auto_layout)
+  scale <- match.arg(scale)
+  ## a given zlim is one range for all panels
+  if (!is.null(zlim)) scale <- "shared"
 
   if (inherits(x, "admove_sim")) {
     cov <- x$cov
@@ -613,14 +623,15 @@ plot_cov <- function(x,
     stop("'titles' must have one entry per plotted time step (", nt, ").")
   }
 
-  ## one colour scale for all time steps of this covariate
-  if (is.null(zlim)) {
-    zlim <- suppressWarnings(range(unclass(cov), na.rm = TRUE, finite = TRUE))
-  }
+  ## one colour scale for all time steps of this covariate (scale = "shared")
+  if (is.null(zlim)) zlim <- .cov_zlim(cov)
   zlim_ok <- all(is.finite(zlim))
   if (zlim_ok && zlim[1] == zlim[2]) {
     zlim <- zlim + c(-0.5, 0.5) * max(abs(zlim[1]), 1)
   }
+  shared <- auto_layout && nt > 1
+  ## one colour bar for all panels, in the right outer margin
+  bar_outer <- shared && legend && scale == "shared"
 
   if (is.null(xlim0)) {
     if(any(names(attributes(cov)) == "dimnames")){
@@ -647,12 +658,11 @@ plot_cov <- function(x,
     on.exit(par(opar))
     par(mfrow = n2mfrow(nt, asp = 2),
         mar = c(if (nt > 1) 0.3 else 1.5, if (nt > 1) 0.3 else 1.5,
-                ifelse(nt > 1, 1.4, 1.5), mar_right),
-        oma = c(3, 3.5, ifelse(main == "", 0, 1.5), 0),
+                ifelse(nt > 1, 1.4, 1.5), if (bar_outer) 0.3 else mar_right),
+        oma = c(3, 3.5, ifelse(main == "", 0, 1.5), if (bar_outer) 5 else 0),
         mgp = c(2, 0.5, 0),
         tcl = -0.3)
   }
-  shared <- auto_layout && nt > 1
   for(i in 1:nt){
     x <- as.numeric(rownames(cov[,,i]))
     if(length(x) == 0) x <- 1:nrow(cov[,,i])
@@ -671,10 +681,18 @@ plot_cov <- function(x,
                     dots))
     if (shared) .outer_panel_axes(i, nt, xaxt, yaxt)
     z <- cov[,,i, drop = TRUE]
-    if (zlim_ok) {
+    zlim_i <- zlim
+    if (scale == "panel") {
+      zlim_i <- .cov_zlim(z)
+      if (all(is.finite(zlim_i)) && zlim_i[1] == zlim_i[2]) {
+        zlim_i <- zlim_i + c(-0.5, 0.5) * max(abs(zlim_i[1]), 1)
+      }
+    }
+    zlim_i_ok <- all(is.finite(zlim_i))
+    if (zlim_i_ok) {
       ## clamp to zlim so values outside a user-supplied range are not left blank
-      z <- pmin(pmax(z, zlim[1]), zlim[2])
-      image(x, y, z, col = col, zlim = zlim, add = TRUE)
+      z <- pmin(pmax(z, zlim_i[1]), zlim_i[2])
+      image(x, y, z, col = col, zlim = zlim_i, add = TRUE)
     }
     if (plot_land) {
       plot_land(sref, col = land_col, border = land_border)
@@ -688,8 +706,9 @@ plot_cov <- function(x,
             font.main = 1, cex.main = 1)
     }
     box(lwd = 1.5)
-    if (legend && zlim_ok) .color_bar(col, zlim)
+    if (legend && !bar_outer && zlim_i_ok) .color_bar(col, zlim_i)
   }
+  if (bar_outer && zlim_ok) .color_bar_outer(col, zlim)
   if(auto_layout){
     mtext(main, 3, 0, outer = TRUE)
     mtext(xlab, 1, if (shared) 2 else 1, outer = TRUE)
@@ -698,6 +717,12 @@ plot_cov <- function(x,
 
 
   return(invisible(NULL))
+}
+
+
+## Range of covariate values (NA/Inf dropped); non-finite if there are none
+.cov_zlim <- function(z) {
+  suppressWarnings(range(unclass(z), na.rm = TRUE, finite = TRUE))
 }
 
 
@@ -750,9 +775,12 @@ plot_cov <- function(x,
 ## Vertical colour bar in the right outer margin, over the height of the
 ## figure region, for panels sharing one scale (needs a right outer margin of
 ## about 5 lines). `at` are the tick positions (default: pretty()), and `fmt`
-## turns them into labels, e.g. from a log scale back to the values.
-.color_bar_outer <- function(col, zlim, lab = NULL, at = NULL, fmt = format,
-                             cex = 0.7) {
+## turns them into labels, e.g. from a log scale back to the values (default:
+## plain numbers unless huge, as in .color_bar()).
+.color_bar_outer <- function(col, zlim, lab = NULL, at = NULL,
+                             fmt = function(a) format(a, scientific = max(abs(a), 0) >= 1e6,
+                                                      trim = TRUE),
+                             cex = 0.8) {
 
   op <- par(xpd = NA)
   on.exit(par(op))

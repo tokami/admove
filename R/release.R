@@ -197,7 +197,7 @@ print.admove_release_pred <- function(x, ...) {
 ##' @param min_prob Smallest cell probability drawn; smaller ones are left
 ##'   blank. The colours are on a log10 scale, shared by all panels. Default:
 ##'   `1e-4`.
-##' @param col Colour palette. Default: `NULL`, the light purple palette for
+##' @param col Colour palette. Default: `NULL`, the light teal palette for
 ##'   estimated quantities shared with [plot_taxis()] and the other plots of
 ##'   estimates.
 ##' @param legend Logical; if `TRUE` (default), one colour bar for all panels is

@@ -82,6 +82,15 @@ plot_land <- local({
 
     is_longlat <- isTRUE(sf::st_is_longlat(crs))
 
+    ## Crop in lon/lat with planar semantics, as .crop_land_to_window() does:
+    ## under s2 the edges of the crop box are geodesics, so in a wide window the
+    ## southern edge bows north and land below it disappears (in the wide map
+    ## panels of plot_tag_resid(), Central America was cut off).
+    if (is_longlat) {
+      s2_old <- suppressMessages(sf::sf_use_s2(FALSE))
+      on.exit(suppressMessages(sf::sf_use_s2(s2_old)), add = TRUE)
+    }
+
     ## Work on the bare geometry: cropping an sf data frame fails when one row
     ## splits into several features, which is exactly what happens to the single
     ## global land feature.
@@ -125,8 +134,9 @@ plot_land <- local({
         xmin = x1, xmax = x2,
         ymin = usr[3], ymax = usr[4]
       ), crs = sf::st_crs(land_fix))
-      cr <- try(suppressWarnings(sf::st_crop(land_fix, sf::st_as_sfc(bb))),
-                silent = TRUE)
+      ## planar lon/lat is intended (s2 off above): drop sf's notice about it
+      cr <- try(suppressMessages(suppressWarnings(
+        sf::st_crop(land_fix, sf::st_as_sfc(bb)))), silent = TRUE)
       if (inherits(cr, "try-error")) {
         warning("Couldn't plot land masses. Check the spatial reference info: sref(x).")
         return(invisible(NULL))
@@ -339,15 +349,21 @@ plot_land <- local({
 ##' @param image_bg Logical; if `TRUE` (default), a colour image of taxis
 ##'   magnitude is drawn underneath the arrows.
 ##' @param col_bg Colour palette for the image of taxis magnitude. Default:
-##'   `NULL`, a light purple sequential palette shared by [plot_taxis()],
+##'   `NULL`, a light teal sequential palette shared by [plot_taxis()],
 ##'   [plot_advection()], [plot_diffusion()] and [plot_pref_grid()], so that
 ##'   estimated quantities are set apart from the input data drawn by [plot_cov()]
 ##'   and [plot_adv_field()].
-##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
-##'   panel, labelled with the units (space units per time unit, e.g. `km/month`).
+##' @param legend Logical; if `TRUE`, a colour bar is drawn (see `scale`),
+##'   labelled with the units (space units per time unit, e.g. `km/month`).
 ##'   Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and `FALSE`
 ##'   otherwise (when the caller controls the margins, there may be no room for
 ##'   the bar). Never drawn with `add = TRUE` or `image_bg = FALSE`.
+##' @param scale Colour scale of a figure with several panels: `"shared"`
+##'   (default), one range for all panels and a single colour bar to the right
+##'   of the figure; `"panel"`, each panel coloured over its own range with its
+##'   own colour bar, e.g. when one time step or season is much weaker than the
+##'   others and would look flat on the shared scale. The arrow lengths stay on
+##'   one scale either way.
 ##' @param auto_layout Logical; if `TRUE`, the plotting layout is set
 ##'   automatically. If multiple time steps are plotted and `average = FALSE`,
 ##'   panels are arranged using [n2mfrow()]. Default is `TRUE`.
@@ -376,7 +392,8 @@ plot_land <- local({
 ##' titled with its prediction time as a date at the resolution of the time
 ##' units (e.g. `"Jan 2007"` for monthly units; `"t = 48.45"` if the time
 ##' reference has no origin). The panels share their axes, the arrow scale and
-##' the colour scale of the magnitude, so they can be compared directly.
+##' (with `scale = "shared"`) the colour scale of the magnitude, so they can be
+##' compared directly.
 ##'
 ##' The arrows show \eqn{\kappa \nabla h}, i.e. they include the taxis scaling
 ##' parameter `kappa`. Since only the product `kappa * alpha` is identifiable
@@ -400,6 +417,7 @@ plot_taxis <- function(x,
                        image_bg = TRUE,
                        col_bg = NULL,
                        legend = NULL,
+                       scale = c("shared", "panel"),
                        auto_layout = TRUE,
                        add = FALSE,
                        xlab = NULL,
@@ -416,6 +434,7 @@ plot_taxis <- function(x,
   ## the bar needs the right margin, which is only set with auto_layout
   if (is.null(legend)) legend <- isTRUE(auto_layout)
   legend <- legend && image_bg && !add
+  scale <- match.arg(scale)
 
   if (inherits(x, "admove")) {
     if (is.null(select)) select <- 1:length(x$dat$pred$time)
@@ -445,14 +464,16 @@ plot_taxis <- function(x,
   ## the outer panels and the main title once above the whole figure
   shared <- auto_layout && !add && n_panels > 1L && inherits(x, "admove")
   main_outer <- shared && length(main) != n_panels && nzchar(main[1L])
+  ## one colour bar for all panels, in the right outer margin
+  bar_outer <- shared && legend && scale == "shared"
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(suppressWarnings(graphics::par(opar)))
     mfrow <- if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2)
     if (shared) {
       par(mfrow = mfrow,
-          mar = c(0.3, 0.3, 1.4, if (legend) 4.5 else 0.3),
-          oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
+          mar = c(0.3, 0.3, 1.4, if (legend && !bar_outer) 4.5 else 0.3),
+          oma = c(3, 3.5, if (main_outer) 2 else 0, if (bar_outer) 5 else 0.5),
           mgp = c(2, 0.5, 0),
           tcl = -0.3)
     } else {
@@ -541,10 +562,9 @@ plot_taxis <- function(x,
       x$dat$grid$cellsize[1] / max_mag else 1
   }
 
-    ## one colour scale for the magnitude in all panels, like the arrow lengths
-    zlim_mag <- suppressWarnings(range(sqrt(tax.x^2 + tax.y^2), na.rm = TRUE,
-                                       finite = TRUE))
-    if (!all(is.finite(zlim_mag)) || diff(zlim_mag) == 0) zlim_mag <- NULL
+    ## one colour scale for the magnitude in all panels (scale = "shared"), like
+    ## the arrow lengths, which stay common with scale = "panel" too
+    zlim_mag <- .field_zlim(sqrt(tax.x^2 + tax.y^2))
     ncol_lay <- par("mfrow")[2L]
 
     for(i in 1:ncol(tax.x)){
@@ -582,16 +602,17 @@ plot_taxis <- function(x,
         if (image_bg) {
           ig <- x$dat$pred$grid$igrid
           mag <- sqrt(tax.x[, i]^2 + tax.y[, i]^2)
+          zlim_i <- if (scale == "panel") .field_zlim(mag) else zlim_mag
           z <- matrix(NA_real_, length(x$dat$pred$grid$xgr) - 1L,
                       length(x$dat$pred$grid$ygr) - 1L)
           z[cbind(ig$idx, ig$idy)] <- mag
           image_args <- list(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
                              col = col_bg,
                              add = TRUE)
-          image_args$zlim <- zlim_mag
+          image_args$zlim <- zlim_i
           do.call(image, image_args)
-          if (legend && !is.null(zlim_mag))
-            .color_bar(col_bg, zlim_mag, lab = .rate_units(x))
+          if (legend && !bar_outer && !is.null(zlim_i))
+            .color_bar(col_bg, zlim_i, lab = .rate_units(x))
         }
       }
       if(plot_land){
@@ -616,6 +637,8 @@ plot_taxis <- function(x,
 
     }
 
+    if (bar_outer && !is.null(zlim_mag))
+      .color_bar_outer(col_bg, zlim_mag, lab = .rate_units(x))
     if (shared) {
       if (main_outer) mtext(main[1L], 3, 0.5, outer = TRUE, font = 2)
       mtext(xlab, 1, 2, outer = TRUE)
@@ -769,15 +792,21 @@ plot_taxis <- function(x,
 ##'   is the same in every cell, since a flat raster carries no information; the
 ##'   constant value is stated above the panel instead.
 ##' @param col_bg Colour palette for the image of advection magnitude. Default:
-##'   `NULL`, a light purple sequential palette shared by [plot_taxis()],
+##'   `NULL`, a light teal sequential palette shared by [plot_taxis()],
 ##'   [plot_advection()], [plot_diffusion()] and [plot_pref_grid()], so that
 ##'   estimated quantities are set apart from the input data drawn by [plot_cov()]
 ##'   and [plot_adv_field()].
-##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
-##'   panel, labelled with the units (space units per time unit, e.g. `km/month`).
+##' @param legend Logical; if `TRUE`, a colour bar is drawn (see `scale`),
+##'   labelled with the units (space units per time unit, e.g. `km/month`).
 ##'   Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and `FALSE`
 ##'   otherwise (when the caller controls the margins, there may be no room for
 ##'   the bar). Never drawn with `add = TRUE` or `image_bg = FALSE`.
+##' @param scale Colour scale of a figure with several panels: `"shared"`
+##'   (default), one range for all panels and a single colour bar to the right
+##'   of the figure; `"panel"`, each panel coloured over its own range with its
+##'   own colour bar, e.g. when one time step or season is much weaker than the
+##'   others and would look flat on the shared scale. The arrow lengths stay on
+##'   one scale either way.
 ##' @param auto_layout Logical; if `TRUE`, the plotting layout is set
 ##'   automatically. If multiple time steps are plotted and `average = FALSE`,
 ##'   panels are arranged using [n2mfrow()]. Default is `TRUE`.
@@ -807,7 +836,8 @@ plot_taxis <- function(x,
 ##' `add = TRUE`, titled with its prediction time as a date at the resolution of
 ##' the time units (e.g. `"Jan 2007"` for monthly units; `"t = 48.45"` if the
 ##' time reference has no origin). The panels share their axes, the arrow scale
-##' and the colour scale of the magnitude, so they can be compared directly.
+##' and (with `scale = "shared"`) the colour scale of the magnitude, so they can
+##' be compared directly.
 ##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing a plot.
@@ -829,6 +859,7 @@ plot_advection <- function(x,
                            image_bg = TRUE,
                            col_bg = NULL,
                            legend = NULL,
+                           scale = c("shared", "panel"),
                            auto_layout = TRUE,
                            add = FALSE,
                            xlab = NULL,
@@ -845,6 +876,7 @@ plot_advection <- function(x,
   ## the bar needs the right margin, which is only set with auto_layout
   if (is.null(legend)) legend <- isTRUE(auto_layout)
   legend <- legend && image_bg && !add
+  scale <- match.arg(scale)
 
   if (inherits(x, "admove")) {
     if (is.null(select)) select <- 1:length(x$dat$pred$time)
@@ -876,6 +908,8 @@ plot_advection <- function(x,
   ## the outer panels and the main title once above the whole figure
   shared <- auto_layout && !add && n_panels > 1L && inherits(x, "admove")
   main_outer <- shared && length(main) != n_panels && nzchar(main[1L])
+  ## one colour bar for all panels, in the right outer margin
+  bar_outer <- shared && legend && scale == "shared"
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
@@ -883,8 +917,8 @@ plot_advection <- function(x,
     mfrow <- if (n_panels == 1L) c(1, 1) else n2mfrow(n_panels, asp = 2)
     if (shared) {
       par(mfrow = mfrow,
-          mar = c(0.3, 0.3, 1.4, if (legend) 4.5 else 0.3),
-          oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
+          mar = c(0.3, 0.3, 1.4, if (legend && !bar_outer) 4.5 else 0.3),
+          oma = c(3, 3.5, if (main_outer) 2 else 0, if (bar_outer) 5 else 0.5),
           mgp = c(2, 0.5, 0),
           tcl = -0.3)
     } else {
@@ -971,10 +1005,9 @@ plot_advection <- function(x,
       x$dat$grid$cellsize[1] / max_mag else 1
   }
 
-    ## one colour scale for the magnitude in all panels, like the arrow lengths
-    zlim_mag <- suppressWarnings(range(sqrt(adv.x^2 + adv.y^2), na.rm = TRUE,
-                                       finite = TRUE))
-    if (!all(is.finite(zlim_mag)) || diff(zlim_mag) == 0) zlim_mag <- NULL
+    ## one colour scale for the magnitude in all panels (scale = "shared"), like
+    ## the arrow lengths, which stay common with scale = "panel" too
+    zlim_mag <- .field_zlim(sqrt(adv.x^2 + adv.y^2))
     ncol_lay <- par("mfrow")[2L]
 
     for(i in 1:ncol(adv.x)){
@@ -1020,13 +1053,14 @@ plot_advection <- function(x,
           z <- matrix(NA_real_, length(x$dat$pred$grid$xgr) - 1L,
                       length(x$dat$pred$grid$ygr) - 1L)
           z[cbind(ig$idx, ig$idy)] <- mag
+          zlim_i <- if (scale == "panel") .field_zlim(mag) else zlim_mag
           image_args <- list(x$dat$pred$grid$xgr, x$dat$pred$grid$ygr, z,
                              col = col_bg,
                              add = TRUE)
-          image_args$zlim <- zlim_mag
+          image_args$zlim <- zlim_i
           do.call(image, image_args)
-          if (legend && !is.null(zlim_mag))
-            .color_bar(col_bg, zlim_mag, lab = .rate_units(x))
+          if (legend && !bar_outer && !is.null(zlim_i))
+            .color_bar(col_bg, zlim_i, lab = .rate_units(x))
         }
       }
       if(plot_land){
@@ -1066,6 +1100,8 @@ plot_advection <- function(x,
 
     }
 
+    if (bar_outer && !is.null(zlim_mag))
+      .color_bar_outer(col_bg, zlim_mag, lab = .rate_units(x))
     if (shared) {
       if (main_outer) mtext(main[1L], 3, 0.5, outer = TRUE, font = 2)
       mtext(xlab, 1, 2, outer = TRUE)
@@ -1236,15 +1272,21 @@ plot_advection <- function(x,
 ##'   diffusion), since a flat raster carries no information; the constant value
 ##'   is stated above the panel instead.
 ##' @param col_bg Colour palette for the image of diffusion. Default: `NULL`, a
-##'   light purple sequential palette shared by [plot_taxis()],
+##'   light teal sequential palette shared by [plot_taxis()],
 ##'   [plot_advection()], [plot_diffusion()] and [plot_pref_grid()], so that
 ##'   estimated quantities are set apart from the input data drawn by [plot_cov()]
 ##'   and [plot_adv_field()].
-##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
-##'   panel, labelled with the units (squared space units per time unit, e.g.
+##' @param legend Logical; if `TRUE`, a colour bar is drawn (see `scale`),
+##'   labelled with the units (squared space units per time unit, e.g.
 ##'   `km²/month`). Default: `NULL`, which means `TRUE` when `auto_layout = TRUE`
 ##'   and `FALSE` otherwise (when the caller controls the margins, there may be no
 ##'   room for the bar). Never drawn with `add = TRUE` or `image_bg = FALSE`.
+##' @param scale Colour scale of a figure with several panels: `"shared"`
+##'   (default), one range for all panels and a single colour bar to the right
+##'   of the figure; `"panel"`, each panel coloured over its own range with its
+##'   own colour bar, e.g. when one time step is much weaker than the others
+##'   and would look flat on the shared scale. The circle sizes stay on one
+##'   scale either way.
 ##' @param auto_layout Logical; if `TRUE`, graphical parameters are set and
 ##'   restored automatically; multiple panels are arranged using [n2mfrow()].
 ##'   Default: `TRUE`.
@@ -1272,8 +1314,9 @@ plot_advection <- function(x,
 ##' If `average = FALSE`, one panel per selected time step is produced, titled
 ##' with its prediction time as a date at the resolution of the time units (e.g.
 ##' `"Jan 2007"` for monthly units; `"t = 48.45"` if the time reference has no
-##' origin). The panels share their axes, the circle scale and the colour scale
-##' of diffusion, so they can be compared directly.
+##' origin). The panels share their axes, the circle scale and (with
+##' `scale = "shared"`) the colour scale of diffusion, so they can be compared
+##' directly.
 ##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing a plot.
@@ -1291,6 +1334,7 @@ plot_diffusion <- function(x,
                            image_bg = TRUE,
                            col_bg = NULL,
                            legend = NULL,
+                           scale = c("shared", "panel"),
                            auto_layout = TRUE,
                            add = FALSE,
                            xlab = NULL,
@@ -1307,6 +1351,7 @@ plot_diffusion <- function(x,
   ## the bar needs the right margin, which is only set with auto_layout
   if (is.null(legend)) legend <- isTRUE(auto_layout)
   legend <- legend && image_bg && !add
+  scale <- match.arg(scale)
 
   if (!inherits(x, c("admove", "admove_sim")))
     stop("Don't know how to plot diffusion for this object. Only implemented yet for objects of class `admove` or `admove_sim`.")
@@ -1368,6 +1413,8 @@ plot_diffusion <- function(x,
   ## panels and the main title once above the whole figure
   shared <- auto_layout && !add && n_panels > 1L
   main_outer <- shared && length(main) != n_panels && nzchar(main[1L])
+  ## one colour bar for all panels, in the right outer margin
+  bar_outer <- shared && legend && scale == "shared"
 
   if (average) {
     mains <- main[1L]
@@ -1390,8 +1437,8 @@ plot_diffusion <- function(x,
     mfrow <- if (n_panels == 1L || add) c(1, 1) else n2mfrow(n_panels, asp = 2)
     if (shared) {
       par(mfrow = mfrow,
-          mar = c(0.3, 0.3, 1.4, if (legend) 4.5 else 0.3),
-          oma = c(3, 3.5, if (main_outer) 2 else 0, 0.5),
+          mar = c(0.3, 0.3, 1.4, if (legend && !bar_outer) 4.5 else 0.3),
+          oma = c(3, 3.5, if (main_outer) 2 else 0, if (bar_outer) 5 else 0.5),
           mgp = c(2, 0.5, 0),
           tcl = -0.3)
     } else {
@@ -1400,9 +1447,9 @@ plot_diffusion <- function(x,
     }
   }
 
-  ## one colour scale for D in all panels, like the circle sizes
-  zlim_dif <- suppressWarnings(range(D, na.rm = TRUE, finite = TRUE))
-  if (!all(is.finite(zlim_dif)) || diff(zlim_dif) == 0) zlim_dif <- NULL
+  ## one colour scale for D in all panels (scale = "shared"), like the circle
+  ## sizes, which stay common with scale = "panel" too
+  zlim_dif <- .field_zlim(D)
   ncol_lay <- par("mfrow")[2L]
 
   for (i in seq_len(n_panels)) {
@@ -1448,13 +1495,14 @@ plot_diffusion <- function(x,
       z <- matrix(NA_real_, length(pgrid$xgr) - 1L,
                   length(pgrid$ygr) - 1L)
       z[cbind(ig$idx, ig$idy)] <- dif
+      zlim_i <- if (scale == "panel") .field_zlim(dif) else zlim_dif
       image_args <- list(pgrid$xgr, pgrid$ygr, z,
                          col = col_bg,
                          add = TRUE)
-      image_args$zlim <- zlim_dif
+      image_args$zlim <- zlim_i
       do.call(image, image_args)
-      if (legend && !is.null(zlim_dif))
-        .color_bar(col_bg, zlim_dif, lab = .rate_units(x, sq = TRUE))
+      if (legend && !bar_outer && !is.null(zlim_i))
+        .color_bar(col_bg, zlim_i, lab = .rate_units(x, sq = TRUE))
     }
 
     if (isTRUE(plot_land)) {
@@ -1474,6 +1522,8 @@ plot_diffusion <- function(x,
     if(!add) box(lwd = 1.5)
   }
 
+  if (bar_outer && !is.null(zlim_dif))
+    .color_bar_outer(col_bg, zlim_dif, lab = .rate_units(x, sq = TRUE))
   if (shared) {
     if (main_outer) mtext(main[1L], 3, 0.5, outer = TRUE, font = 2)
     mtext(xlab, 1, 2, outer = TRUE)
@@ -1514,7 +1564,8 @@ plot_diffusion <- function(x,
 ##' @param asp Positive numeric value giving the target aspect ratio
 ##'   (columns / rows) of the plot arrangement. Default: `2`.
 ##' @param col Vector of colours used for the different objects being compared.
-##'   By default, colours are taken from `.admove_cols(10)`.
+##'   By default, colours are taken from `.est_line_cols(10)`, starting
+##'   with black.
 ##' @param lty Vector of line types used for the different objects being
 ##'   compared. Default: `1:10`.
 ##' @param cor_tax Optional scaling factor for taxis arrows. If `NULL`
@@ -1557,7 +1608,7 @@ plot_compare_one <- function(fit, ...,
                              plot_land = FALSE,
                              auto_layout = TRUE,
                              asp = 2,
-                             col = .admove_cols(10),
+                             col = .est_line_cols(10),
                              lty = 1:10,
                              cor_tax = NULL,
                              cor_dif = NULL,
@@ -1567,7 +1618,10 @@ plot_compare_one <- function(fit, ...,
                              select = NULL,
                              bg = NULL) {
 
-  if("admove" %in% class(fit) || "admove_sim" %in% class(fit)){
+  ## all objects named: none matches `fit`, they all arrive in `...`
+  if(missing(fit)){
+    fitlist <- list(...)
+  }else if("admove" %in% class(fit) || "admove_sim" %in% class(fit)){
     fitlist <- list(fit, ...)
   }else if(inherits(fit, "list")){
     fitlist <- c(fit, ...)
@@ -1941,7 +1995,7 @@ plot_compare_one <- function(fit, ...,
 ##' @param auto_layout Logical; if `TRUE`, the plot layout and graphical
 ##'   parameters are set automatically. Default is `TRUE`.
 ##' @param col Colours used for the different objects being compared. Defaults to
-##'   `admove:::.admove_cols(10)`.
+##'   `admove:::.est_line_cols(10)`, starting with black.
 ##' @param cor_dif Optional scaling factor for diffusion symbols. If `NULL`,
 ##'   the default internal scaling is used.
 ##' @param cor_tax Optional scaling factor for taxis arrows. If `NULL`,
@@ -1960,9 +2014,12 @@ plot_compare_one <- function(fit, ...,
 ##' [plot_land()]. Simulated objects of class `admove_sim` can be compared
 ##' directly with fitted objects of class `admove`.
 ##'
-##' When `plot.legend = 1`, a shared legend is drawn below the plots. If the
-##' input objects are unnamed, fitted objects are labelled sequentially and
-##' simulated objects are labelled `"Sim"`.
+##' When `plot.legend = 1`, a shared legend is drawn below the plots. Objects
+##' passed with a name (e.g. `plot_compare(KF = fit1, CTMC = fit2)`) are
+##' labelled by it; unnamed fitted objects are labelled `"Fit 1"`, `"Fit 2"`,
+##' ... in order, and unnamed simulated objects `"Sim"`. When naming only some
+##' objects, keep the first one unnamed: R assigns the first unnamed object to
+##' `fit`, which moves it to the front. Alternatively pass a named list.
 ##'
 ##' @return
 ##' Invisibly returns `NULL`. Called for its side effect of producing plots.
@@ -1973,15 +2030,18 @@ plot_compare <- function(fit, ...,
                                       "dif","par"),
                          plot_land = FALSE,
                          auto_layout = TRUE,
-                         col = .admove_cols(10),
+                         col = .est_line_cols(10),
                          cor_dif = NULL,
                          cor_tax = NULL,
                          asp = 2,
                          plot.legend = 1,
                          bg = NULL) {
 
-  if("admove" %in% class(fit) || "admove_sim" %in% class(fit)){
-    fitlist <- list(fit = fit, ...)
+  ## all objects named: none matches `fit`, they all arrive in `...`
+  if(missing(fit)){
+    fitlist <- list(...)
+  }else if("admove" %in% class(fit) || "admove_sim" %in% class(fit)){
+    fitlist <- list(fit, ...)
   }else if(inherits(fit, "list")){
     fitlist <- c(fit, ...)
   }else stop("Please provide fitted admove objects either individually or as list.")
@@ -2061,14 +2121,12 @@ plot_compare <- function(fit, ...,
   }
 
   if(as.integer(plot.legend) == 1){
-    nfit <- sum(!unlist(sim_ind))
-    if(is.null(names(fitlist))){
-      leg.text <- ifelse(unlist(sim_ind), "Sim",
-                         paste0("Fit ",
-                                cumsum(!unlist(sim_ind))))
-    }else{
-      leg.text <- names(fitlist)
-    }
+    ## objects without a name get a default label; given names are kept
+    nms <- names(fitlist)
+    if (is.null(nms)) nms <- rep("", length(fitlist))
+    default <- ifelse(unlist(sim_ind), "Sim",
+                      paste0("Fit ", cumsum(!unlist(sim_ind))))
+    leg.text <- ifelse(is.na(nms) | nms == "", default, nms)
 
     par(mar = c(1,5,0,0))
     plot.new()
@@ -2154,10 +2212,10 @@ plot_compare <- function(fit, ...,
       pr <- .na_zero(tag[["prob"]][sib])
       if (max(pr) <= 0) pr <- rep(1, length(sib))
       pr <- pr / max(pr)
-      points(tag$x[sib], tag$y[sib], col = adjustcolor("dodgerblue3", 0.5),
+      points(tag$x[sib], tag$y[sib], col = adjustcolor("black", 0.5),
              pch = 1, cex = 0.6 + 1.0 * pr)
     }
-    points(tag$x[j], tag$y[j], col = "dodgerblue3", pch = 16, cex = 1.2)
+    points(tag$x[j], tag$y[j], col = "black", pch = 16, cex = 1.2)
     title(main = lab, line = 0.3, font.main = 1, cex.main = 0.9)
     box(lwd = 1.5)
   }
@@ -2257,14 +2315,30 @@ add_lab <- function(lab){
 }
 
 
+## Colour range of a field (all panels, or one panel with scale = "panel"):
+## NULL when it has no finite values or no spread, so no image or bar is drawn.
+.field_zlim <- function(z) {
+  r <- suppressWarnings(range(z, na.rm = TRUE, finite = TRUE))
+  if (!all(is.finite(r)) || diff(r) == 0) NULL else r
+}
+
+
 ## Palette for the estimated (or simulated true) movement components: taxis,
 ## advection, diffusion and preference surfaces. Deliberately distinct from the
 ## input data palettes (viridis in plot_cov(), YlOrRd in plot_adv_field()), so
-## estimates are not mistaken for data. Only the lighter part of the ramp, so
-## black arrows and circles stay readable on top; opaque (no alpha), so the
-## colour bar matches the image exactly.
+## estimates are not mistaken for data. Only the lighter half of the reversed
+## ramp: beyond it Mako turns slate-purple and black arrows and circles drawn on
+## top disappear. Opaque (no alpha), so the colour bar matches the image exactly.
 .est_col <- function(n = 100) {
-  grDevices::colorRampPalette(hcl.colors(100, "Purples 3", rev = TRUE)[1:65])(n)
+  grDevices::colorRampPalette(hcl.colors(100, "Mako", rev = TRUE)[1:50])(n)
+}
+
+
+## Line and arrow colours for estimates drawn on (or next to) .est_col()
+## surfaces: black for a single fit, then colours that stay visible on the light
+## teal. darkorange is left out, it marks the true values of a simulation.
+.est_line_cols <- function(n = 1) {
+  rep_len(c("black", "firebrick3", "goldenrod3", "mediumorchid3", "grey50"), n)
 }
 
 
@@ -2319,8 +2393,8 @@ add_lab <- function(lab){
 ##' @param main Optional main title. Can be a single character string or a
 ##'   character vector with one title per panel. If `NULL`, covariate names are
 ##'   used where available.
-##' @param cols Colours used for the plotted preference functions. Defaults to
-##'   `admove:::.admove_cols(10)`.
+##' @param cols Colours used for the plotted preference functions (lines, with
+##'   the confidence band in the same colour, transparent). Default: `"black"`.
 ##' @param lwd Line width. Default is `1`.
 ##' @param ci Confidence level for pointwise confidence intervals. Default is
 ##'   `0.95`.
@@ -2381,7 +2455,7 @@ plot_pref_func <- function(x,
                            type = "taxis",
                            select = NULL,
                            main = NULL,
-                           cols = .admove_cols(10),
+                           cols = "black",
                            lwd = 1,
                            ci = 0.95,
                            auto_layout = TRUE,
@@ -2477,8 +2551,8 @@ plot_pref_func <- function(x,
                                           apply(preflow, 2, range),
                                           apply(prefup, 2, range)),2,range,
                                     na.rm = TRUE)
-    alpha <- 0.3
-    if(is.null(cols)) cols <- .admove_cols(length(select))
+    alpha <- 0.15
+    if(is.null(cols)) cols <- "black"
     cols <- rep_len(cols, length(select))
 
     if(return_limits) return(list(xlim = xlim, ylim = ylim))
@@ -2647,7 +2721,7 @@ plot_pref_func <- function(x,
       par(mfrow = n2mfrow(length(select), asp))
     }
 
-    if(is.null(cols)) cols <- .admove_cols(length(select))
+    if(is.null(cols)) cols <- "black"
     cols <- rep_len(cols, length(select))
 
     cov_nms <- names(dat$cov)
@@ -2720,11 +2794,16 @@ plot_pref_func <- function(x,
 ##'   selected seasonal components before plotting. Default is `FALSE`.
 ##' @param main Optional main title for the plot panels.
 ##' @param col Colour palette for the preference surface. Default: `NULL`, the
-##'   light purple palette for estimated quantities shared with [plot_taxis()],
+##'   light teal palette for estimated quantities shared with [plot_taxis()],
 ##'   [plot_advection()] and [plot_diffusion()].
-##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
-##'   panel. All panels share one colour scale. Default: `NULL`, which means
-##'   `TRUE` when `auto_layout = TRUE` and `add = FALSE`.
+##' @param legend Logical; if `TRUE`, a colour bar is drawn (see `scale`).
+##'   Default: `NULL`, which means `TRUE` when `auto_layout = TRUE` and
+##'   `add = FALSE`.
+##' @param scale Colour scale of a figure with several panels: `"shared"`
+##'   (default), one range for all panels and a single colour bar to the right
+##'   of the figure; `"panel"`, each panel coloured over its own range with its
+##'   own colour bar, e.g. when one covariate or season is much weaker than the
+##'   others and would look flat on the shared scale.
 ##' @param ci Currently not used (the surfaces are drawn without confidence
 ##'   intervals). Default is `0.95`.
 ##' @param plot_land Logical; if `TRUE`, land masses are added to the plot.
@@ -2771,6 +2850,7 @@ plot_pref_grid <- function(x,
                            main = NULL,
                            col = NULL,
                            legend = NULL,
+                           scale = c("shared", "panel"),
                            ci = 0.95,
                            plot_land = FALSE,
                            auto_layout = TRUE,
@@ -2793,6 +2873,7 @@ plot_pref_grid <- function(x,
 
   if (is.null(col)) col <- .est_col()
   if (is.null(legend)) legend <- isTRUE(auto_layout) && !add
+  scale <- match.arg(scale)
 
   ## estimated coefficients for a fit, true ones for a simulation
   pars <- if (inherits(x, "admove")) .fitted_par(x) else x$par_true
@@ -2822,11 +2903,15 @@ plot_pref_grid <- function(x,
   } else {
     mfrow <- c(nsea, ncov)
   }
+  ## one colour bar for all panels, in the right outer margin
+  bar_outer <- auto_layout && !add && legend && scale == "shared" &&
+    prod(mfrow) > 1
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
     on.exit(suppressWarnings(graphics::par(opar)))
     par(mfrow = mfrow,
-        mar = c(4.5, 4, 1, if (legend) 4.4 else 1) + 0.1, oma = c(1,1,1,1))
+        mar = c(4.5, 4, 1, if (legend && !bar_outer) 4.4 else 1) + 0.1,
+        oma = c(1, 1, 1, if (bar_outer) 5 else 1))
   }
 
   cov_all <- .make_cov_list(x$dat$cov)
@@ -2886,12 +2971,14 @@ plot_pref_grid <- function(x,
     ncov <- 1
   }
 
-  ## one colour scale for all panels; a constant surface (e.g. a single-knot
-  ## diffusion) is stated rather than drawn as a flat raster
+  ## one colour scale for all panels (scale = "shared"); a constant surface
+  ## (e.g. a single-knot diffusion) is stated rather than drawn as a flat raster
   vals <- unlist(mat_list)
   pref_const <- .is_constant_field(vals)
   zlim <- if (pref_const) NULL else range(vals, na.rm = TRUE, finite = TRUE)
-  if (is.null(zlim) && legend && auto_layout) par(mar = replace(par("mar"), 4, 1.1))
+  if (is.null(zlim) && legend && auto_layout) {
+    par(mar = replace(par("mar"), 4, 1.1), oma = c(1, 1, 1, 1))
+  }
 
   ## plot
   for(j in 1:nsea){
@@ -2910,12 +2997,17 @@ plot_pref_grid <- function(x,
              ...)
       }
 
-      if (!is.null(zlim)) {
-        image(cov_xy[[i]]$x, cov_xy[[i]]$y, mat_list[[j]][[i]],
-              col = col, zlim = zlim, add = TRUE)
-        if (legend && !add) .color_bar(col, zlim)
-      } else if (!add && any(is.finite(vals))) {
-        .add_const_note(vals[is.finite(vals)][1L], "preference")
+      m <- mat_list[[j]][[i]]
+      zlim_i <- if (scale == "panel" && !is.null(zlim) &&
+                      !.is_constant_field(m)) {
+        range(m, na.rm = TRUE, finite = TRUE)
+      } else if (scale == "panel") NULL else zlim
+      if (!is.null(zlim_i)) {
+        image(cov_xy[[i]]$x, cov_xy[[i]]$y, m,
+              col = col, zlim = zlim_i, add = TRUE)
+        if (legend && !add && !bar_outer) .color_bar(col, zlim_i)
+      } else if (!add && any(is.finite(m))) {
+        .add_const_note(m[is.finite(m)][1L], "preference")
       }
 
       if(plot_land){
@@ -2935,6 +3027,8 @@ plot_pref_grid <- function(x,
       if(!add) box(lwd = 1.5)
     }
   }
+
+  if (bar_outer && !is.null(zlim)) .color_bar_outer(col, zlim)
 
   invisible(NULL)
 }
@@ -2991,7 +3085,7 @@ plot_pref_grid <- function(x,
 ##'   map from the predicted means. Default: `NULL`, maps for a single tag.
 ##' @param n_time_steps CTMC maps: maximum number of observations shown per
 ##'   tag. Default `6`.
-##' @param col CTMC maps: colour palette. Default: `NULL`, the light purple
+##' @param col CTMC maps: colour palette. Default: `NULL`, the light teal
 ##'   palette for estimated quantities shared with [plot_taxis()] and the other
 ##'   plots of estimates.
 ##' @param min_prob CTMC maps: smallest cell probability drawn; smaller ones are
@@ -3020,7 +3114,7 @@ plot_tag_pred <- function(x,
                           plot_land = TRUE,
                           plot_grid = TRUE,
                           col_obs = "grey20",
-                          col_pred = "dodgerblue3",
+                          col_pred = "#0081A9",
                           dist = NULL,
                           n_time_steps = 6L,
                           col = NULL,
@@ -3098,10 +3192,10 @@ plot_tag_pred <- function(x,
 ##'   \item against the prediction horizon (time since release, or since the
 ##'     previous observation one step ahead): residuals that spread out with
 ##'     the horizon mean the errors grow faster than the model expects;
-##'   \item on a map at the observed positions, symbol size proportional to
-##'     the absolute residual and colour by its sign (blue positive, red
-##'     negative), symbol by tag type: clusters of one sign point to spatial
-##'     misfit;
+##'   \item on a map at the positions chosen by `map_at`, symbol size
+##'     proportional to the absolute residual and colour by its sign (blue
+##'     positive, red negative), symbol by tag type: clusters of one sign point
+##'     to spatial misfit;
 ##'   \item a normal QQ plot, titled with the p-value of a Shapiro-Wilk test.
 ##' }
 ##' P-values are green when at least 0.05 and red otherwise. Tag types are
@@ -3115,6 +3209,10 @@ plot_tag_pred <- function(x,
 ##'   `"osa"`.
 ##' @param tag_type Optional tag types to keep, e.g. `"c"` for mark-recapture
 ##'   tags. `NULL` (default) keeps all.
+##' @param map_at Positions at which the residuals are mapped: `"pred"`
+##'   (default) the predicted mean, `"from"` the position the prediction
+##'   starts from (the previous observation for `"osa"`, the release for
+##'   `"forecast"`), or `"obs"` the observed position. See Details.
 ##' @param plot_land Logical; if `TRUE`, land is added to the map. Default
 ##'   `FALSE`.
 ##' @param col Colour of the points in the scatter and QQ panels. Default
@@ -3130,6 +3228,13 @@ plot_tag_pred <- function(x,
 ##' optimistic. The Shapiro-Wilk test takes at most 5000 values; above that it
 ##' is applied to a random subsample of 5000.
 ##'
+##' Do not judge spatial misfit from a map at the observed positions
+##' (`map_at = "obs"`): the residual is the observed minus the predicted
+##' position, so it grows with the observed position even for a correct model
+##' (positive in x where animals were observed far east, negative far west).
+##' Mapped at the predicted or the starting position, the residuals of a
+##' correct model show no spatial pattern.
+##'
 ##' For the CTMC engine the residuals of observations without observation error
 ##' are randomised (see [tag_predictions()] and its `seed`).
 ##'
@@ -3143,11 +3248,13 @@ plot_tag_resid <- function(x,
                            pred = NULL,
                            type = c("osa", "forecast"),
                            tag_type = NULL,
+                           map_at = c("pred", "from", "obs"),
                            plot_land = FALSE,
                            col = "grey20",
                            ...) {
 
   type <- match.arg(type)
+  map_at <- match.arg(map_at)
 
   if (is.null(pred)) {
     .check_class(x, "admove")
@@ -3167,6 +3274,22 @@ plot_tag_resid <- function(x,
   if (nrow(pred) == 0L) {
     stop("No predicted positions left to plot.", call. = FALSE)
   }
+
+  ## the map positions: never the observed ones by default, as the residual
+  ## grows with the observed position even for a correct model
+  map_cols <- switch(map_at, pred = c("pred_x", "pred_y"),
+                     from = c("x_from", "y_from"), obs = c("x", "y"))
+  if (!all(map_cols %in% names(pred))) {
+    stop("'pred' has no columns ", paste(map_cols, collapse = ", "),
+         " for map_at = \"", map_at, "\".", call. = FALSE)
+  }
+  map_x <- pred[[map_cols[1]]]
+  map_y <- pred[[map_cols[2]]]
+  map_title <- switch(map_at, pred = "at predicted position",
+                      from = if (identical(pred$type[1], "forecast"))
+                        "at release" else
+                        "at previous observation",
+                      obs = "at observed position")
 
   ## tag types by symbol, in one colour: colour is reserved for the sign of
   ## the residuals on the map and for the p-values
@@ -3217,13 +3340,13 @@ plot_tag_resid <- function(x,
   ## 3: map, size by |z| and colour by sign
   for (ax in c("x", "y")) {
     z <- zs[[ax]]
-    plot(pred$x, pred$y, type = "n", asp = 1,
+    plot(map_x, map_y, type = "n", asp = 1,
          xlab = map_labs[1], ylab = map_labs[2], ...)
     if (plot_land && inherits(x, "admove")) plot_land(sref = sref(x$dat))
-    points(pred$x, pred$y, pch = pt_pch, cex = 0.4 + 0.9 * abs(z), lwd = 1.2,
+    points(map_x, map_y, pch = pt_pch, cex = 0.4 + 0.9 * abs(z), lwd = 1.2,
            col = ifelse(z >= 0, .admove_cols(type = "pos", alpha = 0.7),
                         .admove_cols(type = "neg", alpha = 0.7)))
-    title(main = paste(ax, "residual"), font.main = 1, cex.main = 1)
+    title(main = paste(ax, "residual", map_title), font.main = 1, cex.main = 1)
     box(lwd = 1.5)
   }
 

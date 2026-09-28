@@ -11,7 +11,7 @@ plot_compare_one(
   plot_land = FALSE,
   auto_layout = TRUE,
   asp = 2,
-  col = .admove_cols(10),
+  col = .est_line_cols(10),
   lty = 1:10,
   cor_tax = NULL,
   cor_dif = NULL,
@@ -47,7 +47,8 @@ Default: \code{TRUE}.}
 (columns / rows) of the plot arrangement. Default: \code{2}.}
 
 \item{col}{Vector of colours used for the different objects being compared.
-By default, colours are taken from \code{.admove_cols(10)}.}
+By default, colours are taken from \code{.est_line_cols(10)}, starting
+with black.}
 
 \item{lty}{Vector of line types used for the different objects being
 compared. Default: \code{1:10}.}
