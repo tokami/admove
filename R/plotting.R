@@ -82,14 +82,6 @@ plot_land <- local({
 
     is_longlat <- isTRUE(sf::st_is_longlat(crs))
 
-    ## Crop in lon/lat with planar semantics, as .crop_land_to_window() does:
-    ## under s2 the edges of the crop box are geodesics, so in a wide window the
-    ## southern edge bows north and land below it disappears (in the wide map
-    ## panels of plot_tag_resid(), Central America was cut off).
-    if (is_longlat) {
-      s2_old <- suppressMessages(sf::sf_use_s2(FALSE))
-      on.exit(suppressMessages(sf::sf_use_s2(s2_old)), add = TRUE)
-    }
 
     ## Work on the bare geometry: cropping an sf data frame fails when one row
     ## splits into several features, which is exactly what happens to the single
@@ -122,6 +114,16 @@ plot_land <- local({
       ## none spans the whole globe; otherwise such a polygon is drawn as a
       ## full-width horizontal sliver.
       land_fix <- suppressWarnings(sf::st_wrap_dateline(land_fix))
+
+      ## Crop with planar semantics, as .crop_land_to_window() does: under s2
+      ## the edges of the crop box are geodesics, so in a wide window the
+      ## southern edge bows north and land below it disappears (Central America
+      ## in the wide map panels of plot_tag_resid()). Only the crop: splitting
+      ## at the dateline above needs s2, else Fiji is drawn as a band across
+      ## the map. Polygons made valid under s2 need not be valid to GEOS.
+      s2_old <- suppressMessages(sf::sf_use_s2(FALSE))
+      on.exit(suppressMessages(sf::sf_use_s2(s2_old)), add = TRUE)
+      land_fix <- suppressMessages(suppressWarnings(sf::st_make_valid(land_fix)))
     }
 
     ## Crop land to a longitude window [x1, x2] (in the [-180, 180] frame for
