@@ -400,6 +400,11 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
 
   if (is.null(tags)) stop("No tags found!")
 
+  ## split() and rbind() below drop the attributes. The rows keep their time
+  ## values, so they keep the input's time reference: without it, add_tref()
+  ## sees an undefined one and warns that the times are being relabelled.
+  tref_in <- attr(tags, "tref")
+
   flag_grid <- ifelse(is.null(grid), FALSE, TRUE)
   flag_dat <- ifelse(is.null(dat), FALSE, TRUE)
 
@@ -668,10 +673,9 @@ check_tags <- function(x, grid = NULL, dat = NULL, conf = NULL,
   } else {
     sref(tags_out) <- create_sref()
   }
+  tref(tags_out) <- if (is.null(tref_in)) create_tref() else tref_in
   if (flag_dat) {
     tags_out <- add_tref(tags_out, tref(dat))
-} else {
-    tref(tags_out) <- create_tref()
   }
 
   return(tags_out)

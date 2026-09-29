@@ -154,3 +154,22 @@ test_that("subsetting admove_tags keeps sref and tref", {
   ## a single column is still a plain vector
   expect_identical(tags[, "x"], tags$x)
 })
+
+
+test_that("check_tags keeps the time reference of the tags it rebuilds", {
+
+  sim <- small_sim()
+  dat <- suppressMessages(suppressWarnings(
+    setup_data(grid = sim$dat$grid, cov = sim$dat$cov, tags = sim$dat$tags,
+               verbose = FALSE)))
+
+  ## setup_data() calls check_tags() without dat: the tags used to come back
+  ## with an empty time reference, which admove() then reported as a relabelling
+  expect_true(tref_equal(tref(dat$tags), tref(dat)))
+
+  ## ... as admove() calls it
+  conf <- default_conf(dat)
+  expect_no_warning(
+    out <- check_tags(dat$tags, dat$grid, dat, conf, TRUE, verbose = FALSE))
+  expect_true(tref_equal(tref(out), tref(dat)))
+})
