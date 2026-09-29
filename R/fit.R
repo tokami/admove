@@ -32,14 +32,27 @@
 ##' @param upper Optional upper bounds for optimization. If \code{NULL}, no
 ##'   explicit upper bounds are supplied.
 ##' @param rel_tol Relative convergence tolerance passed to [stats::nlminb()].
-##'   Default is \code{1e-10}.
+##'   Default is \code{1e-10}. \code{control$rel.tol} takes precedence.
 ##' @param grad_tol Convergence tolerance on the gradient: one of the
 ##'   convergence checks passes when the largest absolute gradient component at
 ##'   the estimates is below \code{grad_tol}. Default \code{1e-3}. The
-##'   gradient grows with the number of observations, so large data sets may
-##'   need a tighter \code{rel_tol} or a larger \code{grad_tol}. The maximum
+##'   gradient grows with the number of observations; on large data sets the
+##'   Newton steps (\code{newton_steps}) are usually what brings it below the
+##'   tolerance, otherwise a larger \code{grad_tol} may be needed. The maximum
 ##'   gradient component is stored in the fitted object as
 ##'   \code{max_gradient}. See [summarise_fit()] for all convergence checks.
+##' @param newton_steps Maximum number of Newton steps taken from the
+##'   [stats::nlminb()] optimum before the convergence checks. Default \code{1}.
+##'   nlminb stops on the relative change of the objective, which on a large
+##'   objective can leave a gradient well above \code{grad_tol} at an optimum
+##'   that is in fact well determined; a Newton step with the exact gradient
+##'   closes that gap. A step is kept only if the Hessian is positive definite,
+##'   the step stays within \code{lower} and \code{upper}, the largest gradient
+##'   component decreases and the objective does not increase by more than
+##'   \code{rel_tol} (relative). Otherwise the nlminb estimates are kept. The
+##'   Hessian is \code{obj$he()} or, with \code{ad_hessian = FALSE},
+##'   [stats::optimHess()]. The steps taken are stored as \code{newton} in the
+##'   fitted object. \code{0} switches the steps off.
 ##' @param do_predictions Logical; if \code{TRUE} (default), model predictions
 ##'   are computed after fitting. If \code{FALSE}, prediction-related outputs are
 ##'   skipped, and some plotting methods may not be available.
@@ -59,8 +72,10 @@
 ##'   to be given to [add_sdreport()] directly with \code{do_sdreport = FALSE}.
 ##' @param dbg Logical; if \code{TRUE}, the function is run in debugging mode.
 ##'   Default is \code{FALSE}.
-##' @param control An optional named list of control settings passed to the
-##'   optimizer.
+##' @param control An optional named list of control settings passed to
+##'   [stats::nlminb()]. Its elements replace the defaults
+##'   (\code{trace = verbose}, \code{eval.max = 2000}, \code{iter.max = 1000},
+##'   \code{rel.tol = rel_tol}) or are added to them.
 ##' @param verbose Logical; if \code{TRUE}, progress messages are printed.
 ##' @param ... Additional arguments passed to [RTMB::MakeADFun()].
 ##'
@@ -97,6 +112,7 @@ admove <- function(dat,
                    upper = NULL,
                    rel_tol = 1e-10,
                    grad_tol = 1e-3,
+                   newton_steps = 1,
                    do_predictions = TRUE,
                    do_sdreport = TRUE,
                    do_report = TRUE,
@@ -274,24 +290,28 @@ admove <- function(dat,
                iter.max = 1000,
                rel.tol = rel_tol)
 
-  if(is.null(control)){
-    ind0 <- names(control) %in% names(ctrl)
-    ind <- match(names(control), names(ctrl[ind0]))
-    ## overwrite
-    if(length(ind) > 0){
-      ctrl[ind] <- ctrl[ind0]
+  if (!is.null(control)) {
+    if (!is.list(control) || length(control) > 0 &&
+          (is.null(names(control)) || any(names(control) == ""))) {
+      stop("'control' must be a named list of nlminb() control settings.",
+           call. = FALSE)
     }
-    ## add
-    if(length(which(!ind0)) > 0){
-      ctrl <- c(ctrl,
-                control[!(names(control) %in% names(ctrl[!ind0]))])
-    }
+    ctrl[names(control)] <- control
   }
 
   opt <- stats::nlminb(obj$par, obj$fn, obj$gr,
                        control = ctrl,
                        lower = lower2,
                        upper = upper2)
+
+  newton <- .newton_steps(obj, opt, newton_steps, lower2, upper2,
+                          ad_hessian, rel_tol)
+  opt <- newton$opt
+  if (verbose && nrow(newton$steps) > 1) {
+    message("Newton step(s): max|gradient| ",
+            signif(newton$steps$max_gradient[1], 3), " -> ",
+            signif(newton$steps$max_gradient[nrow(newton$steps)], 3), ".")
+  }
 
   max_gradient <- .max_abs_gradient(obj, opt$par)
   at_bound <- .at_bound(opt$par, lower2, upper2)
@@ -310,6 +330,7 @@ admove <- function(dat,
               obj = obj,
               max_gradient = max_gradient,
               grad_tol = grad_tol,
+              newton = newton$steps,
               at_bound = at_bound,
               low = lower,
               hig = upper)
@@ -1619,6 +1640,74 @@ plot_fit <- function(x,
   if (nrow(hess) != length(par_fixed) || ncol(hess) != length(par_fixed)) return(NULL)
 
   hess
+}
+
+
+## Newton steps from the nlminb optimum, at most n. Each is kept only if the
+## Hessian is positive definite, the step stays within the bounds, max|g|
+## decreases and the objective does not rise by more than rel_tol (relative;
+## at the optimum the change is at the level of round-off). The accepted point
+## is written to obj$env$last.par.best as well as opt, because sdreport(),
+## the predictions and the reports all read last.par.best. See
+## dev/code_notes.org, "Convergence checks".
+.newton_steps <- function(obj, opt, n, lower, upper, ad_hessian = TRUE,
+                          rel_tol = 1e-10) {
+
+  n <- if (is.null(n)) 0L else as.integer(n)
+  p <- opt$par
+  f <- opt$objective
+  g <- tryCatch(as.numeric(obj$gr(p)), error = function(e) NULL)
+  steps <- data.frame(step = 0L, objective = f,
+                      max_gradient = if (is.null(g)) NA_real_ else max(abs(g)))
+  out <- list(opt = opt, steps = steps)
+  if (n < 1L || length(p) == 0L || is.null(g) || !all(is.finite(g)) ||
+        !is.finite(f)) {
+    return(out)
+  }
+  rand <- obj$env$random
+  if (!is.null(rand) && length(rand) > 0) return(out)
+
+  lower <- rep_len(as.numeric(unlist(lower)), length(p))
+  upper <- rep_len(as.numeric(unlist(upper)), length(p))
+
+  for (k in seq_len(n)) {
+    H <- if (isTRUE(ad_hessian) && is.function(obj$he)) {
+      tryCatch(obj$he(p), error = function(e) NULL)
+    } else {
+      tryCatch(stats::optimHess(p, obj$fn, obj$gr), error = function(e) NULL)
+    }
+    if (!is.matrix(H) || any(!is.finite(H))) break
+    L <- tryCatch(chol((H + t(H)) / 2), error = function(e) NULL)
+    if (is.null(L)) break
+    p_new <- p - as.numeric(backsolve(L, forwardsolve(t(L), g)))
+    names(p_new) <- names(p)
+    if (any(p_new < lower | p_new > upper, na.rm = TRUE)) break
+    f_new <- obj$fn(p_new)
+    g_new <- tryCatch(as.numeric(obj$gr(p_new)), error = function(e) NULL)
+    if (!is.finite(f_new) || is.null(g_new) || !all(is.finite(g_new)) ||
+          max(abs(g_new)) >= max(abs(g)) ||
+          f_new > f + rel_tol * max(1, abs(f))) {
+      break
+    }
+    p <- p_new
+    f <- f_new
+    g <- g_new
+    steps <- rbind(steps, data.frame(step = k, objective = f,
+                                     max_gradient = max(abs(g))))
+  }
+
+  if (nrow(steps) > 1) {
+    opt$par <- p
+    opt$objective <- f
+  }
+  ## also after a rejected step: fn() moves last.par.best to any lower value it
+  ## sees, which need not be the point returned
+  obj$env$last.par.best <- opt$par
+  obj$env$value.best <- opt$objective
+  ## leave the tape evaluated at the estimates, as nlminb would
+  obj$fn(opt$par)
+
+  list(opt = opt, steps = steps)
 }
 
 

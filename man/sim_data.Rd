@@ -20,9 +20,8 @@ sim_data(
   nt = NULL,
   rho_t = 0.85,
   sd = 2,
-  h = 0.2,
   nu = 2,
-  rho_s = 0.8,
+  rho_s = NULL,
   delta = 0.1,
   zrange = c(20, 28),
   matern = TRUE,
@@ -120,12 +119,11 @@ fields.}
 
 \item{sd}{Standard deviation used in the simulation of covariate fields.}
 
-\item{h}{Parameter controlling the covariate precision or covariance
-structure.}
-
 \item{nu}{Smoothness parameter of the Matérn covariance structure.}
 
-\item{rho_s}{Spatial range parameter of the Matérn covariance structure.}
+\item{rho_s}{Spatial range parameter of the Matérn covariance structure,
+in the units of the grid axes. If \code{NULL} (default), 8 times the mean
+cell size; see \code{\link[=sim_cov]{sim_cov()}}.}
 
 \item{delta}{Small positive value added for numerical stability in the
 precision matrix.}

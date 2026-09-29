@@ -5,6 +5,8 @@
 \alias{admove-package}
 \title{admove: Estimating animal movement with advection–diffusion models}
 \description{
+\if{html}{\figure{logo.png}{options: style='float: right' alt='logo' width='120'}}
+
 A movement model that allows estimation of habitat preferences and fine-scale movement rates based on advection-diffusion models using various types of tagging data. It supports flexible spatiotemporal modeling with options for Kalman filter or matrix exponential approaches, and includes tools for data preparation, model fitting, and visualisation.
 }
 \seealso{

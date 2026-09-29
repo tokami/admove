@@ -152,3 +152,66 @@ test_that("summary warns when a check fails", {
   expect_true(any(grepl("[FAIL] optimizer: false convergence (8)", out, fixed = TRUE)))
   expect_true(any(grepl("did not pass convergence checks", out)))
 })
+
+
+test_that("Newton steps close the gradient gap left by nlminb", {
+
+  ## quadratic with an off-diagonal Hessian: one Newton step is exact
+  target <- c(1, -2, 3)
+  A <- matrix(c(4, 1, 0, 1, 3, 1, 0, 1, 2), 3)
+  obj <- RTMB::MakeADFun(function(p) {
+    d <- p$a - target
+    0.5 * sum(d * as.vector(A %*% d))
+  }, list(a = c(0, 0, 0)), silent = TRUE)
+  start <- target + c(1e-3, -2e-3, 1e-3)
+  opt <- list(par = setNames(start, rep("a", 3)), objective = obj$fn(start))
+
+  nt <- admove:::.newton_steps(obj, opt, 2, rep(-Inf, 3), rep(Inf, 3))
+  expect_equal(unname(nt$opt$par), target, tolerance = 1e-10)
+  expect_lt(nt$steps$max_gradient[nrow(nt$steps)], 1e-10)
+  expect_equal(unname(obj$env$last.par.best), unname(nt$opt$par))
+
+  ## the same with the finite-difference Hessian
+  nt2 <- admove:::.newton_steps(obj, opt, 1, rep(-Inf, 3), rep(Inf, 3),
+                                ad_hessian = FALSE)
+  expect_equal(unname(nt2$opt$par), target, tolerance = 1e-6)
+
+  ## a step that would leave the bounds is not taken
+  nt3 <- admove:::.newton_steps(obj, opt, 1,
+                                c(-Inf, -Inf, target[3] + 5e-4), rep(Inf, 3))
+  expect_identical(nt3$opt$par, opt$par)
+  expect_equal(nrow(nt3$steps), 1L)
+  expect_equal(unname(obj$env$last.par.best), start)
+
+  ## switched off
+  nt4 <- admove:::.newton_steps(obj, opt, 0, rep(-Inf, 3), rep(Inf, 3))
+  expect_identical(nt4$opt, opt)
+})
+
+
+test_that("admove() records the Newton steps and keeps last.par.best on the estimates", {
+
+  fit <- small_fit()
+  expect_s3_class(fit$newton, "data.frame")
+  expect_equal(fit$max_gradient,
+               fit$newton$max_gradient[nrow(fit$newton)], tolerance = 1e-8)
+  expect_equal(unname(fit$obj$env$last.par.best), unname(fit$opt$par))
+  expect_equal(fit$opt$objective, fit$newton$objective[nrow(fit$newton)])
+})
+
+
+test_that("admove() passes 'control' on to nlminb", {
+
+  sim <- tiny_sim()
+  fit <- suppressWarnings(
+    admove(sim, control = list(iter.max = 1), newton_steps = 0,
+           do_sdreport = FALSE, do_predictions = FALSE, do_report = FALSE,
+           verbose = FALSE)
+  )
+  expect_lte(fit$opt$iterations, 1)
+  expect_match(fit$opt$message, "iteration limit")
+  expect_equal(nrow(fit$newton), 1L)
+
+  expect_error(suppressWarnings(admove(sim, control = list(1), verbose = FALSE)),
+               "named list")
+})

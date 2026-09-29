@@ -59,7 +59,7 @@ test_that("a binding cap truncates the exponential and is flagged after a fit", 
 
   obj0 <- nmax_obj(NULL)
   rho <- max(obj0$report()$ctmc_exit)
-  need <- stats::qpois(1e-8, rho, lower.tail = FALSE)
+  need <- stats::qpois(admove:::.ctmc_expav_tol, rho, lower.tail = FALSE)
   skip_if(need < 3, "generator too soft to truncate")
 
   ## truncation loses mass, so the nll gets worse, never better. (A cap of 1

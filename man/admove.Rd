@@ -15,6 +15,7 @@ admove(
   upper = NULL,
   rel_tol = 1e-10,
   grad_tol = 0.001,
+  newton_steps = 1,
   do_predictions = TRUE,
   do_sdreport = TRUE,
   do_report = TRUE,
@@ -57,15 +58,29 @@ explicit lower bounds are supplied.}
 explicit upper bounds are supplied.}
 
 \item{rel_tol}{Relative convergence tolerance passed to \code{\link[stats:nlminb]{stats::nlminb()}}.
-Default is \code{1e-10}.}
+Default is \code{1e-10}. \code{control$rel.tol} takes precedence.}
 
 \item{grad_tol}{Convergence tolerance on the gradient: one of the
 convergence checks passes when the largest absolute gradient component at
 the estimates is below \code{grad_tol}. Default \code{1e-3}. The
-gradient grows with the number of observations, so large data sets may
-need a tighter \code{rel_tol} or a larger \code{grad_tol}. The maximum
+gradient grows with the number of observations; on large data sets the
+Newton steps (\code{newton_steps}) are usually what brings it below the
+tolerance, otherwise a larger \code{grad_tol} may be needed. The maximum
 gradient component is stored in the fitted object as
 \code{max_gradient}. See \code{\link[=summarise_fit]{summarise_fit()}} for all convergence checks.}
+
+\item{newton_steps}{Maximum number of Newton steps taken from the
+\code{\link[stats:nlminb]{stats::nlminb()}} optimum before the convergence checks. Default \code{1}.
+nlminb stops on the relative change of the objective, which on a large
+objective can leave a gradient well above \code{grad_tol} at an optimum
+that is in fact well determined; a Newton step with the exact gradient
+closes that gap. A step is kept only if the Hessian is positive definite,
+the step stays within \code{lower} and \code{upper}, the largest gradient
+component decreases and the objective does not increase by more than
+\code{rel_tol} (relative). Otherwise the nlminb estimates are kept. The
+Hessian is \code{obj$he()} or, with \code{ad_hessian = FALSE},
+\code{\link[stats:optimHess]{stats::optimHess()}}. The steps taken are stored as \code{newton} in the
+fitted object. \code{0} switches the steps off.}
 
 \item{do_predictions}{Logical; if \code{TRUE} (default), model predictions
 are computed after fitting. If \code{FALSE}, prediction-related outputs are
@@ -92,8 +107,10 @@ to be given to \code{\link[=add_sdreport]{add_sdreport()}} directly with \code{d
 \item{dbg}{Logical; if \code{TRUE}, the function is run in debugging mode.
 Default is \code{FALSE}.}
 
-\item{control}{An optional named list of control settings passed to the
-optimizer.}
+\item{control}{An optional named list of control settings passed to
+\code{\link[stats:nlminb]{stats::nlminb()}}. Its elements replace the defaults
+(\code{trace = verbose}, \code{eval.max = 2000}, \code{iter.max = 1000},
+\code{rel.tol = rel_tol}) or are added to them.}
 
 \item{verbose}{Logical; if \code{TRUE}, progress messages are printed.}
 

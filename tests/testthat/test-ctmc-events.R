@@ -97,12 +97,12 @@ test_that("the CTMC likelihood is unchanged (candidates fixture)", {
   obj <- ctmc_pin_obj(w = 0.3, t2 = 0.6)
   p <- obj$par
 
-  expect_equal(obj$fn(p), 8.32032525818662, tolerance = 1e-12)
+  expect_equal(obj$fn(p), 8.32032492047344, tolerance = 1e-12)
   expect_equal(as.vector(obj$gr(p)),
-               c(-0.620482580323745, 0.664255723232523, -0.0144507163943639),
+               c(-0.620482578352961, 0.664255723123156, -0.0144571032225782),
                tolerance = 1e-10)
   expect_equal(obj$report(p)$loglik_tags,
-               c(-2.77259581563871, -2.77408863315109, -2.77364055385788),
+               c(-2.77259579105665, -2.77408860361031, -2.77364052580627),
                tolerance = 1e-12)
 })
 
@@ -112,12 +112,12 @@ test_that("the CTMC likelihood is unchanged (candidates at differing times)", {
   obj <- ctmc_pin_obj(w = 0.45, t2 = 0.85)
   p <- obj$par
 
-  expect_equal(obj$fn(p), 8.31799955696118, tolerance = 1e-12)
+  expect_equal(obj$fn(p), 8.31799914003296, tolerance = 1e-12)
   expect_equal(as.vector(obj$gr(p)),
-               c(-0.464465647245129, 0.455685878393697, -0.00186065698509374),
+               c(-0.46446564345987, 0.455685879549418, -0.00186869197800887),
                tolerance = 1e-10)
   expect_equal(obj$report(p)$loglik_tags,
-               c(-2.77259581563871, -2.77273246053478, -2.7726709680209),
+               c(-2.77259579105665, -2.77273241632939, -2.77267093264667),
                tolerance = 1e-12)
 })
 
@@ -127,16 +127,16 @@ test_that("the CTMC likelihood is unchanged (simulated mixed tag types)", {
   obj <- ctmc_pin_sim_obj()
   p <- obj$par
 
-  expect_equal(obj$fn(p), 58.128093781311, tolerance = 1e-12)
+  expect_equal(obj$fn(p), 58.1061137714006, tolerance = 1e-12)
   expect_equal(as.vector(obj$gr(p)),
-               c(-2.57697505466118, 0.579053795510462,
-                 0.166084137511498, 0.19929172432785),
+               c(-2.56659678982906, 0.172053728326728,
+                 0.203433137266216, 0.253024326528318),
                tolerance = 1e-10)
   ## element-wise, never the sum: a sum hides an index permutation completely
   expect_equal(obj$report(p)$loglik_tags,
-               c(-2.77258878789954, -2.77226417149026, -2.77258878789955,
-                 -2.77226417149026, -2.77180522175879,
-                 -22.1374465248557, -22.1291352619326),
+               c(-2.77226413217149, -2.77203465731442, -2.77226413217149,
+                 -2.77203465731442, -2.77180518245735,
+                 -22.1292064660441, -22.1165045439265),
                tolerance = 1e-12)
 })
 

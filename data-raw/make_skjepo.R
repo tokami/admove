@@ -9,31 +9,49 @@ set.seed(123)
 
 
 ## spatial domain ------------------------------------------
-ocean <- try(ne_download(scale = 50, type = "ocean",
-                     category = "physical",
-                     returnclass = "sf"), silent = TRUE)
+## Planar lon/lat: with s2 the union and crop of the global ocean layer come
+## out as its complement (land), so select = 1 / 2 in create_grid() would
+## pre-select the land cells.
+s2_old <- sf_use_s2(FALSE)
 
-## for offline use:
-if (inherits(ocean, "try-error")) {
-  ocean <- admove:::.get_land()
-}
-
-
+## model domain (lon/lat box)
 bb <- st_bbox(c(xmin = -150, ymin = -30, xmax = -70, ymax = 30),
               crs = 4326)
 bb_sfc <- st_as_sfc(bb)
 
-g <- st_make_valid(st_geometry(ocean))
-g <- st_union(g)
+## ocean in a wider window than the domain: cropping to the box itself adds its
+## edges to the polygon, and after projection these cut off (de-select) cells in
+## the corners of the grid. The domain is set by xrange / yrange below instead.
+bb_wide <- st_as_sfc(st_bbox(c(xmin = -170, ymin = -50, xmax = -50, ymax = 50),
+                             crs = 4326))
 
-epo <- st_crop(g, bb_sfc)
+ocean <- try(ne_download(scale = 50, type = "ocean",
+                     category = "physical",
+                     returnclass = "sf"), silent = TRUE)
+
+if (!inherits(ocean, "try-error")) {
+  g <- st_make_valid(st_geometry(ocean))
+  g <- st_union(g)
+  epo <- st_crop(g, bb_wide)
+} else {
+  ## for offline use: the bundled map is land, so take its complement
+  land <- st_union(st_make_valid(st_geometry(admove:::.get_land())))
+  epo <- st_difference(bb_wide, land)
+}
+
+sf_use_s2(s2_old)
 
 ## Azimuthal Equidistant centered at (−110, 0)
 crs_aeqd <- "+proj=aeqd +lat_0=0 +lon_0=-110 +datum=WGS84 +units=m +no_defs"
 
 epo_proj <- st_transform(epo, crs_aeqd)
 
-plot(st_geometry(epo_proj))
+## grid extent: the projected corners of the lon/lat box
+bb_proj <- st_bbox(st_transform(bb_sfc, crs_aeqd))
+xrange <- unname(bb_proj[c("xmin", "xmax")])
+yrange <- unname(bb_proj[c("ymin", "ymax")])
+
+plot(st_geometry(epo_proj), xlim = xrange, ylim = yrange)
 
 
 ## do not run (requires manual selection)
@@ -41,7 +59,9 @@ if (FALSE) {
 
   grid <- create_grid(epo_proj,
                       cellsize = 750e3,
-                      select = 2,
+                      xrange = xrange,
+                      yrange = yrange,
+                      select = 1,
                       plot = TRUE)
   paste(which(is.na(grid$celltable)), collapse = ",")
 
@@ -49,8 +69,11 @@ if (FALSE) {
 
   grid <- create_grid(epo_proj,
                       cellsize = 750e3,
-                      select = -c(44,55,66,76,77,85,86,87,88,94,95,96,97,98,99,
-                                  105,106,107,108,109,110),
+                      xrange = xrange,
+                      yrange = yrange,
+                      select = -c(44,55,66,76,77,85,86,87,88,95,96,97,98,99,105,
+                                  106,107,108,109,110),
+                      plot_land = TRUE,
                       plot = TRUE)
 
 }
@@ -82,17 +105,18 @@ grid_buff <- add_buffer(grid)
 
 ## quarterly fields
 cov <- sim_cov(grid_buff, nt = 8, rho_t = 0.4,
+               rho_s = 1e4,  ## set lower to make KF fail
                simple = FALSE,
                tref = tref_cov)
 
 plot_cov(cov, plot_land = TRUE)
 
-
+attributes(cov)
 
 ## release events ----------------------------------------
 trange_rel <- c(0,5) ## months
-xrange_rel <- c(-1000, 1000)
-yrange_rel <- c(-1000, 1000)
+xrange_rel <- c(-500, 2000)
+yrange_rel <- c(-1500, 1000)
 n_release_events <- 5
 
 release_events <- sim_release_events(grid = grid,
@@ -117,16 +141,15 @@ points(release_events[,1], release_events[,2])
 ##             beta = array(log(200^2), dim = c(1,1,1)),  ## km²/month
 ##             logSdO = matrix(log(0.1),2,3))
 
-n_ctags <- 200
-n_dtags <- 20
+n_ctags <- 200 ## 200
+n_dtags <- 20 ## 20
 ## in months:
 trange <- c(0,24)
 trange_rec <- c(1,24)
 
-target_tax_frac <- 1/5
-target_dif_frac <- 1/50
-target_sdO_frac <- 1/100
-
+target_tax_frac <- 1/5 ## 1/5
+target_dif_frac <- 1/200 ## 1/50
+target_sdO_frac <- 1/200 ## 1/100
 
 sim_ctags <- sim_tags("c",
                       grid = grid,
@@ -155,7 +178,7 @@ sim_dtags <- sim_tags("d",
                 cov = cov,
                 n_tags = n_dtags,
                 trange = trange,
-                dt_tags = 0.1,
+                dt_tags = 0.5, ## 0.1,
                 trange_rec = trange_rec,
                 release_events = release_events,
                 tref = list(origin = origin,
@@ -267,7 +290,8 @@ skjepo_dtags <- lapply(dtags2, function(x){
 dtags <- prep_dtags(skjepo_dtags,
                     names = c(t = "time", x = "mptlon", y = "mptlat"),
                     date_origin = "1899-12-30",
-                    sref = list(crs = 4326))
+                    sref = list(crs = 4326),
+                    tref = tref_model)
 
 
 dtags <- add_sref(dtags, grid, transform_crs = TRUE)
@@ -289,12 +313,15 @@ cov <- add_sref(cov, grid)
 plot_cov(cov[,,1:4], plot_land = TRUE,
          xlab = "lon", ylab = "lat")
 
+
 dat <- setup_data(grid = grid,
                   cov = cov,
                   tags = c(dtags, ctags),
                   tref = tref_model,
                   transform_sref = TRUE,
-                  shift_tref = TRUE)
+                  shift_tref = TRUE,
+                  knots_tax = sim_ctags$dat$knots_tax,
+                  knots_dif = sim_ctags$dat$knots_dif)
 
 stopifnot(sim_ctags$par_true$alpha == sim_dtags$par_true$alpha)
 stopifnot(sim_ctags$par_true$beta == sim_dtags$par_true$beta)
@@ -326,7 +353,6 @@ sim <- add_tref(sim, dat)
 
 plot_sim(sim, cor_diffusion = 0.01, plot_land = TRUE)
 
-sim$tags
 
 ## Fit
 fit <- admove(sim)
@@ -348,3 +374,36 @@ skjepo <- list(sim = sim,
 
 ## save
 usethis::use_data(skjepo, overwrite = TRUE)
+
+
+## for testing
+if (FALSE) {
+
+  plot_tags(fit, plot_land = TRUE)
+
+  ## only ctags
+  conf <- sim$conf
+  conf$use_dtags <- FALSE
+  par <- default_par(sim$dat, conf)
+  par$logKappa <- sim$par_true$logKappa   ## kappa is fixed: keep the simulated scale
+  map <- default_map(sim$dat, conf, par)
+
+  fit_c <- admove(sim$dat, conf, par, map)
+
+  summary(fit_c)
+  plot_compare(sim, fit_c)
+
+
+  ## only dtags
+  conf <- sim$conf
+  conf$use_ctags <- FALSE
+  par <- default_par(sim$dat, conf)
+  par$logKappa <- sim$par_true$logKappa   ## kappa is fixed: keep the simulated scale
+  map <- default_map(sim$dat, conf, par)
+
+  fit_d <- admove(sim$dat, conf, par, map)
+
+  summary(fit_d)
+  plot_compare(sim, fit_d)
+
+}

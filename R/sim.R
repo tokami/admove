@@ -56,10 +56,10 @@
 ##' @param rho_t Temporal autocorrelation coefficient for simulated covariate
 ##'   fields.
 ##' @param sd Standard deviation used in the simulation of covariate fields.
-##' @param h Parameter controlling the covariate precision or covariance
-##'   structure.
 ##' @param nu Smoothness parameter of the Matérn covariance structure.
-##' @param rho_s Spatial range parameter of the Matérn covariance structure.
+##' @param rho_s Spatial range parameter of the Matérn covariance structure,
+##'   in the units of the grid axes. If \code{NULL} (default), 8 times the mean
+##'   cell size; see [sim_cov()].
 ##' @param delta Small positive value added for numerical stability in the
 ##'   precision matrix.
 ##' @param zrange Numeric vector of length 2 giving the target range of the
@@ -170,8 +170,8 @@ sim_data <- function(x = NULL,
                      simulate_cov = FALSE,
                      simple = FALSE,
                      nt = NULL,
-                     rho_t = 0.85, sd = 2, h = 0.2, nu = 2,
-                     rho_s = 0.8, delta = 0.1,
+                     rho_t = 0.85, sd = 2, nu = 2,
+                     rho_s = NULL, delta = 0.1,
                      zrange = c(20, 28),
                      matern = TRUE,
                      sim_buffer = TRUE,
@@ -288,11 +288,12 @@ sim_data <- function(x = NULL,
     cov <- lapply(seq_len(max(1L, ncov_in)), function(i) {
       sim_cov(grid, nt = nt,
               simple = simple,
-              rho_t = rho_t, sd = sd, h = h, nu = nu,
+              rho_t = rho_t, sd = sd, nu = nu,
               rho_s = rho_s, delta = delta,
               zrange = zrange,
               matern = matern,
               sim_buffer = sim_buffer,
+              verbose = FALSE,
               tref = list(origin = as.Date("2025-01-01"),
                           units = "year"))
     })
@@ -622,10 +623,9 @@ sim_release_events <- function(grid,
 ##'   covariate fields.
 ##' @param sd Standard deviation used in the simulation of the spatial random
 ##'   field.
-##' @param h Parameter controlling the precision matrix or covariance structure.
 ##' @param nu Smoothness parameter of the Matérn covariance structure.
-##' @param rho_s Spatial range parameter of the Matérn covariance structure. If
-##'   \code{NULL}, a default is chosen from the grid resolution.
+##' @param rho_s Spatial range parameter of the Matérn covariance structure, in
+##'   the units of the grid axes. If \code{NULL}, 8 times the mean cell size.
 ##' @param delta Small positive value added to the precision matrix diagonal to
 ##'   improve numerical stability.
 ##' @param zrange Numeric vector of length 2 giving the target range to which the
@@ -651,10 +651,13 @@ sim_release_events <- function(grid,
 ##' temporal metadata.
 ##'
 ##' @return
-##' An \code{admove_cov} object containing the simulated covariate fields.
+##' An \code{admove_cov} object containing the simulated covariate fields. The
+##' settings used for the simulation, including the effective \code{rho_s}, are
+##' stored in \code{attr(cov, "sim")}.
 ##'
 ##' @examples
 ##' cov <- sim_cov()
+##' attr(cov, "sim")$rho_s
 ##'
 ##' @export
 sim_cov <- function(grid = NULL,
@@ -662,7 +665,6 @@ sim_cov <- function(grid = NULL,
                     simple = FALSE,
                     rho_t = 0.85,
                     sd = 2,
-                    h = 0.2,
                     nu = 2,
                     rho_s = NULL, ## 0.8,
                     delta = 0.1,
@@ -681,14 +683,18 @@ sim_cov <- function(grid = NULL,
 
   if (is.null(rho_s)) {
     rho_s <- mean(grid$cellsize) / 0.125
+    if (verbose && matern && !simple) {
+      message("Spatial range 'rho_s' set to ", signif(rho_s, 4),
+              " (8 x mean cell size).")
+    }
   }
 
   cov0 <- cov <- vector("list", nt)
-  cov0[[1]] <- .get_cov_one(grid, sd, h, nu, rho_s, delta, matern, simple)
+  cov0[[1]] <- .get_cov_one(grid, sd, nu, rho_s, delta, matern, simple)
   if (nt > 1) {
     for (i in 2:nt) {
       cov0[[i]] <- rho_t * cov0[[i-1]] + sqrt(1 - rho_t^2) *
-        .get_cov_one(grid, sd, h, nu, rho_s, delta, matern, simple)
+        .get_cov_one(grid, sd, nu, rho_s, delta, matern, simple)
     }
   }
 
@@ -714,6 +720,11 @@ sim_cov <- function(grid = NULL,
                   sref = sref(grid),
                   tref = tref,
                   verbose = FALSE)
+
+  attr(cov, "sim") <- list(rho_s = rho_s, rho_t = rho_t, sd = sd,
+                           nu = nu, delta = delta, zrange = zrange,
+                           matern = matern, simple = simple,
+                           sim_buffer = sim_buffer)
 
   return(cov)
 }
@@ -2045,7 +2056,6 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' @param grid A grid object of class \code{"admove_grid"}, as returned by
 ##'   [create_grid()].
 ##' @param sd Standard deviation used in the simulation of the random field.
-##' @param h Parameter controlling the precision matrix or covariance structure.
 ##' @param nu Smoothness parameter of the Matérn covariance structure.
 ##' @param rho Spatial range parameter of the Matérn covariance structure.
 ##' @param delta Small positive value added to the precision matrix diagonal to
@@ -2064,7 +2074,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' A matrix containing one simulated covariate field on the grid.
 ##'
 ##' @keywords internal
-.get_cov_one <- function(grid, sd, h, nu, rho, delta, matern, simple) {
+.get_cov_one <- function(grid, sd, nu, rho, delta, matern, simple) {
 
   dims <- dim(grid)
   rf_smooth <- matrix(NA_real_,
@@ -2088,7 +2098,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
     rf <- rnorm(nrow(grid$xygrid), 0, sd = sd)
 
     ## GMRF
-    Q <- .get_precision_matrix(grid, h, nu, rho, delta, matern)
+    Q <- .get_precision_matrix(grid, nu, rho, delta, matern)
     L <- chol(Q)
     S <- solve(L, rf)
 
@@ -2111,8 +2121,6 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##'
 ##' @param grid A grid object of class \code{"admove_grid"}, as returned by
 ##'   [create_grid()].
-##' @param h Distance argument used internally in the Matérn covariance
-##'   structure.
 ##' @param nu Smoothness parameter of the Matérn covariance structure.
 ##' @param rho Spatial range parameter of the Matérn covariance structure.
 ##' @param delta Small positive value added to the diagonal to ensure numerical
@@ -2132,7 +2140,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
 ##' A precision matrix for the active cells of the grid.
 ##'
 ##' @keywords internal
-.get_precision_matrix <- function(grid, h, nu, rho, delta,
+.get_precision_matrix <- function(grid, nu, rho, delta,
                                  matern = TRUE) {
   n <- nrow(grid$xygrid)
 

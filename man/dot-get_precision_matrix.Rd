@@ -4,14 +4,11 @@
 \alias{.get_precision_matrix}
 \title{Construct a precision matrix for a grid}
 \usage{
-.get_precision_matrix(grid, h, nu, rho, delta, matern = TRUE)
+.get_precision_matrix(grid, nu, rho, delta, matern = TRUE)
 }
 \arguments{
 \item{grid}{A grid object of class \code{"admove_grid"}, as returned by
 \code{\link[=create_grid]{create_grid()}}.}
-
-\item{h}{Distance argument used internally in the Matérn covariance
-structure.}
 
 \item{nu}{Smoothness parameter of the Matérn covariance structure.}
 

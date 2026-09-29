@@ -340,10 +340,11 @@ cells in total.
 
 Similarly, a spatial grid can be defined based on available **admove** covariate
 fields. Let's use the covariate fields of the simulated example data for
-Montagus harrier:
+Montagus harrier, here the field for July (the first month of the wintering
+season):
 
 ```{r, fig.alt = "Example covariate field for Montagus harrier"}
-plot(montagus_harrier$cov[,,1,drop=FALSE])
+plot(montagus_harrier$cov[,,7,drop=FALSE])
 ```
 
 As with the tagging data, we can just pass the covariate fields to

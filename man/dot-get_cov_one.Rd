@@ -4,15 +4,13 @@
 \alias{.get_cov_one}
 \title{Simulate a single covariate field}
 \usage{
-.get_cov_one(grid, sd, h, nu, rho, delta, matern, simple)
+.get_cov_one(grid, sd, nu, rho, delta, matern, simple)
 }
 \arguments{
 \item{grid}{A grid object of class \code{"admove_grid"}, as returned by
 \code{\link[=create_grid]{create_grid()}}.}
 
 \item{sd}{Standard deviation used in the simulation of the random field.}
-
-\item{h}{Parameter controlling the precision matrix or covariance structure.}
 
 \item{nu}{Smoothness parameter of the Matérn covariance structure.}
 

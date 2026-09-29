@@ -96,7 +96,8 @@ ow <- admove:::.rescale_cov(ow, zrange = c(1, 20))
 
 image(ow)
 
-cov_list <- list(ow, bree, bree, bree, bree, bree, bree, ow, ow, ow, ow, ow)
+## breeding Jan-Jun, wintering Jul-Dec: aligns with seasonal breaks c(0, 6)
+cov_list <- c(rep(list(bree), 6), rep(list(ow), 6))
 dt_cov <- 1/12
 
 env <- prep_cov(c(cov_list, cov_list),
@@ -128,7 +129,7 @@ pts_sf <- st_as_sf(df, coords = c("lon","lat"), crs = 4326)
 pts_proj <- st_transform(pts_sf, crs_proj)
 rel_loc <- st_coordinates(pts_proj) * crs_scale
 
-times <- runif(3, 0.4 * 12, 0.5 * 12)
+times <- runif(3, 0.25 * 12, 0.4 * 12)
 
 tmp <- expand.grid(t0 = times, i = seq_len(nrow(rel_loc)))
 
@@ -259,7 +260,7 @@ dat <- setup_data(grid = grid,
 
 
 confi <- default_conf(dat)
-confi$obs_var_type[2] <- FALSE
+confi$obs_var_type[2] <- "none"
 pari <- default_par(dat, confi)
 pari$logSdO <- sim_list$par_true$logSdO
 mapi <- default_map(dat, confi, pari)
@@ -286,3 +287,85 @@ montagus_harrier <- res
 
 ## save
 usethis::use_data(montagus_harrier, overwrite = TRUE)
+
+
+## for testing only
+if (FALSE) {
+
+  ## true fit
+  fit <- admove(montagus_harrier)
+
+  plot_compare(fit, montagus_harrier)
+
+  ## get fit
+  grid_buff <- add_buffer(montagus_harrier$grid)
+
+  cov_geo <- make_x_y_cov(grid_buff, tref(montagus_harrier))
+
+  dat <- setup_data(grid = montagus_harrier$grid,
+                    cov = cov_geo,
+                    tags = montagus_harrier$tags,
+                    n_knots_tax = 5)
+
+## dat$knots_tax <- matrix(c(5,7,9,11,
+##                           3,5,13,15) , 4, 2)
+
+  conf <- default_conf(dat)
+
+  conf$seasonal_spline <- c(TRUE, TRUE)
+
+  dat$time_spline <- list(c(0,6),
+                          c(0,6))
+
+  fit_geo <- admove(dat, conf)
+
+  summary(fit_geo)
+
+  plot(fit_geo)
+
+select1 <- 2
+select2 <- 5
+cori <- 0.2
+
+par(mfrow = c(2,2), mar = c(0.5,0.5,0.5,0.5),
+    oma = c(4.5,4.5,3,2.5))
+plot_taxis(montagus_harrier, select = select1,
+           cor = cori,
+           xlab = "", ylab = "",
+           plot_land = TRUE,
+           col = admove:::.admove_cols(3)[1],
+           lwd = 1.5, main = "",
+           xaxt = "n", yaxt = "s",
+           average = TRUE, auto_layout = FALSE)
+mtext("Simulated", 3, 1, font = 2)
+plot_taxis(fit_geo, select_sea = 1,
+           cor = cori,
+           xlab = "", ylab = "",
+           plot_land = TRUE,
+           col = admove:::.admove_cols(3)[3],
+           lwd = 1.5, main = "",
+           xaxt = "n", yaxt = "n",
+           average = TRUE, auto_layout = FALSE)
+mtext("Seasonal splines + x-y field", 3, 1, font = 2)
+mtext("Summer", 4, 1, font = 2)
+plot_taxis(montagus_harrier, select = select2,
+           cor = cori,
+           xlab = "", ylab = "",
+           plot_land = TRUE,
+           col = admove:::.admove_cols(3)[1],
+           lwd = 1.5, main = "",
+           xaxt = "s", yaxt = "s",
+           average = TRUE, auto_layout = FALSE)
+plot_taxis(fit_geo, select_sea = 2,
+           cor = cori,
+           xlab = "", ylab = "",
+           plot_land = TRUE,
+           col = admove:::.admove_cols(3)[3],
+           lwd = 1.5, main = "",
+           xaxt = "s", yaxt = "n",
+           average = TRUE, auto_layout = FALSE)
+mtext("Winter", 4, 1, font = 2)
+mtext("x", 1, 2.5, outer = TRUE)
+mtext("y", 2, 2.5, outer = TRUE)
+
+}

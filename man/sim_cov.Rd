@@ -10,7 +10,6 @@ sim_cov(
   simple = FALSE,
   rho_t = 0.85,
   sd = 2,
-  h = 0.2,
   nu = 2,
   rho_s = NULL,
   delta = 0.1,
@@ -37,12 +36,10 @@ covariate fields.}
 \item{sd}{Standard deviation used in the simulation of the spatial random
 field.}
 
-\item{h}{Parameter controlling the precision matrix or covariance structure.}
-
 \item{nu}{Smoothness parameter of the Matérn covariance structure.}
 
-\item{rho_s}{Spatial range parameter of the Matérn covariance structure. If
-\code{NULL}, a default is chosen from the grid resolution.}
+\item{rho_s}{Spatial range parameter of the Matérn covariance structure, in
+the units of the grid axes. If \code{NULL}, 8 times the mean cell size.}
 
 \item{delta}{Small positive value added to the precision matrix diagonal to
 improve numerical stability.}
@@ -66,7 +63,9 @@ object.}
 \item{verbose}{Logical; if \code{TRUE}, informative messages may be printed.}
 }
 \value{
-An \code{admove_cov} object containing the simulated covariate fields.
+An \code{admove_cov} object containing the simulated covariate fields. The
+settings used for the simulation, including the effective \code{rho_s}, are
+stored in \code{attr(cov, "sim")}.
 }
 \description{
 Simulates one or more spatial covariate fields on an \code{admove_grid},
@@ -83,5 +82,6 @@ temporal metadata.
 }
 \examples{
 cov <- sim_cov()
+attr(cov, "sim")$rho_s
 
 }

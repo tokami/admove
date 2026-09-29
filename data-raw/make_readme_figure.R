@@ -13,6 +13,6 @@ set.seed(6)
 sim <- sim_data()
 fit <- admove(sim)
 
-png("../man/figures/README-overview.png", width = 1000, height = 420, res = 100)
+png("../man/figures/README-overview.png", width = 1000, height = 520, res = 100)
 plot_compare(list(sim = sim, fit = fit), quantity = c("pref", "taxis"))
 dev.off()

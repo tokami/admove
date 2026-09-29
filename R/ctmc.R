@@ -374,10 +374,17 @@ print.admove_release_events <- function(x, ...) {
 }
 
 
-## Warn when the terms expAv needs at rate rho (same rule as RTMB, tol = 1e-8)
-## reach the cap.
+## Truncation tolerance passed to RTMB::expAv(). It bounds the probability mass
+## lost per step, not the error in each cell, so RTMB's default 1e-8 leaves the
+## log-probability of unlikely recapture cells, and with it the nll, visibly off
+## (~1e-3 against expm on the test fixtures). See dev/code_notes.org,
+## "Truncation tolerance".
+.ctmc_expav_tol <- 1e-14
+
+
+## Warn when the terms expAv needs at rate rho (same rule as RTMB) reach the cap.
 .check_ctmc_nmax_binds <- function(rho, nmax) {
-  need <- stats::qpois(1e-8, rho, lower.tail = FALSE)
+  need <- stats::qpois(.ctmc_expav_tol, rho, lower.tail = FALSE)
   if (need >= nmax) {
     warning("conf$ctmc_nmax = ", nmax, " binds at the estimates: the largest ",
             "exit rate x step is ", signif(rho, 3), ", which needs ", need,
@@ -416,6 +423,7 @@ print.admove_release_events <- function(x, ...) {
                             last_dist,
                             transpose = TRUE,
                             uniformization = TRUE,
+                            tol = .ctmc_expav_tol,
                             rescale_freq = 1,
                             Nmax = nmax,
                             warn = FALSE,

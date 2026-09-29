@@ -398,3 +398,27 @@ test_that("the CTMC simulator steps with the likelihood's generator", {
   expect_true(nrow(tg$tags) > 2)
   expect_true(all(is.finite(tg$tags$x) & is.finite(tg$tags$y)))
 })
+
+
+test_that("sim_cov reports and stores the rho_s it used", {
+  grid <- create_grid(cellsize = 0.25, verbose = FALSE)
+  expect_message(cov <- sim_cov(grid, nt = 1), "rho_s")
+  expect_equal(attr(cov, "sim")$rho_s, mean(grid$cellsize) / 0.125)
+
+  cov <- sim_cov(grid, nt = 1, rho_s = 0.3)
+  expect_equal(attr(cov, "sim")$rho_s, 0.3)
+
+  ## kept by sim_data() on the returned fields
+  sim <- withr::with_seed(1, suppressMessages(suppressWarnings(
+    sim_data(grid = grid, rho_s = 0.5, n_ctags = 5, n_dtags = 1,
+             verbose = FALSE)
+  )))
+  expect_equal(attr(sim$cov[[1]], "sim")$rho_s, 0.5)
+  expect_equal(attr(sim$dat$cov[[1]], "sim")$rho_s, 0.5)
+
+  ## sim_data() scales the default range with the grid as sim_cov() does
+  sim <- withr::with_seed(1, suppressMessages(suppressWarnings(
+    sim_data(grid = grid, n_ctags = 5, n_dtags = 1, verbose = FALSE)
+  )))
+  expect_equal(attr(sim$cov[[1]], "sim")$rho_s, mean(grid$cellsize) / 0.125)
+})
