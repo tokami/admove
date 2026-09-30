@@ -34,6 +34,10 @@
 ##' For geographic coordinate systems, the plotting extent is truncated to valid
 ##' longitude and latitude ranges before cropping.
 ##'
+##' To add land to a map of values, such as a gridded covariate, draw the land
+##' before the values and only its coastline (`col = NA`) after them. Filled
+##' land drawn on top hides values near the coast and suggests there are none.
+##'
 ##' For projected coordinate systems, the land is first cut down to the
 ##' geographic footprint of the plotting region and only then transformed.
 ##' Projecting the whole world into a local CRS is not safe: polygon rings that
@@ -45,12 +49,49 @@
 ##' to an existing plot.
 ##'
 ##' @export
-plot_land <- local({
+plot_land <- function(sref = NULL,
+                      col = grDevices::adjustcolor(grey(0.7), 0.5),
+                      border = grey(0.5),
+                      download_map = FALSE,
+                      scale = 110,
+                      verbose = TRUE,
+                      warn_once = TRUE) {
+  g <- .land_pieces(sref, download_map = download_map, scale = scale,
+                    verbose = verbose, warn_once = warn_once)
+  .draw_land(g, col = col, border = border)
+  invisible(NULL)
+}
+
+
+## Land under a field of values: the fill is drawn now, and the coastline only
+## after the values with .land_coast(g, border). Filled land drawn over a
+## raster hides the values of cells that straddle the coast and suggests there
+## are none. Returns the land pieces for .land_coast(); NULL when there are
+## none, which .land_coast() then ignores. See dev/code_notes.org, "Land in
+## spatial plots".
+.land_under <- function(sref, col = grDevices::adjustcolor(grey(0.7), 0.5),
+                        verbose = TRUE) {
+  g <- .land_pieces(sref, verbose = verbose)
+  .draw_land(g, col = col, border = NA)
+  invisible(g)
+}
+
+.land_coast <- function(g, border = grey(0.5)) {
+  .draw_land(g, col = NA, border = border)
+}
+
+.draw_land <- function(g, col, border) {
+  for (gi in g) plot(gi, add = TRUE, col = col, border = border)
+  invisible(NULL)
+}
+
+
+## Land polygons in the current plotting window (par("usr")), in grid units,
+## as a list of geometries ready to draw (NULL when there is no land to draw).
+.land_pieces <- local({
   warned_no_crs <- FALSE
 
   function(sref = NULL,
-           col = grDevices::adjustcolor(grey(0.7), 0.5),
-           border = grey(0.5),
            download_map = FALSE,
            scale = 110,
            verbose = TRUE,
@@ -127,11 +168,11 @@ plot_land <- local({
     }
 
     ## Crop land to a longitude window [x1, x2] (in the [-180, 180] frame for
-    ## geographic coordinates) and draw it, shifting the result east by `offset`
-    ## degrees. The offset lets the region east of +180 be taken from its
-    ## [-180, 180] equivalent and drawn continuously across the dateline.
+    ## geographic coordinates), shifting the result east by `offset` degrees.
+    ## The offset lets the region east of +180 be taken from its [-180, 180]
+    ## equivalent and drawn continuously across the dateline.
     draw_window <- function(x1, x2, offset) {
-      if (x2 <= x1) return(invisible(NULL))
+      if (x2 <= x1) return(NULL)
       bb <- sf::st_bbox(c(
         xmin = x1, xmax = x2,
         ymin = usr[3], ymax = usr[4]
@@ -141,28 +182,25 @@ plot_land <- local({
         sf::st_crop(land_fix, sf::st_as_sfc(bb)))), silent = TRUE)
       if (inherits(cr, "try-error")) {
         warning("Couldn't plot land masses. Check the spatial reference info: sref(x).")
-        return(invisible(NULL))
+        return(NULL)
       }
-      if (length(cr) > 0) {
-        g <- cr
-        if (offset != 0) g <- g + c(offset, 0)
-        plot(g, add = TRUE, col = col, border = border)
-      }
-      invisible(NULL)
+      if (length(cr) == 0) return(NULL)
+      if (offset != 0) cr <- cr + c(offset, 0)
+      cr
     }
 
-    if (is_longlat && usr[2] > 180) {
-      ## Window crosses the antimeridian: draw the part up to +180, then the
-      ## part beyond it from its negative-longitude equivalent, shifted east.
-      draw_window(max(-180, usr[1]), 180, 0)
-      draw_window(max(-180, usr[1] - 360), usr[2] - 360, 360)
+    pieces <- if (is_longlat && usr[2] > 180) {
+      ## Window crosses the antimeridian: the part up to +180, then the part
+      ## beyond it from its negative-longitude equivalent, shifted east.
+      list(draw_window(max(-180, usr[1]), 180, 0),
+           draw_window(max(-180, usr[1] - 360), usr[2] - 360, 360))
     } else if (is_longlat) {
-      draw_window(max(-180, usr[1]), min(180, usr[2]), 0)
+      list(draw_window(max(-180, usr[1]), min(180, usr[2]), 0))
     } else {
-      draw_window(usr[1], usr[2], 0)
+      list(draw_window(usr[1], usr[2], 0))
     }
-
-    invisible(NULL)
+    pieces <- Filter(Negate(is.null), pieces)
+    if (length(pieces)) pieces
   }
 })
 
@@ -601,6 +639,7 @@ plot_taxis <- function(x,
           if (yaxt != "n" && (i - 1L) %% ncol_lay == 0L) axis(2)
           title(main = mains[i], line = 0.3, font.main = 1, cex.main = 1)
         }
+        lg <- if (plot_land && !add) .land_under(sref(x$dat))
         if (image_bg) {
           ig <- x$dat$pred$grid$igrid
           mag <- sqrt(tax.x[, i]^2 + tax.y[, i]^2)
@@ -617,8 +656,9 @@ plot_taxis <- function(x,
             .color_bar(col_bg, zlim_i, lab = .rate_units(x))
         }
       }
-      if(plot_land){
-        plot_land(sref = sref(x$dat))
+      if (plot_land) {
+        ## added to a plot whose values are drawn: coastline only
+        .land_coast(if (add) .land_pieces(sref(x$dat)) else lg)
       }
 
       ## cells with (near) zero taxis draw nothing; drop the per-arrow warning
@@ -720,6 +760,7 @@ plot_taxis <- function(x,
            main = main,
            asp = 1,
            ...)
+      lg <- if (plot_land && !add) .land_under(sref(x$dat))
       if (image_bg) {
         ig <- dat$pred$grid$igrid
         mag <- rowMeans(sqrt(tax.x^2 + tax.y^2))
@@ -733,8 +774,9 @@ plot_taxis <- function(x,
       }
     }
 
-    if(plot_land){
-      plot_land(sref = sref(x$dat))
+    if (plot_land) {
+      ## added to a plot whose values are drawn: coastline only
+      .land_coast(if (add) .land_pieces(sref(x$dat)) else lg)
     }
 
     for(i in 1:ncol(tax.x)){
@@ -1047,6 +1089,7 @@ plot_advection <- function(x,
           if (yaxt != "n" && (i - 1L) %% ncol_lay == 0L) axis(2)
           title(main = mains[i], line = 0.3, font.main = 1, cex.main = 1)
         }
+        lg <- if (plot_land && !add) .land_under(sref(x$dat))
         ## a spatially constant magnitude (in particular an all-zero field from
         ## a model fitted without advection) would colour every cell identically;
         ## state the value instead of drawing a flat raster
@@ -1065,8 +1108,9 @@ plot_advection <- function(x,
             .color_bar(col_bg, zlim_i, lab = .rate_units(x))
         }
       }
-      if(plot_land){
-        plot_land(sref = sref(x$dat))
+      if (plot_land) {
+        ## added to a plot whose values are drawn: coastline only
+        .land_coast(if (add) .land_pieces(sref(x$dat)) else lg)
       }
 
       ## zero-length arrows draw a degenerate dot and warn once per cell; mark
@@ -1190,6 +1234,7 @@ plot_advection <- function(x,
            main = main,
            asp = 1,
            ...)
+      lg <- if (plot_land && !add) .land_under(sref(x$dat))
       ## see the fitted branch: a constant magnitude gets stated, not rastered
       if (image_bg && !mag_const) {
         ig <- dat$pred$grid$igrid
@@ -1203,8 +1248,9 @@ plot_advection <- function(x,
       }
     }
 
-    if(plot_land){
-      plot_land(sref = sref(x$dat))
+    if (plot_land) {
+      ## added to a plot whose values are drawn: coastline only
+      .land_coast(if (add) .land_pieces(sref(x$dat)) else lg)
     }
 
     for(i in 1:ncol(adv.x)){
@@ -1490,6 +1536,7 @@ plot_diffusion <- function(x,
         (pgrid$cellsize[1] / char_u) / max_size else 1
     }
 
+    lg <- if (plot_land && !add) .land_under(sref(x$dat$grid))
     ## a spatially constant D would colour every cell identically; state the
     ## value instead of drawing a flat raster that reads as "no signal"
     if (image_bg && !add && !dif_const) {
@@ -1507,8 +1554,9 @@ plot_diffusion <- function(x,
         .color_bar(col_bg, zlim_i, lab = .rate_units(x, sq = TRUE))
     }
 
-    if (isTRUE(plot_land)) {
-      plot_land(sref = sref(x$dat$grid))
+    if (plot_land) {
+      ## added to a plot whose values are drawn: coastline only
+      .land_coast(if (add) .land_pieces(sref(x$dat$grid)) else lg)
     }
 
     points(pgrid$xygrid[,1],
@@ -2280,7 +2328,7 @@ add_lab <- function(lab){
 .prob_image <- function(xg, yg, z, zlim, col, sref = NULL,
                         land_col = grey(0.85), land_border = grey(0.3)) {
 
-  if (!is.null(sref)) plot_land(sref = sref, col = land_col, border = NA)
+  lg <- if (!is.null(sref)) .land_under(sref, land_col)
 
   if (!is.null(z) && !is.null(zlim)) {
     lz <- log10(z)
@@ -2288,9 +2336,7 @@ add_lab <- function(lab){
     image(xg, yg, pmin(lz, zlim[2]), zlim = zlim, col = col, add = TRUE)
   }
 
-  if (!is.null(sref)) {
-    plot_land(sref = sref, col = NA, border = land_border, verbose = FALSE)
-  }
+  .land_coast(lg, land_border)
 
   invisible(NULL)
 }
@@ -2999,6 +3045,7 @@ plot_pref_grid <- function(x,
              ...)
       }
 
+      lg <- if (plot_land && !add) .land_under(sref(x$dat))
       m <- mat_list[[j]][[i]]
       zlim_i <- if (scale == "panel" && !is.null(zlim) &&
                       !.is_constant_field(m)) {
@@ -3012,8 +3059,9 @@ plot_pref_grid <- function(x,
         .add_const_note(m[is.finite(m)][1L], "preference")
       }
 
-      if(plot_land){
-        plot_land(sref = sref(x$dat))
+      if (plot_land) {
+        ## added to a plot whose values are drawn: coastline only
+        .land_coast(if (add) .land_pieces(sref(x$dat)) else lg)
       }
 
       parts <- character(0)

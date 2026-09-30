@@ -1790,6 +1790,7 @@ get_recaptured_tags <- function(x, invert = FALSE) {
 ##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
 ##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param leg_pos Position of the legend. Default: `"topright"`.
+##' @param legend Logical; if `TRUE` (default), a legend is drawn.
 ##' @param labels Logical; if `TRUE`, label observations by time instead of
 ##'   plotting intermediate points. Default: `FALSE`.
 ##' @param bg Optional background colour for the plot. Default: `NULL`.
@@ -1803,12 +1804,19 @@ get_recaptured_tags <- function(x, invert = FALSE) {
 ##'   observations and release-recovery segments). Legend entries of elements
 ##'   not drawn are dropped. Default: all three.
 ##' @param col Character vector of length 1 to 3 giving colours for tag paths,
-##'   release positions, and recovery or final observation positions.
+##'   release positions, and recovery or final observation positions. A single
+##'   colour is used for all elements drawn (see `show`); with two colours the
+##'   recovery positions keep their default.
 ##' @param pch Integer vector of length 1 to 3 giving plotting symbols for
 ##'   intermediate observations, release positions, and recovery or final
 ##'   observation positions. Default: `c(1, 0, 16)`.
 ##' @param cex Numeric character expansion factor for plotted points.
 ##'   Default: `0.8`.
+##' @param lty Line type of the tag paths (trajectories and release-recovery
+##'   segments). Default: `1`.
+##' @param lwd Line width of the tag paths (trajectories and release-recovery
+##'   segments). The segments to alternative recovery positions, whose width
+##'   reflects their probability, are scaled by it. Default: `1`.
 ##' @param ... Additional graphical arguments passed to [plot()].
 ##'
 ##' @return
@@ -1846,6 +1854,7 @@ plot_tags <- function(x,
                       xlab = NULL,
                       ylab = NULL,
                       leg_pos = "topright",
+                      legend = TRUE,
                       labels = FALSE,
                       bg = NULL,
                       by_tag_type = TRUE,
@@ -1854,6 +1863,8 @@ plot_tags <- function(x,
                       col = c(adjustcolor("grey60",0.3), .admove_cols(2)),
                       pch = c(1,0,16),
                       cex = 0.8,
+                      lty = 1,
+                      lwd = 1,
                       ...) {
 
   map_labs <- .map_labs(x)
@@ -1960,8 +1971,11 @@ plot_tags <- function(x,
     if (!is.character(col)) stop("'col' must be a character vector (e.g., 'red' or c('red','blue')).")
     if (length(col) > 3) stop("'col' must have length 1, 2, or 3.")
 
-    idx <- seq_len(length(col))
-    cols_use[idx] <- col
+    if (length(col) == 1L) {
+      cols_use[] <- col
+    } else {
+      cols_use[seq_along(col)] <- col
+    }
   }
   cols <- cols_use
 
@@ -1987,7 +2001,8 @@ plot_tags <- function(x,
            ...)
     }
     if (plot_land) {
-      plot_land(sref)
+      ## added to a plot whose values are drawn: coastline only
+      if (add) .land_coast(.land_pieces(sref)) else plot_land(sref)
     }
     st <- first_row[sel]
     en <- end_row[sel]
@@ -2011,7 +2026,7 @@ plot_tags <- function(x,
         ts <- split(tt[rows], g)
         for (i in seq_along(xs)) {
           lines(xs[[i]], ys[[i]],
-                col = cols[1], ty = "b", pch = NA)
+                col = cols[1], ty = "b", pch = NA, lty = lty, lwd = lwd)
           if (labels) {
             text(xs[[i]], ys[[i]],
                  labels = sprintf("%.2f", ts[[i]]),
@@ -2028,7 +2043,7 @@ plot_tags <- function(x,
       if (any(segm)) {
         segments(tx[first_row[segm]], ty[first_row[segm]],
                  tx[end_row[segm]], ty[end_row[segm]],
-                 col = cols[1])
+                 col = cols[1], lty = lty, lwd = lwd)
       }
     }
 
@@ -2043,7 +2058,7 @@ plot_tags <- function(x,
         segments(tx[first_row[ti[fr]]], ty[first_row[ti[fr]]],
                  tx[fr], ty[fr],
                  col = grDevices::rgb(cc[1], cc[2], cc[3], cc[4] * pmax(0.15, pr)),
-                 lty = 3, lwd = 0.5 + 1.5 * pr)
+                 lty = 3, lwd = lwd * (0.5 + 1.5 * pr))
       }
       if (show_recovery) {
         points(tx[fr], ty[fr],
@@ -2109,7 +2124,7 @@ plot_tags <- function(x,
 
     plot_one(sel)
 
-    if (i == 1 || by_tag_type) {
+    if (isTRUE(legend) && (i == 1 || by_tag_type)) {
       if (by_tag_type || by_tag) {
       labo <- list(c("Deployment", "Intermediate obs.", "Recovery"),
                   c("Release", "Resights", "Final resight"),

@@ -57,6 +57,10 @@ plotting region defined by \code{par("usr")}.
 For geographic coordinate systems, the plotting extent is truncated to valid
 longitude and latitude ranges before cropping.
 
+To add land to a map of values, such as a gridded covariate, draw the land
+before the values and only its coastline (\code{col = NA}) after them. Filled
+land drawn on top hides values near the coast and suggests there are none.
+
 For projected coordinate systems, the land is first cut down to the
 geographic footprint of the plotting region and only then transformed.
 Projecting the whole world into a local CRS is not safe: polygon rings that

@@ -16,6 +16,8 @@ plot_grid(
   xlab = NULL,
   ylab = NULL,
   bg = NULL,
+  xlim = NULL,
+  ylim = NULL,
   ...
 )
 
@@ -48,6 +50,12 @@ spatial units in brackets, e.g. \code{"x [km]"} (\code{"lon [°]"} for degrees).
 spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).}
 
 \item{bg}{Optional background colour for the plotting device.}
+
+\item{xlim}{Optional x-axis limits. If \code{NULL} (default), the extent of the
+grid.}
+
+\item{ylim}{Optional y-axis limits. If \code{NULL} (default), the extent of the
+grid.}
 
 \item{...}{Additional arguments passed to \code{\link[=plot]{plot()}}.}
 }

@@ -304,11 +304,12 @@ plot_adv_field <- function(x,
                          yaxt = if (shared) "n" else yaxt),
                     dots))
     if (shared) .outer_panel_axes(k, nt, xaxt, yaxt)
+    lg <- if (plot_land) .land_under(sref(u), land_col)
     if (zlim_ok) {
       z <- pmin(pmax(spd[, , k], zlim[1]), zlim[2])
       image(xs, ys, z, col = col, zlim = zlim, add = TRUE)
     }
-    if (plot_land) plot_land(sref(u), col = land_col, border = land_border)
+    .land_coast(lg, land_border)
     du <- au[cbind(g$i, g$j, k)]
     dv <- av[cbind(g$i, g$j, k)]
     ok <- is.finite(du) & is.finite(dv) & (du != 0 | dv != 0)

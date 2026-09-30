@@ -416,6 +416,7 @@ create_grid <- function(x = NULL,
            ylim = yrange,
            xaxs = "i", yaxs = "i",
            xlab = "x", ylab = "y")
+      lg <- if (plot_land) .land_under(sref)
       c0 <- matrix(NA,
                    nrow = length(xcen),
                    ncol = length(ycen))
@@ -430,9 +431,7 @@ create_grid <- function(x = NULL,
             xlim = xrange,
             ylim = yrange,
             add = TRUE)
-      if (plot_land) {
-        plot_land(sref = sref)
-      }
+      .land_coast(lg)
       if (use_sf) {
         plot(sf::st_geometry(x), add = TRUE, border = "goldenrod2", lwd = 2)
       }
@@ -671,6 +670,10 @@ summarise_grid <- function(object, ...) {
 ##' @param ylab Label for the y-axis. If `NULL` (default), `"y"` with the
 ##'   spatial units in brackets, e.g. `"y [km]"` (`"lat [°]"` for degrees).
 ##' @param bg Optional background colour for the plotting device.
+##' @param xlim Optional x-axis limits. If `NULL` (default), the extent of the
+##'   grid.
+##' @param ylim Optional y-axis limits. If `NULL` (default), the extent of the
+##'   grid.
 ##' @param ... Additional arguments passed to [plot()].
 ##'
 ##' @return
@@ -692,6 +695,8 @@ plot_grid <- function(x,
                       xlab = NULL,
                       ylab = NULL,
                       bg = NULL,
+                      xlim = NULL,
+                      ylim = NULL,
                       ...) {
 
   map_labs <- .map_labs(x)
@@ -707,8 +712,8 @@ plot_grid <- function(x,
   }
 
   bb <- bbox_grid(grid)
-  xlims <- bb[1:2]
-  ylims <- bb[3:4]
+  xlims <- if (is.null(xlim)) bb[1:2] else xlim
+  ylims <- if (is.null(ylim)) bb[3:4] else ylim
 
   if(auto_layout){
     opar <- par(no.readonly = TRUE)
@@ -731,6 +736,7 @@ plot_grid <- function(x,
   ##     usr <- par("usr")
   ##     rect(usr[1], usr[3], usr[2], usr[4], col = bg, border = NA)
   ## }
+  lg <- if (isTRUE(plot_land)) .land_under(sref(grid))
   c0 <- grid$celltable
   c0[c0 > 0] <- 1
   if (isTRUE(plot_bg)) {
@@ -742,9 +748,7 @@ plot_grid <- function(x,
           ylim = ylims,
           add = TRUE)
   }
-  if (isTRUE(plot_land)) {
-    plot_land(sref = sref(grid))
-  }
+  .land_coast(lg)
   labs <- as.numeric(grid$celltable)
   labs <- labs[!is.na(labs)]
   if(labels) text(grid$xygrid[,1], grid$xygrid[,2], labs)

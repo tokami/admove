@@ -16,6 +16,7 @@ plot_tags(
   xlab = NULL,
   ylab = NULL,
   leg_pos = "topright",
+  legend = TRUE,
   labels = FALSE,
   bg = NULL,
   by_tag_type = TRUE,
@@ -24,6 +25,8 @@ plot_tags(
   col = c(adjustcolor("grey60", 0.3), .admove_cols(2)),
   pch = c(1, 0, 16),
   cex = 0.8,
+  lty = 1,
+  lwd = 1,
   ...
 )
 
@@ -54,6 +57,8 @@ spatial units in brackets, e.g. \code{"y [km]"} (\code{"lat [°]"} for degrees).
 
 \item{leg_pos}{Position of the legend. Default: \code{"topright"}.}
 
+\item{legend}{Logical; if \code{TRUE} (default), a legend is drawn.}
+
 \item{labels}{Logical; if \code{TRUE}, label observations by time instead of
 plotting intermediate points. Default: \code{FALSE}.}
 
@@ -72,7 +77,9 @@ observations and release-recovery segments). Legend entries of elements
 not drawn are dropped. Default: all three.}
 
 \item{col}{Character vector of length 1 to 3 giving colours for tag paths,
-release positions, and recovery or final observation positions.}
+release positions, and recovery or final observation positions. A single
+colour is used for all elements drawn (see \code{show}); with two colours the
+recovery positions keep their default.}
 
 \item{pch}{Integer vector of length 1 to 3 giving plotting symbols for
 intermediate observations, release positions, and recovery or final
@@ -80,6 +87,13 @@ observation positions. Default: \code{c(1, 0, 16)}.}
 
 \item{cex}{Numeric character expansion factor for plotted points.
 Default: \code{0.8}.}
+
+\item{lty}{Line type of the tag paths (trajectories and release-recovery
+segments). Default: \code{1}.}
+
+\item{lwd}{Line width of the tag paths (trajectories and release-recovery
+segments). The segments to alternative recovery positions, whose width
+reflects their probability, are scaled by it. Default: \code{1}.}
 
 \item{...}{Additional graphical arguments passed to \code{\link[=plot]{plot()}}.}
 }

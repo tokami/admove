@@ -680,6 +680,7 @@ plot_cov <- function(x,
                          yaxt = if (shared) "n" else yaxt),
                     dots))
     if (shared) .outer_panel_axes(i, nt, xaxt, yaxt)
+    lg <- if (plot_land) .land_under(sref, land_col)
     z <- cov[,,i, drop = TRUE]
     zlim_i <- zlim
     if (scale == "panel") {
@@ -694,9 +695,7 @@ plot_cov <- function(x,
       z <- pmin(pmax(z, zlim_i[1]), zlim_i[2])
       image(x, y, z, col = col, zlim = zlim_i, add = TRUE)
     }
-    if (plot_land) {
-      plot_land(sref, col = land_col, border = land_border)
-    }
+    .land_coast(lg, land_border)
     if(plot_contour && zlim_ok) {
       contour(x, y, cov[,,i], add = TRUE, col = grey(0.2, 0.6),
               labcex = 0.6)
