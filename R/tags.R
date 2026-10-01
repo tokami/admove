@@ -1748,14 +1748,7 @@ get_stags <- function(x) {
 ##' @export
 get_recaptured_tags <- function(x, invert = FALSE) {
 
-  if (inherits(x, "admove")) {
-    tags <- x$dat$tags
-  } else if (inherits(x, c("admove_data", "admove_sim"))) {
-    tags <- x$tags
-  } else {
-    tags <- x
-    .check_class(tags, "admove_tags")
-  }
+  tags <- .tags_of(x)
 
   complete <- !is.na(tags$t) & !is.na(tags$x) & !is.na(tags$y)
   release <- !duplicated(tags$id)
@@ -1763,6 +1756,103 @@ get_recaptured_tags <- function(x, invert = FALSE) {
   keep <- (tags$id %in% rec_ids) != isTRUE(invert)
 
   tags[keep, , drop = FALSE]
+}
+
+
+##' Extract releases and recoveries
+##'
+##' @description
+##' `get_releases()` returns the release of every tag, `get_recoveries()` the
+##' final observation of every tag that was observed after its release: the
+##' recapture of a mark-recapture tag, the last position of a data-storage tag
+##' or the last resight of a mark-resight tag.
+##'
+##' @param x An `admove_tags` object, or an object containing tags
+##'   (`admove_data`, `admove_sim` or `admove`).
+##'
+##' @return
+##' An `admove_tags` object with the selected rows, in the order of the input
+##' and keeping its spatial and temporal reference. `get_releases()` has one
+##' row per tag. `get_recoveries()` has one row per recovered tag, except for
+##' ambiguous recoveries, which keep all candidate positions (rows sharing the
+##' tag's `id` and `event`, with their probabilities in `prob`).
+##'
+##' @details
+##' The first row of each tag is its release. The recovery is the tag's last
+##' observation event; tags without one (only a release, or a recapture row
+##' with missing time or position, see [get_recaptured_tags()]) are left out,
+##' as are candidate positions with a missing time or position. [plot_tags()]
+##' draws the same releases and recoveries.
+##'
+##' @examples
+##' tags <- skjepo$sim$tags
+##' rel <- get_releases(tags)
+##' rec <- get_recoveries(tags)
+##' nrow(rel)
+##' nrow(rec)
+##'
+##' @name get_releases
+##' @export
+get_releases <- function(x) {
+  tags <- .tags_of(x)
+  tr <- .tag_rows(tags)
+  tags[sort(tr$o[tr$first_row]), , drop = FALSE]
+}
+
+##' @rdname get_releases
+##' @export
+get_recoveries <- function(x) {
+  tags <- .tags_of(x)
+  tr <- .tag_rows(tags)
+  rows <- tr$o[tr$is_last & tr$ev_ord > 1L]
+  rows <- rows[!is.na(tags$t[rows]) & !is.na(tags$x[rows]) &
+                 !is.na(tags$y[rows])]
+  tags[sort(rows), , drop = FALSE]
+}
+
+
+## The tags of an admove_tags object or of an object carrying them.
+.tags_of <- function(x) {
+  if (inherits(x, "admove")) return(x$dat$tags)
+  if (inherits(x, c("admove_data", "admove_sim"))) return(x$tags)
+  .check_class(x, "admove_tags")
+  x
+}
+
+
+## Release and final-observation rows of the tags, vectorised over the long
+## table: splitting it into one data frame per tag costs minutes for tens of
+## thousands of tags.
+##
+## `o` orders the rows by tag, in the order split() would give, keeping the
+## data order within a tag; every other row index refers to tags[o, ]. `ti` is
+## the tag index of each row (1..ntag, non-decreasing), `first_row` and
+## `last_row` the first and last row of each tag, `ev_ord` the event number of
+## each row within its tag and `is_last` marks the rows of the final event (all
+## candidates of an ambiguous recovery). Events are numbered by first
+## appearance within a tag, as in .tag_events(), so the final event is the one
+## that appears last; nll() relies on the same.
+.tag_rows <- function(tags) {
+  idf <- factor(tags$id)
+  o <- order(as.integer(idf))
+  ti <- as.integer(idf)[o]
+  ntag <- nlevels(idf)
+  first_row <- which(!duplicated(ti))
+  last_row <- which(!duplicated(ti, fromLast = TRUE))
+  ## a row without an event (tags without the column, or rows of another tag
+  ## type after combining tags) is an event of its own
+  ev <- tags[["event"]]
+  key <- if (is.null(ev)) seq_along(ti) else {
+    ev <- ev[o]
+    ifelse(is.na(ev), paste0("row\r", seq_along(ti)), paste(ti, ev, sep = "\r"))
+  }
+  ev_new <- !duplicated(key)
+  ev_cum <- cumsum(ev_new)
+  ev_abs <- ev_cum[match(key, key)]
+  list(o = o, ti = ti, ntag = ntag,
+       first_row = first_row, last_row = last_row,
+       ev_ord = ev_abs - ev_cum[first_row][ti] + 1L,
+       is_last = ev_abs == ev_cum[last_row][ti])
 }
 
 
@@ -1906,32 +1996,20 @@ plot_tags <- function(x,
     tags <- do.call(rbind, tags)
   }
 
-  ## Work on the long table with per-tag bookkeeping done vectorised: splitting
-  ## the data frame into one data frame per tag costs minutes for tens of
-  ## thousands of tags. Tags are drawn in the order split() would give.
-  idf <- factor(tags$id)
-  o <- order(as.integer(idf))
-  ti <- as.integer(idf)[o]  ## tag index of each row, 1..ntag, non-decreasing
-  ntag <- nlevels(idf)
+  ## per-tag bookkeeping, vectorised; tags are drawn in the order split()
+  ## would give
+  tr <- .tag_rows(tags)
+  o <- tr$o
+  ti <- tr$ti
+  ntag <- tr$ntag
+  first_row <- tr$first_row
+  is_last <- tr$is_last
   tt <- .subset2(tags, 1L)[o]
   tx <- .subset2(tags, 2L)[o]
   ty <- .subset2(tags, 3L)[o]
-  first_row <- which(!duplicated(ti))
-  last_row <- which(!duplicated(ti, fromLast = TRUE))
   nrow_tag <- tabulate(ti, ntag)
   tag_type_int <- .get_tag_type_integer(tags$tag_type[o][first_row])
 
-  ## Rows of the final observation event, as .tag_events(): events are numbered
-  ## by first appearance within a tag, so the last event is the one that
-  ## appears last.
-  if (is.null(tags[["event"]])) {
-    is_last <- seq_along(ti) %in% last_row
-  } else {
-    key <- paste(ti, tags[["event"]][o], sep = "\r")
-    ev_new <- !duplicated(key)
-    ev_ord <- cumsum(ev_new)[match(key, key)]
-    is_last <- ev_ord == cumsum(ev_new)[last_row][ti]
-  }
   ## The final observation may be ambiguous: several candidate positions, one
   ## of which is the true recovery. Represent the tag by its most likely
   ## candidate (first one on ties) and draw the alternatives as a fan.

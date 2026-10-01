@@ -137,6 +137,46 @@ test_that("get_recaptured_tags() splits recaptured and never-recaptured tags", {
 })
 
 
+test_that("get_releases() and get_recoveries() keep all ambiguous candidates", {
+
+  nm <- c(t = "t", x = "x", y = "y", id = "id")
+  ## a: ambiguous recapture (two candidates), b: plain, c: never recaptured
+  ct <- suppressMessages(prep_ctags(data.frame(t = c(0, 1, 1, 0, 2, 0, NA),
+                              x = c(0, 1, 2, 5, 6, 3, NA),
+                              y = c(0, 1, 2, 5, 6, 3, NA),
+                              id = c("a", "a", "a", "b", "b", "c", "c"),
+                              event = c(1, 2, 2, 1, 2, 1, 2),
+                              prob = c(1, 0.7, 0.3, 1, 1, 1, 1)),
+                   names = nm, verbose = FALSE))
+  ## d: archival, no event column of its own; e: released only
+  dt <- suppressMessages(prep_dtags(data.frame(t = c(0, 1, 3, 0), x = c(7, 8, 9, 4),
+                              y = c(7, 8, 9, 4), id = c("d", "d", "d", "e")),
+                   names = nm, verbose = FALSE))
+  tags <- suppressMessages(c(ct, dt))
+
+  rel <- get_releases(tags)
+  expect_s3_class(rel, "admove_tags")
+  expect_identical(sref(rel), sref(tags))
+  expect_identical(tref(rel), tref(tags))
+  expect_identical(rel$id, c("a", "b", "c", "d", "e"))
+  expect_equal(rel$t, rep(0, 5))
+
+  rec <- get_recoveries(tags)
+  expect_s3_class(rec, "admove_tags")
+  expect_identical(rec$id, c("a", "a", "b", "d"))
+  expect_equal(rec$x, c(1, 2, 6, 9))
+  expect_equal(rec$prob[rec$id == "a"], c(0.7, 0.3))
+
+  ## the same from the objects that carry tags
+  sim <- skjepo$sim
+  expect_identical(get_releases(sim), get_releases(sim$tags))
+  ## setup_data() adds columns to the tags of sim$dat and reorders the rows
+  key <- function(z) sort(paste(z$id, z$t, z$x, z$y))
+  expect_identical(key(get_recoveries(sim$dat)), key(get_recoveries(sim$tags)))
+  expect_equal(nrow(get_releases(sim)), length(unique(sim$tags$id)))
+})
+
+
 test_that("subsetting admove_tags keeps sref and tref", {
 
   tags <- skjepo$sim$tags
