@@ -880,8 +880,8 @@ build_time <- function(t_obs,
 ##'
 ##' The generator is assembled exactly as in the likelihood ([nll()]): diffusion
 ##' contributes \code{D / next_dist^2} to each neighbour, while taxis and
-##' advection are added with the same upwind scheme via \code{fill_inst_mat()} (so
-##' off-diagonal rates are guaranteed non-negative). The only difference from
+##' advection are added with the same drift scheme (\code{conf$drift_scheme})
+##' via \code{fill_inst_mat()}. The only difference from
 ##' \code{nll()} is that the prediction time step \code{dt} is \emph{not} folded
 ##' in, leaving a pure per-time-unit generator. The taxis drift velocity is
 ##' \eqn{\kappa \nabla h} (already stored, with \eqn{\kappa} folded in, as
@@ -936,7 +936,7 @@ calc_mstar <- function(fit) {
     ## movement rates (per unit time)
     Mstar <- Zstar + Astar + Dstar
 
-     ## fill_inst_mat is upwind
+     ## negative rates come from the central drift scheme at grid-Peclet > 2
      ## (na.rm: a prediction grid/time outside covariate coverage yields NA
      ## rates; those propagate into the generator rather than crashing this check)
     if (any(Mstar@x < 0, na.rm = TRUE)) neg_slices <- c(neg_slices, t)
@@ -953,7 +953,8 @@ calc_mstar <- function(fit) {
             " time slice(s) (", .format_ids(neg_slices), ")",
             "; the CTMC generator is invalid there and expm() may yield negative ",
             "probabilities. This usually means drift dominates diffusion at the ",
-            "current grid resolution (grid-Peclet > 1); consider a finer grid.",
+            "current grid resolution (grid-Peclet > 2); consider a finer grid ",
+            "or conf$drift_scheme = \"upwind\".",
             call. = FALSE)
   }
 

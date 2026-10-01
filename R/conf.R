@@ -50,13 +50,16 @@
 ##'
 ##' `drift_scheme` selects how the drift term (taxis *and* advection) is
 ##' discretised on the grid when assembling the generator. `"upwind"` (the
-##' default) is first-order upstream: off-diagonal rates are guaranteed
-##' non-negative, so the generator is always a valid CTMC generator, at the cost
-##' of some numerical diffusion. `"central"` is second-order central difference:
-##' it removes that numerical diffusion but can produce negative off-diagonal
-##' rates when drift dominates diffusion (grid-Peclet > 2), yielding an invalid
-##' generator and possibly negative transition probabilities. Use `"central"`
-##' only when the grid is fine relative to the drift.
+##' default) is first-order upstream: off-diagonal rates are always
+##' non-negative, so the generator is always valid, at the cost of some
+##' numerical diffusion and of a kink in the likelihood wherever the drift
+##' changes sign. With a hump-shaped preference those kinks pass through the
+##' estimates and the optimiser can stop with false convergence. `"central"` is
+##' second-order central difference: no numerical diffusion and a likelihood
+##' that is smooth in the taxis parameters, but off-diagonal rates turn negative
+##' when drift dominates diffusion (grid-Peclet > 2), an invalid generator;
+##' [admove()] then warns when the predictions are added. Use `"central"` only
+##' on a grid fine relative to the drift.
 ##'
 ##' Seasonality is specified here rather than in the data. `n_seasons` gives the
 ##' number of seasons per covariate (`1`, the default, means no seasonality) and
@@ -226,12 +229,13 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   conf$ctmc_groups <- "auto"
 
   ## Discretisation of the drift term (taxis + advection) in the generator
-  ## "upwind"  = first-order upstream; off-diagonal rates are always >= 0, so
-  ##             the CTMC generator is always valid (default; robust).
-  ## "central" = central difference; second order, no upwind numerical
-  ##             diffusion, but off-diagonal rates can turn negative when
-  ##             drift dominates diffusion (grid-Peclet > 2), which may yield
-  ##             invalid generators / negative probabilities.
+  ## "upwind"  = first-order upstream (default); rates always >= 0, but pos(v)
+  ##             kinks the nll where the drift changes sign, which can stall
+  ##             nlminb at the optimum of a hump-shaped preference.
+  ## "central" = central difference; smooth in alpha, but off-diagonal rates
+  ##             turn negative when drift dominates diffusion (grid-Peclet > 2),
+  ##             an invalid generator. See dev/code_notes.org, "Generator drift
+  ##             scheme".
   conf$drift_scheme <- "upwind"
 
   ## Seasonality (no seasonality by default)

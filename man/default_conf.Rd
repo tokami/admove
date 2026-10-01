@@ -62,13 +62,16 @@ cap are wrong, so \code{\link[=admove]{admove()}} warns when the cap binds at th
 
 \code{drift_scheme} selects how the drift term (taxis \emph{and} advection) is
 discretised on the grid when assembling the generator. \code{"upwind"} (the
-default) is first-order upstream: off-diagonal rates are guaranteed
-non-negative, so the generator is always a valid CTMC generator, at the cost
-of some numerical diffusion. \code{"central"} is second-order central difference:
-it removes that numerical diffusion but can produce negative off-diagonal
-rates when drift dominates diffusion (grid-Peclet > 2), yielding an invalid
-generator and possibly negative transition probabilities. Use \code{"central"}
-only when the grid is fine relative to the drift.
+default) is first-order upstream: off-diagonal rates are always
+non-negative, so the generator is always valid, at the cost of some
+numerical diffusion and of a kink in the likelihood wherever the drift
+changes sign. With a hump-shaped preference those kinks pass through the
+estimates and the optimiser can stop with false convergence. \code{"central"} is
+second-order central difference: no numerical diffusion and a likelihood
+that is smooth in the taxis parameters, but off-diagonal rates turn negative
+when drift dominates diffusion (grid-Peclet > 2), an invalid generator;
+\code{\link[=admove]{admove()}} then warns when the predictions are added. Use \code{"central"} only
+on a grid fine relative to the drift.
 
 Seasonality is specified here rather than in the data. \code{n_seasons} gives the
 number of seasons per covariate (\code{1}, the default, means no seasonality) and

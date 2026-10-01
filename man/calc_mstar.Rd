@@ -42,8 +42,8 @@ obtain the movement (transition) probability matrix over a time step
 
 The generator is assembled exactly as in the likelihood (\code{\link[=nll]{nll()}}): diffusion
 contributes \code{D / next_dist^2} to each neighbour, while taxis and
-advection are added with the same upwind scheme via \code{fill_inst_mat()} (so
-off-diagonal rates are guaranteed non-negative). The only difference from
+advection are added with the same drift scheme (\code{conf$drift_scheme})
+via \code{fill_inst_mat()}. The only difference from
 \code{nll()} is that the prediction time step \code{dt} is \emph{not} folded
 in, leaving a pure per-time-unit generator. The taxis drift velocity is
 \eqn{\kappa \nabla h} (already stored, with \eqn{\kappa} folded in, as
