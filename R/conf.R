@@ -59,7 +59,13 @@
 ##' that is smooth in the taxis parameters, but off-diagonal rates turn negative
 ##' when drift dominates diffusion (grid-Peclet > 2), an invalid generator;
 ##' [admove()] then warns when the predictions are added. Use `"central"` only
-##' on a grid fine relative to the drift.
+##' on a grid fine relative to the drift. `"sg"` (Scharfetter-Gummel,
+##' exponential fitting) discretises drift and diffusion of each link together:
+##' rates are always non-negative and smooth in the drift, so there is no kink,
+##' it equals the central difference at small grid-Peclet numbers and upwind at
+##' large ones, and it adds no numerical diffusion. It changes the estimates
+##' (diffusion in particular) against an upwind fit, so compare fits only under
+##' one scheme.
 ##'
 ##' Seasonality is specified here rather than in the data. `n_seasons` gives the
 ##' number of seasons per covariate (`1`, the default, means no seasonality) and
@@ -236,6 +242,8 @@ default_conf <- function(dat, n_seasons = 1, verbose = TRUE) {
   ##             turn negative when drift dominates diffusion (grid-Peclet > 2),
   ##             an invalid generator. See dev/code_notes.org, "Generator drift
   ##             scheme".
+  ## "sg"      = Scharfetter-Gummel: rates always >= 0 and smooth in the drift;
+  ##             central at small grid-Peclet, upwind at large.
   conf$drift_scheme <- "upwind"
 
   ## Seasonality (no seasonality by default)
@@ -388,9 +396,9 @@ check_conf <- function(conf = NULL, dat, verbose = TRUE) {
   conf <- .adv_conf(conf, dat, verbose)
 
   if (!is.null(conf$drift_scheme) &&
-        !identical(conf$drift_scheme, "upwind") &&
-        !identical(conf$drift_scheme, "central")) {
-    stop("'conf$drift_scheme' must be either \"upwind\" or \"central\", not ",
+        !(is.character(conf$drift_scheme) && length(conf$drift_scheme) == 1L &&
+            conf$drift_scheme %in% c("upwind", "central", "sg"))) {
+    stop("'conf$drift_scheme' must be one of \"upwind\", \"central\" or \"sg\", not ",
          deparse(conf$drift_scheme), ".", call. = FALSE)
   }
 

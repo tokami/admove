@@ -241,7 +241,7 @@ admove <- function(dat,
       message("Using central-difference drift scheme (conf$drift_scheme). ",
               "If the optimizer fails to converge or predictions warn about ",
               "negative generator rates, the grid is too coarse for the drift ",
-              "(grid-Peclet > 2): refine the grid or switch to conf$drift_scheme = \"upwind\".")
+              "(grid-Peclet > 2): refine the grid or switch to conf$drift_scheme = \"sg\".")
     }
   }
 

@@ -24,13 +24,12 @@ test_that("check_conf validates kf_boundary", {
 ## One tape per setting, built at taxis coefficients 10 times the simulated
 ## ones, which push some predicted tracks out of the covariate field.
 ##
-## Two fixtures, and the difference between them is the point. small_sim()'s
-## covariate carries the skjepo land mask (280 NA cells of 1248, which
-## .dxfield() turns into 35 NA gradient cells of 156 per slice), so a predicted
-## mean there can hit an *interior* gap as well as leave the rectangle. The
+## Two fixtures. small_sim()'s covariate carries the skjepo land mask, and the
 ## clamp only ever covered the rectangle -- see dev/code_notes.org,
-## "Bounding-box clamp" -> "Scope" -- so the guarantee it does provide can only
-## be tested on a field without gaps.
+## "Bounding-box clamp" -> "Scope" -- so the guarantee it does provide is
+## tested on the field with its gaps filled. Whether a simulated track happens
+## to cross a land gap depends on data/skjepo.rda, so the interior-gap case
+## has its own deterministic fixture (.gap_obj() below).
 .fill_cov_gaps <- function(x) {
   for (t in seq_len(dim(x)[3])) {
     M <- x[, , t]
@@ -122,6 +121,44 @@ test_that("clamping keeps the likelihood finite when tracks leave the field", {
 })
 
 
+## A field with a hole in its interior and one tag whose predicted mean the
+## taxis drives into it (+x at ~1 per unit time from x = 0.3, steps of 0.1, the
+## hole at x 0.5-0.7) well before it could reach the edge. Deterministic on
+## purpose: this test used small_sim(), and when data/skjepo.rda was
+## regenerated (86de79c, 2026-09-29) its simulated tracks stopped crossing a
+## land gap, so the test failed without anything having changed in the clamp.
+## Filled (hole = FALSE), the same mean runs on to the edge, which is the case
+## the clamp does handle.
+.gap_obj <- function(hole, boundary) {
+  .cached(paste("gap_obj", hole, boundary), {
+    grid <- create_grid(xrange = c(0, 1), yrange = c(0, 1), cellsize = 0.1,
+                        verbose = FALSE)
+    xc <- seq(0.05, 0.95, by = 0.1)
+    m <- outer(xc, xc, function(x, y) 20 + 10 * x)
+    if (hole) m[6:7, 4:7] <- NA
+    cov <- prep_cov(m, x_centers = xc, y_centers = xc, times = 0, verbose = FALSE)
+    tags <- prep_ctags(data.frame(id = "a", t = c(0, 1), x = c(0.3, 0.35), y = 0.5),
+                       names = c(t = "t", x = "x", y = "y", id = "id"),
+                       verbose = FALSE)
+    dat <- suppressWarnings(suppressMessages(
+      setup_data(grid = grid, cov = list(cov1 = cov), tags = tags,
+                 trange = c(0, 1), knots_tax = matrix(c(21, 25, 29), ncol = 1),
+                 knots_dif = matrix(25, ncol = 1), verbose = FALSE)))
+    conf <- default_conf(dat, verbose = FALSE)
+    conf$engine <- "kf"
+    conf$kf_boundary <- boundary
+    par <- default_par(dat, conf, verbose = FALSE)
+    ## drift = kappa x d(pref)/dz x dz/dx = 1 x 0.1 x 10
+    par$logKappa <- 0
+    par$alpha[] <- c(0, 0.4, 0.8)
+    par$beta[] <- log(0.001)
+    map <- default_map(dat, conf, par)
+    suppressWarnings(suppressMessages(
+      admove(dat, conf, par, map, run = FALSE, verbose = FALSE)))$obj
+  })
+}
+
+
 test_that("clamping does not rescue a mean that reaches an interior gap", {
 
   ## .dxfield() leaves NA where the covariate is NA (it used to fill those with
@@ -129,18 +166,21 @@ test_that("clamping does not rescue a mean that reaches an interior gap", {
   ## NaN therefore appears in moveT, i.e. *before* clamp_xy() runs, and
   ## clamping a NaN gives a NaN. Only a boundary correction field (dat$bnd,
   ## make_bnd_field(); on the bound2 branch, not on dev) handles this case.
-  gap <- .boundary_objs()
-  p <- gap$clamp$par
+  none <- .gap_obj(TRUE, "none")
+  clamp <- .gap_obj(TRUE, "clamp")
+  p <- clamp$par
 
-  expect_true(is.nan(gap$none$fn(p)))
-  expect_true(is.nan(gap$clamp$fn(p)))
-  expect_length(admove:::.boundary_tags(gap$clamp, p,
-                                        names(split(small_sim()$dat$tags,
-                                                    small_sim()$dat$tags$id))), 0)
+  expect_true(is.nan(none$fn(p)))
+  expect_true(is.nan(clamp$fn(p)))
+  expect_length(admove:::.boundary_tags(clamp, p, "a"), 0)
 
-  ## the gaps are the whole difference: same tags, same parameters, same
-  ## kf_boundary -- filling them makes the very same objective finite
-  expect_true(is.finite(.boundary_objs_nogap()$clamp$fn(p)))
+  ## the gap is the whole difference: same tag, same parameters, same
+  ## kf_boundary -- without the hole the mean reaches the edge instead, where
+  ## the clamp holds it and the objective is finite
+  filled <- .gap_obj(FALSE, "clamp")
+  expect_true(is.nan(.gap_obj(FALSE, "none")$fn(p)))
+  expect_true(is.finite(filled$fn(p)))
+  expect_identical(admove:::.boundary_tags(filled, p, "a"), "a")
 })
 
 

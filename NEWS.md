@@ -80,6 +80,16 @@
 
 ## New features
 
+* `conf$drift_scheme = "sg"`: Scharfetter-Gummel (exponential fitting) drift
+  for the CTMC. Drift (taxis and advection) and diffusion of each link go into
+  one rate, D/h^2 B(-Pe) with B(x) = x / (exp(x) - 1): always non-negative and
+  smooth in the drift, equal to the central difference at small grid-Peclet
+  numbers and to upwind at large ones. It removes the upwind kink where the
+  drift changes sign (false convergence at the turning point of a preference
+  curve) without the negative rates of `"central"` on coarse grids, and adds
+  no numerical diffusion, so diffusion estimates differ from upwind fits.
+  `"upwind"` stays the default.
+
 * `aggregate_cov()` averages covariate fields over blocks of cells
   (`cellsize` or `factor`) and consecutive time slices (`time_factor`),
   ignoring missing cells (`min_frac` sets how many a block needs). Covariates

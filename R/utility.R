@@ -913,6 +913,23 @@ calc_mstar <- function(fit) {
     Zstar <- Astar <- Dstar <- mstar_template
     Zstar@x[] <- Astar@x[] <- Dstar@x[] <- 0
 
+    ## Scharfetter-Gummel: drift and diffusion in one rate per link (see
+    ## fill_sg_mat()); must match .ctmc_generator()
+    if (identical(fit$conf$drift_scheme, "sg")) {
+      move <- matrix(0, nc, 2)
+      if (fit$conf$use_taxis) {
+        move <- move + cbind(fit$pred$hTdx[, t], fit$pred$hTdy[, t])
+      }
+      if (fit$conf$use_advection) {
+        move <- move + cbind(fit$pred$hAx[, t], fit$pred$hAy[, t])
+      }
+      Mstar <- fill_sg_mat(Dstar, move, exp(fit$pred$hD[, t]), nextTo, next_dist)
+      Mstar[cbind(1:nc, 1:nc)] <- 0
+      Mstar[cbind(1:nc, 1:nc)] <- -Matrix::rowSums(Mstar)
+      mstar[[t]] <- Mstar
+      next
+    }
+
     ## taxis
     if (fit$conf$use_taxis) {
       move <- cbind(fit$pred$hTdx[, t], fit$pred$hTdy[, t])  ## distance / time
@@ -954,7 +971,7 @@ calc_mstar <- function(fit) {
             "; the CTMC generator is invalid there and expm() may yield negative ",
             "probabilities. This usually means drift dominates diffusion at the ",
             "current grid resolution (grid-Peclet > 2); consider a finer grid ",
-            "or conf$drift_scheme = \"upwind\".",
+            "or conf$drift_scheme = \"sg\".",
             call. = FALSE)
   }
 
@@ -978,6 +995,35 @@ fill_inst_mat <- function(mat, move, nextTo, next_dist, scheme = "upwind") {
     ## upwind: pos(v); central: v/2 split symmetrically (can be negative)
     rate <- if (central) 0.5 * v else pos(v)
     mat[cbind(ind, nextTo[ind, j])] <- rate / next_dist[k]
+  }
+  return(mat)
+}
+
+## Scharfetter-Gummel rates of the CTMC generator (conf$drift_scheme = "sg"):
+## drift and diffusion of each link in one rate, D/h^2 * B(-Pe) towards the
+## neighbour, with Pe = v h / D the grid-Peclet number of the drift component v
+## towards it and B(x) = x / (exp(x) - 1). Always >= 0 and smooth in v; central
+## at small Pe, upwind at large. B(-Pe) = g(Pe) + Pe / 2 with g even, and g is
+## evaluated at sqrt(Pe^2 + eps^2): do not write x / expm1(x) -- it is 0/0 at
+## Pe = 0, which is every cell at the default start (alpha = gamma = 0), and
+## RTMB cannot branch around it on an AD value. The odd part stays exact, so
+## the net rate (towards minus against) is exactly v / h.
+## See dev/code_notes.org, "Generator drift scheme".
+.sg_eps <- 1e-6
+
+fill_sg_mat <- function(mat, move, D, nextTo, next_dist) {
+  xyind <- c(2, 2, 1, 1)
+  dirsign <- c(+1, -1, -1, +1)
+  ## 4 neighbours, rates from the drift and diffusion of the source cell
+  for (k in 1:4) {
+    j <- k + 1
+    ind <- which(!is.na(nextTo[, j]))
+    h <- next_dist[k]
+    Dk <- D[ind]
+    pe <- dirsign[k] * move[ind, xyind[k]] * h / Dk
+    y <- sqrt(pe^2 + .sg_eps^2)
+    g <- (y / 2) / tanh(y / 2)
+    mat[cbind(ind, nextTo[ind, j])] <- Dk / h^2 * (g + pe / 2)
   }
   return(mat)
 }

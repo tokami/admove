@@ -71,7 +71,13 @@ second-order central difference: no numerical diffusion and a likelihood
 that is smooth in the taxis parameters, but off-diagonal rates turn negative
 when drift dominates diffusion (grid-Peclet > 2), an invalid generator;
 \code{\link[=admove]{admove()}} then warns when the predictions are added. Use \code{"central"} only
-on a grid fine relative to the drift.
+on a grid fine relative to the drift. \code{"sg"} (Scharfetter-Gummel,
+exponential fitting) discretises drift and diffusion of each link together:
+rates are always non-negative and smooth in the drift, so there is no kink,
+it equals the central difference at small grid-Peclet numbers and upwind at
+large ones, and it adds no numerical diffusion. It changes the estimates
+(diffusion in particular) against an upwind fit, so compare fits only under
+one scheme.
 
 Seasonality is specified here rather than in the data. \code{n_seasons} gives the
 number of seasons per covariate (\code{1}, the default, means no seasonality) and

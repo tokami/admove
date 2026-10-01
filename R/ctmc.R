@@ -204,6 +204,25 @@ print.admove_release_events <- function(x, ...) {
     Zstar <- Astar <- Dstar <- RTMB::matrix(0, nc, nc)
   }
 
+  ## Scharfetter-Gummel: the rate of a link depends on drift and diffusion
+  ## together (fill_sg_mat()), so the total drift goes in at once. Same rates
+  ## as calc_mstar(), which must stay in step with this.
+  if (identical(dat$drift_scheme, "sg")) {
+    move <- 0
+    if (dat$use_taxis) {
+      move <- move + ctx$kappa * ctx$habi$tax$grad(xygrid, t)  ## distance / time
+    }
+    if (dat$use_advection) {
+      move <- move + ctx$habi$adv$val(xygrid, t)  ## distance / time
+    }
+    if (!is.matrix(move)) move <- matrix(0, nc, 2)
+    D <- exp(ctx$habi$dif$val(xygrid, t)) ## distance^2 / time
+    Mstar <- fill_sg_mat(Dstar, move, D, nextTo, next_dist)
+    Mstar[cbind(1:nc, 1:nc)] <- 0
+    Mstar[cbind(1:nc, 1:nc)] <- -RTMB::rowSums(Mstar)
+    return(Mstar)
+  }
+
   ## taxis
   if (dat$use_taxis) {
     move <- ctx$kappa * ctx$habi$tax$grad(xygrid, t)  ## distance / time
