@@ -153,8 +153,10 @@ print.admove_adv <- function(x, ...) {
 ##' @param col_arrows Colour of the arrows. Default: `"black"`.
 ##' @param zlim Optional speed range mapped onto `col`. Default: `NULL`, the
 ##'   range over all plotted time steps, so that the panels share one scale.
-##' @param legend Logical; if `TRUE`, a colour bar is drawn to the right of each
-##'   panel. Default: `NULL`, `TRUE` when `auto_layout = TRUE`.
+##' @param legend Logical; if `TRUE`, a colour bar is drawn: one for all panels
+##'   in the right margin when several time steps are laid out automatically
+##'   (they share the colour scale), otherwise to the right of each panel.
+##'   Default: `NULL`, `TRUE` when `auto_layout = TRUE`.
 ##' @param titles Optional panel titles, one per time step. Default: `NULL`, the
 ##'   start time of each time step as a date (e.g. `"Jan 2007"`); a single panel
 ##'   gets no title.
@@ -282,15 +284,17 @@ plot_adv_field <- function(x,
   yaxt <- if (is.null(dots$yaxt)) "s" else dots$yaxt
   dots$xaxt <- dots$yaxt <- NULL
   shared <- auto_layout && nt > 1L
+  ## one colour bar for all panels, in the right outer margin
+  bar_outer <- shared && legend
 
   if (auto_layout) {
     opar <- par(no.readonly = TRUE)
     on.exit(par(opar))
-    mar_right <- if (legend) 4.5 else 1.5
+    mar_right <- if (bar_outer) 0.3 else if (legend) 4.5 else 1.5
     par(mfrow = n2mfrow(nt, asp = 2),
         mar = c(if (shared) 0.3 else 1.5, if (shared) 0.3 else 1.5,
                 if (shared) 1.4 else 1.5, mar_right),
-        oma = c(3, 3.5, if (nzchar(main_txt)) 1.5 else 0, 0),
+        oma = c(3, 3.5, if (nzchar(main_txt)) 1.5 else 0, if (bar_outer) 5 else 0),
         mgp = c(2, 0.5, 0),
         tcl = -0.3)
   }
@@ -329,8 +333,9 @@ plot_adv_field <- function(x,
             font.main = 1, cex.main = 1)
     }
     box(lwd = 1.5)
-    if (legend && zlim_ok) .color_bar(col, zlim)
+    if (legend && !bar_outer && zlim_ok) .color_bar(col, zlim)
   }
+  if (bar_outer && zlim_ok) .color_bar_outer(col, zlim)
 
   if (auto_layout) {
     mtext(main_txt, 3, 0, outer = TRUE)
@@ -544,8 +549,12 @@ plot.admove_adv <- function(x, ...) {
 ## Advection velocity at positions xy (n x 2) and time t, as an n x 2 matrix:
 ## adv_const[, s] + sum_f gamma[, f, s] * (u_f, v_f)(xy, t), with s the season.
 ## Row 1 of gamma / adv_const acts on x, row 2 on y. Called inside nll(), so it
-## must keep working with advector gamma and adv_const.
-.make_adv <- function(adv, time_adv, gamma, adv_const, period = NULL) {
+## must keep working with advector gamma and adv_const. 'seasonal' (one logical
+## per field, dat$seasonal_adv) wraps t into the cycle before the field slice is
+## chosen; val() and slice() must read the same slice, or the CTMC generator
+## cache reuses a generator from another slice.
+.make_adv <- function(adv, time_adv, gamma, adv_const, period = NULL,
+                      seasonal = NULL) {
 
   "c" <- RTMB::ADoverload("c")
   "[<-" <- RTMB::ADoverload("[<-")
@@ -556,6 +565,10 @@ plot.admove_adv <- function(x, ...) {
   nsea <- if (!is.null(adv_const)) ncol(adv_const)
           else if (!is.null(gamma)) dim(gamma)[3L] else 1L
   season <- .adv_season_fun(nsea, period)
+  field_slice <- function(t, f) {
+    t2index(t, time_adv[[2L * f - 1L]], period = period,
+            seasonal = isTRUE(seasonal[f]))
+  }
 
   val <- function(xy, t) {
     if (is.null(dim(xy))) xy <- matrix(xy, ncol = 2L)
@@ -568,7 +581,7 @@ plot.admove_adv <- function(x, ...) {
     }
     for (f in seq_len(nfield)) {
       iu <- 2L * f - 1L
-      it <- t2index(t, time_adv[[iu]])
+      it <- field_slice(t, f)
       if (it > 0L) {
         ax <- ax + gamma[1L, f, s] * liv[[iu]][[it]](xy[, 1], xy[, 2])
         ay <- ay + gamma[2L, f, s] * liv[[iu + 1L]][[it]](xy[, 1], xy[, 2])
@@ -581,7 +594,7 @@ plot.admove_adv <- function(x, ...) {
   ## keys on it (.ctmc_slice_key()), so it must change whenever val() does
   slice <- function(t) {
     base::c(season(t), vapply(seq_len(nfield), function(f) {
-      as.integer(t2index(t, time_adv[[2L * f - 1L]]))
+      as.integer(field_slice(t, f))
     }, integer(1L)))
   }
 

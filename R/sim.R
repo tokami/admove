@@ -81,6 +81,10 @@
 ##'   the covariate fields repeat every seasonal period (see [setup_data()]). If
 ##'   \code{NULL}, the setting of a supplied data object or model is kept for its
 ##'   covariate fields, and otherwise \code{FALSE}.
+##' @param seasonal_adv Optional logical, one value or one per advection field:
+##'   whether the advection fields repeat every seasonal period (see
+##'   [setup_data()]). If \code{NULL}, the setting of a supplied data object or
+##'   model is kept for its advection fields, and otherwise \code{FALSE}.
 ##' @param release_events Optional data frame or matrix of release events. If
 ##'   \code{NULL}, release events are simulated internally using
 ##'   [sim_release_events()].
@@ -180,6 +184,7 @@ sim_data <- function(x = NULL,
                      n_knots_tax = NULL,
                      n_knots_dif = NULL,
                      seasonal_cov = NULL,
+                     seasonal_adv = NULL,
                      ## release events
                      release_events = NULL,
                      n_release_events = 10,
@@ -250,6 +255,9 @@ sim_data <- function(x = NULL,
   } else if (!is.null(dat)) {
     adv <- dat$adv
   }
+  ## a data object still set here carries the advection fields used below
+  if (is.null(seasonal_adv) && !is.null(dat)) seasonal_adv <- dat$seasonal_adv
+  if (length(seasonal_adv) == 0L) seasonal_adv <- FALSE
 
   ## time
   if (is.null(trange)) trange <- c(0,1)
@@ -318,6 +326,7 @@ sim_data <- function(x = NULL,
                       grid = grid,
                       adv = adv,
                       seasonal_cov = seasonal_cov,
+                      seasonal_adv = seasonal_adv,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
                       n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
@@ -478,6 +487,7 @@ sim_data <- function(x = NULL,
                     tags = tags,
                     adv = dat$adv,
                     seasonal_cov = seasonal_cov,
+                    seasonal_adv = if (length(dat$seasonal_adv)) dat$seasonal_adv else FALSE,
                     knots_tax = dat$knots_tax,
                     knots_dif = dat$knots_dif,
                     trange = trange)
@@ -864,6 +874,10 @@ sim_cov <- function(grid = NULL,
 ##'   the covariate fields repeat every seasonal period (see [setup_data()]).
 ##'   Only used when no data object is supplied; otherwise \code{FALSE} if
 ##'   \code{NULL}.
+##' @param seasonal_adv Optional logical, one value or one per advection field:
+##'   whether the advection fields repeat every seasonal period (see
+##'   [setup_data()]). Only used when no data object is supplied; otherwise
+##'   \code{FALSE} if \code{NULL}.
 ##' @param funcs Optional named list of simulation functions. If \code{NULL},
 ##'   defaults are created with [default_sim_funcs()].
 ##' @param n_reject Maximum number of attempts to redraw the diffusion part of
@@ -952,6 +966,7 @@ sim_tags <- function(tag_type,
                      n_knots_tax = NULL,
                      n_knots_dif = NULL,
                      seasonal_cov = NULL,
+                     seasonal_adv = NULL,
                      funcs = NULL,
                      n_reject = 20,
                      sim_engine = "kf",
@@ -1000,6 +1015,7 @@ sim_tags <- function(tag_type,
   par_in <- inp$par_in
   conf_in <- inp$conf_in
   if (is.null(seasonal_cov)) seasonal_cov <- FALSE
+  if (is.null(seasonal_adv)) seasonal_adv <- FALSE
 
   cov <- .make_cov_list(cov)
 
@@ -1078,6 +1094,7 @@ sim_tags <- function(tag_type,
                       grid = grid,
                       adv = adv,
                       seasonal_cov = seasonal_cov,
+                      seasonal_adv = seasonal_adv,
                       knots_tax = knots_tax,
                       knots_dif = knots_dif,
                       n_knots_tax = .n_knots_or_default(n_knots_tax, 3),
@@ -1689,7 +1706,7 @@ default_sim_funcs <- function(dat, conf, par, funcs = NULL) {
   conf <- .adv_conf(conf, dat)
   if (isTRUE(conf$use_advection)) {
     adv <- .make_adv(dat$adv, dat$time_adv, par$gamma, par$adv_const,
-                     .get_period(dat))
+                     .get_period(dat), dat$seasonal_adv)
     adv_fun <- adv$val
   } else {
     adv_fun <- function(xy, t) matrix(0, nrow(as.matrix(xy)), 2)

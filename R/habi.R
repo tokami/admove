@@ -209,7 +209,7 @@
   if (isTRUE(conf$use_advection)) {
     adv <- .make_adv(dat$adv, dat$time_adv,
                      if (length(dat$adv) > 0L) par_est$gamma,
-                     par_est$adv_const, per)
+                     par_est$adv_const, per, dat$seasonal_adv)
   }
 
   mk <- function(s, ds) .make_habi(liv, dat$xrange_cov,

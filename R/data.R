@@ -35,6 +35,12 @@
 ##'   splines, only an entrainment coefficient each (see [default_par()]).
 ##'   Fields with physical units are converted into model units along the grid
 ##'   axes once the spatial and temporal references are harmonised.
+##' @param seasonal_adv Logical, one value for all advection fields or one per
+##'   field: whether the field repeats every seasonal period, as a current
+##'   climatology does. Works like `seasonal_cov` (times are wrapped with
+##'   `t %% period` before a slice of the field is chosen) and also requires a
+##'   seasonal period in the time reference. Default `FALSE`: times beyond the
+##'   last slice use the last slice.
 ##' @param trange Optional numeric vector of length two giving the model time
 ##'   range. If `NULL`, the time range is inferred from available tags and
 ##'   covariates.
@@ -179,6 +185,7 @@ setup_data <- function(grid = NULL,
                        knots_from = c("tags", "cov"),
                        fill_na = 0,
                        adv = NULL,
+                       seasonal_adv = FALSE,
                        sref = NULL,
                        tref = NULL,
                        transform_sref = FALSE,
@@ -199,6 +206,9 @@ setup_data <- function(grid = NULL,
   ## and tref, NA filling, grid pruning, tag and time checks) as extra entries of
   ## 'cov', found again by their keys, and are split off before the splines.
   adv <- .as_adv_list(adv)
+  seasonal_adv <- .check_seasonal_cov(seasonal_adv, length(adv),
+                                      "seasonal_adv", "advection field")
+  names(seasonal_adv) <- names(adv)
   adv_keys <- NULL
   if (!is.null(adv)) {
     adv_flat <- .adv_flatten(adv)
@@ -290,8 +300,10 @@ setup_data <- function(grid = NULL,
   } else master_tref <- NULL
 
   period_cov <- if (!is.null(master_tref)) master_tref$period
-  if (any(seasonal_cov) && is.null(.get_period(list(period = period_cov)))) {
-    stop("seasonal_cov = TRUE needs a seasonal period in the time reference, ",
+  if ((any(seasonal_cov) || any(seasonal_adv)) &&
+        is.null(.get_period(list(period = period_cov)))) {
+    stop(if (any(seasonal_cov)) "seasonal_cov" else "seasonal_adv",
+         " = TRUE needs a seasonal period in the time reference, ",
          "e.g. create_tref(..., period = 12) for monthly time units with an ",
          "annual cycle.", call. = FALSE)
   }
@@ -430,8 +442,9 @@ setup_data <- function(grid = NULL,
 
     ## times
     res$time_cov <- lapply(res$cov, function(x) as.numeric(dimnames(x)[[3]]))
-    ## advection fields are never recycled
-    res$seasonal_cov <- c(seasonal_cov, rep(FALSE, length(adv_keys)))
+    ## the advection entries (u and v of each field) carry seasonal_adv until
+    ## they are split off below
+    res$seasonal_cov <- c(seasonal_cov, rep(unname(seasonal_adv), each = 2L))
 
   } else {
     res$xrange_cov <- NULL
@@ -498,13 +511,21 @@ setup_data <- function(grid = NULL,
       tag_min <- min(tt, na.rm = TRUE)
       tag_max <- max(tt, na.rm = TRUE)
       tc <- res$time_cov[[i]]
+      is_adv <- isTRUE(names(res$cov)[i] %in% adv_keys)
+      ## u and v of a field share their times: check the field once
+      if (is_adv && grepl("_v$", names(res$cov)[i])) next
+      lab <- if (is_adv) {
+        paste0("advection field '",
+               sub("_u$", "", sub("^\\.adv:", "", names(res$cov)[i])), "'")
+      } else paste0("covariate cov[[", i, "]]")
+      arg_sea <- if (is_adv) "seasonal_adv" else "seasonal_cov"
       cov_min <- min(tc, na.rm = TRUE)
       cov_max <- max(tc, na.rm = TRUE)
 
       if (tag_max < cov_min) {
         warning(
-          "All tag times are below the minimum time of covariate cov[[", i,
-          "]]: tags span [", signif(tag_min, 5), ", ", signif(tag_max, 5),
+          "All tag times are below the minimum time of ", lab,
+          ": tags span [", signif(tag_min, 5), ", ", signif(tag_max, 5),
           "], covariate spans [", signif(cov_min, 5), ", ",
           signif(cov_max, 5), "]. ",
           "The covariate will be inaccessible during fitting (t2index returns ",
@@ -527,8 +548,8 @@ setup_data <- function(grid = NULL,
         warning(
           length(above), " of ", nrow(res$tags), " tag observation",
           if (length(above) == 1) "" else "s",
-          " lie beyond the last time slice of covariate cov[[", i,
-          "]]: those tag times span [", signif(min(tt[above]), 8),
+          " lie beyond the last time slice of ", lab,
+          ": those tag times span [", signif(min(tt[above]), 8),
           ", ", signif(max(tt[above]), 8), "], covariate spans [",
           signif(cov_min, 5), ", ", signif(cov_max, 5), "]. ",
           "t2index() clamps them, so they are all evaluated against the LAST ",
@@ -537,7 +558,7 @@ setup_data <- function(grid = NULL,
           "system, e.g. give the tags a real time reference in prep_tags() ",
           "via 'date_origin' / 'date_format' / 'date_decimal', or extend the ",
           "covariate in time. If the covariate is a climatology that repeats ",
-          "every period, use setup_data(..., seasonal_cov = TRUE).",
+          "every period, use setup_data(..., ", arg_sea, " = TRUE).",
           call. = FALSE
         )
       }
@@ -559,6 +580,7 @@ setup_data <- function(grid = NULL,
     res$yrange_adv <- res$yrange_cov[idx, , drop = FALSE]
     res$time_adv <- res$time_cov[idx]
     names(res$time_adv) <- names(flat)
+    res$seasonal_adv <- seasonal_adv
 
     keep <- setdiff(seq_along(res$cov), idx)
     if (length(keep) > 0L) {
@@ -692,7 +714,9 @@ summarise_data <- function(object, ...) {
   cat("\n")
   if (length(dat$adv) > 0L) {
     for (nm in names(dat$adv)) {
-      cat("Advection field '", nm, "':\n", sep = "")
+      cat("Advection field '", nm, "'",
+          if (isTRUE(dat$seasonal_adv[nm])) " (repeats every period)",
+          ":\n", sep = "")
       print(dat$adv[[nm]])
     }
     cat("\n")
@@ -1111,24 +1135,25 @@ print.admove_data <- function(x, ...) {
 }
 
 
-## setup_data(seasonal_cov): one logical per covariate.
-.check_seasonal_cov <- function(x, ncov) {
+## setup_data(seasonal_cov, seasonal_adv): one logical per covariate or field.
+.check_seasonal_cov <- function(x, ncov, arg = "seasonal_cov",
+                                what = "covariate") {
 
   if (!is.logical(x) || anyNA(x) || length(x) == 0L) {
-    stop("'seasonal_cov' must be TRUE or FALSE, or one logical value per ",
-         "covariate.", call. = FALSE)
+    stop("'", arg, "' must be TRUE or FALSE, or one logical value per ",
+         what, ".", call. = FALSE)
   }
   if (ncov == 0L) {
-    if (any(x)) stop("seasonal_cov = TRUE but no covariates are given.",
+    if (any(x)) stop(arg, " = TRUE but no ", what, "s are given.",
                      call. = FALSE)
     return(logical(0))
   }
   if (length(x) == 1L) return(rep(x, ncov))
   if (length(x) != ncov) {
-    stop("'seasonal_cov' has length ", length(x), " but there ",
-         if (ncov == 1L) "is 1 covariate" else paste0("are ", ncov, " covariates"),
-         ". Supply a single value (recycled to all covariates) or one logical ",
-         "value per covariate.", call. = FALSE)
+    stop("'", arg, "' has length ", length(x), " but there ",
+         if (ncov == 1L) paste("is 1", what) else paste0("are ", ncov, " ", what, "s"),
+         ". Supply a single value (recycled to all ", what, "s) or one logical ",
+         "value per ", what, ".", call. = FALSE)
   }
   x
 }

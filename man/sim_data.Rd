@@ -31,6 +31,7 @@ sim_data(
   n_knots_tax = NULL,
   n_knots_dif = NULL,
   seasonal_cov = NULL,
+  seasonal_adv = NULL,
   release_events = NULL,
   n_release_events = 10,
   trange_rel = NULL,
@@ -153,6 +154,11 @@ and 1) are used.}
 the covariate fields repeat every seasonal period (see \code{\link[=setup_data]{setup_data()}}). If
 \code{NULL}, the setting of a supplied data object or model is kept for its
 covariate fields, and otherwise \code{FALSE}.}
+
+\item{seasonal_adv}{Optional logical, one value or one per advection field:
+whether the advection fields repeat every seasonal period (see
+\code{\link[=setup_data]{setup_data()}}). If \code{NULL}, the setting of a supplied data object or
+model is kept for its advection fields, and otherwise \code{FALSE}.}
 
 \item{release_events}{Optional data frame or matrix of release events. If
 \code{NULL}, release events are simulated internally using

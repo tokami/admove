@@ -138,7 +138,7 @@ nll <- function(par, dat) {
   ## entrainment coefficient per field and a constant drift
   if (dat$use_advection) {
     adv <- .make_adv(dat$adv, dat$time_adv, par$gamma, par$adv_const,
-                     dat$period)
+                     dat$period, dat$seasonal_adv)
   }
 
 

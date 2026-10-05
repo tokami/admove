@@ -17,6 +17,7 @@ setup_data(
   knots_from = c("tags", "cov"),
   fill_na = 0,
   adv = NULL,
+  seasonal_adv = FALSE,
   sref = NULL,
   tref = NULL,
   transform_sref = FALSE,
@@ -89,6 +90,13 @@ from the habitat covariates in \code{cov}: they get no taxis or diffusion
 splines, only an entrainment coefficient each (see \code{\link[=default_par]{default_par()}}).
 Fields with physical units are converted into model units along the grid
 axes once the spatial and temporal references are harmonised.}
+
+\item{seasonal_adv}{Logical, one value for all advection fields or one per
+field: whether the field repeats every seasonal period, as a current
+climatology does. Works like \code{seasonal_cov} (times are wrapped with
+\code{t \%\% period} before a slice of the field is chosen) and also requires a
+seasonal period in the time reference. Default \code{FALSE}: times beyond the
+last slice use the last slice.}
 
 \item{sref}{Optional spatial reference to use as the target spatial
 reference for all inputs. If supplied, it should be coercible to an

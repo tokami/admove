@@ -279,7 +279,9 @@ print.admove_release_events <- function(x, ...) {
   seas <- vapply(seq_along(tv), function(i) isTRUE(seas[i]), logical(1L))
   if (isTRUE(dat$use_advection)) {
     tv <- c(tv, unname(dat$time_adv))
-    seas <- c(seas, rep(FALSE, length(dat$time_adv)))
+    ## time_adv holds u and v of each field; both carry the field's flag
+    seas <- c(seas, vapply(seq_along(dat$time_adv), function(k)
+      isTRUE(dat$seasonal_adv[(k + 1L) %/% 2L]), logical(1L)))
     nsea_adv <- if (is.null(dat$n_seasons_adv)) 1L else dat$n_seasons_adv
     if (nsea_adv > 1L) {
       tv <- c(tv, list(.season_breaks(dat$period, nsea_adv)))

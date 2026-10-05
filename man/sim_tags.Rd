@@ -31,6 +31,7 @@ sim_tags(
   n_knots_tax = NULL,
   n_knots_dif = NULL,
   seasonal_cov = NULL,
+  seasonal_adv = NULL,
   funcs = NULL,
   n_reject = 20,
   sim_engine = "kf",
@@ -147,6 +148,11 @@ and 1) are used.}
 the covariate fields repeat every seasonal period (see \code{\link[=setup_data]{setup_data()}}).
 Only used when no data object is supplied; otherwise \code{FALSE} if
 \code{NULL}.}
+
+\item{seasonal_adv}{Optional logical, one value or one per advection field:
+whether the advection fields repeat every seasonal period (see
+\code{\link[=setup_data]{setup_data()}}). Only used when no data object is supplied; otherwise
+\code{FALSE} if \code{NULL}.}
 
 \item{funcs}{Optional named list of simulation functions. If \code{NULL},
 defaults are created with \code{\link[=default_sim_funcs]{default_sim_funcs()}}.}

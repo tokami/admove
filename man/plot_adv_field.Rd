@@ -60,8 +60,10 @@ same scale is used in all panels.}
 \item{zlim}{Optional speed range mapped onto \code{col}. Default: \code{NULL}, the
 range over all plotted time steps, so that the panels share one scale.}
 
-\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn to the right of each
-panel. Default: \code{NULL}, \code{TRUE} when \code{auto_layout = TRUE}.}
+\item{legend}{Logical; if \code{TRUE}, a colour bar is drawn: one for all panels
+in the right margin when several time steps are laid out automatically
+(they share the colour scale), otherwise to the right of each panel.
+Default: \code{NULL}, \code{TRUE} when \code{auto_layout = TRUE}.}
 
 \item{titles}{Optional panel titles, one per time step. Default: \code{NULL}, the
 start time of each time step as a date (e.g. \code{"Jan 2007"}); a single panel

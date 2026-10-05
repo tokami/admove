@@ -804,7 +804,10 @@ add_predictions <- function(fit, grid = NULL, time = NULL) {
   if (isTRUE(conf$use_advection) && length(dat$adv) > 0L) {
     for (f in seq_along(dat$adv)) {
       tc <- dat$time_adv[[2L * f - 1L]]
-      bad <- vapply(time, function(t) t2index(t, tc) < 1L, logical(1L))
+      sea <- isTRUE(dat$seasonal_adv[f])
+      bad <- vapply(time, function(t) {
+        t2index(t, tc, period = dat$period, seasonal = sea) < 1L
+      }, logical(1L))
       if (any(bad)) {
         warning("Prediction times precede the advection field '",
                 names(dat$adv)[f], "' (starts at ", .fmt_num(min(tc)), ") at ",
@@ -1090,7 +1093,9 @@ summarise_fit <- function(object, CI = 0.95, ...) {
   ## Seasonality
   ss <- x$conf$seasonal_spline
   sc <- x$dat$seasonal_cov
-  if (isTRUE(any(ss, na.rm = TRUE)) || isTRUE(any(sc, na.rm = TRUE))) {
+  sa <- x$dat$seasonal_adv
+  if (isTRUE(any(ss, na.rm = TRUE)) || isTRUE(any(sc, na.rm = TRUE)) ||
+        isTRUE(any(sa, na.rm = TRUE))) {
 
     per  <- tryCatch(period(x), error = function(e) NA_real_)
     unit <- tryCatch(tref(x)$units, error = function(e) NA_character_)
@@ -1149,6 +1154,9 @@ summarise_fit <- function(object, CI = 0.95, ...) {
       cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal spline (cov):", lab_cov(ss)))
     if (isTRUE(any(sc, na.rm = TRUE)))
       cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal cov:", lab_cov(sc)))
+    if (isTRUE(any(sa, na.rm = TRUE)))
+      cat(sprintf(paste0("  %-", labw, "s %s\n"), "seasonal adv:",
+                  paste(names(x$dat$adv)[sa], collapse = ", ")))
 
     cat("\n")
   }
